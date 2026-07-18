@@ -70,7 +70,7 @@ const mapCtx = mapCanvas.getContext("2d");
 const timelineCanvas = $("#timeline-canvas");
 const timelineCtx = timelineCanvas.getContext("2d");
 const mapImage = new Image();
-mapImage.src = STATIC_DATA ? "./assets/map.png" : "/assets/map.png";
+mapImage.src = STATIC_DATA ? "./assets/map.webp" : "/assets/map.webp";
 mapImage.onload = () => { state.dirty = true; drawMap(); };
 
 function escapeHtml(value) {

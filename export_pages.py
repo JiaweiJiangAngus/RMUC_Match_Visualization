@@ -10,10 +10,11 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from web_app import APP_DIR, DEFAULT_DB, MAP_PATH, ApiDatabase
+from web_app import APP_DIR, DEFAULT_DB, ApiDatabase
 
 
 DOCS_DIR = APP_DIR / "docs"
+WEB_MAP_PATH = APP_DIR / "web" / "assets" / "map.webp"
 
 
 def json_bytes(value) -> bytes:
@@ -52,19 +53,22 @@ def build_catalog(db: ApiDatabase):
 
 def export_frontend():
     source = (APP_DIR / "index.html").read_text(encoding="utf-8")
-    source = source.replace('href="/app.css?v=11"', 'href="./app.css?v=11"')
+    source = source.replace('href="/app.css?v=12"', 'href="./app.css?v=12"')
     source = source.replace(
-        '<script src="/app.js?v=11"></script>',
-        '<script>window.RMUC_STATIC_DATA = true;</script>\n  <script src="./app.js?v=11"></script>',
+        '<script src="/app.js?v=12"></script>',
+        '<script>window.RMUC_STATIC_DATA = true;</script>\n  <script src="./app.js?v=12"></script>',
     )
     write_if_changed(DOCS_DIR / "index.html", source.encode("utf-8"))
     write_if_changed(DOCS_DIR / "app.css", (APP_DIR / "web" / "app.css").read_bytes())
     write_if_changed(DOCS_DIR / "app.js", (APP_DIR / "web" / "app.js").read_bytes())
     write_if_changed(DOCS_DIR / ".nojekyll", b"")
-    destination = DOCS_DIR / "assets" / "map.png"
+    destination = DOCS_DIR / "assets" / "map.webp"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if not destination.is_file() or destination.stat().st_size != MAP_PATH.stat().st_size:
-        shutil.copyfile(MAP_PATH, destination)
+    if not destination.is_file() or destination.read_bytes() != WEB_MAP_PATH.read_bytes():
+        shutil.copyfile(WEB_MAP_PATH, destination)
+    legacy_map = DOCS_DIR / "assets" / "map.png"
+    if legacy_map.is_file():
+        legacy_map.unlink()
 
 
 def parse_args():
