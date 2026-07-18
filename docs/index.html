@@ -13,7 +13,7 @@
       document.documentElement.dataset.background = background === "simple" ? "simple" : "fancy";
     })();
   </script>
-  <link rel="stylesheet" href="./app.css?v=8">
+  <link rel="stylesheet" href="./app.css?v=11">
 </head>
 <body>
   <div class="animated-backdrop" aria-hidden="true">
@@ -77,7 +77,7 @@
       <div class="center-stack" id="battlefield">
         <section class="map-stage panel">
           <div class="map-heading">
-            <div><h2>实时战场 · 俯视图</h2><p>TDT Client 2026 战场地图 · 最近 20 秒轨迹</p></div>
+            <div><h2>实时战场 · 俯视图</h2><p>TDT Client 2026 战场地图 · 固定保留最近 5 秒轨迹</p></div>
             <div class="map-actions"><span id="map-match-label"></span><button id="map-fullscreen" type="button">全屏地图</button></div>
           </div>
           <div class="map-wrap"><canvas id="map-canvas" aria-label="战场地图"></canvas></div>
@@ -129,6 +129,6 @@
   <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
-  <script src="./app.js?v=8"></script>
+  <script src="./app.js?v=11"></script>
 </body>
 </html>

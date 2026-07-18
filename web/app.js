@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const COLORS = { red: "#ff526c", blue: "#48a0ff", gold: "#f3bd4d", green: "#38d39f" };
+const COLORS = { red: "#ff526c", blue: "#48a0ff", deadRed: "#761d2d", deadBlue: "#174a78", gold: "#f3bd4d", green: "#38d39f" };
 const ROLE_ORDER = ["基地", "前哨站", "英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"];
 const ROLE_LABEL = { "英雄":"1", "工程":"2", "步兵3":"3", "步兵4":"4", "哨兵":"AI", "空中":"6" };
 const STRUCTURES = [
@@ -364,7 +364,8 @@ function drawMap() {
   const scale = clamp(width/850,.78,1.7);
 
   for (const points of state.tracks.values()) {
-    const recent = points.filter(point => point[0] >= state.playhead-20 && point[0] <= state.playhead);
+    const trailSecond=Math.floor(state.playhead);
+    const recent = points.filter(point => point[0] >= trailSecond-5 && point[0] <= trailSecond);
     if (recent.length<2) continue;
     mapCtx.beginPath();
     recent.forEach((point,index) => { const [x,y]=mapPoint(point[1],point[2],width,height); index ? mapCtx.lineTo(x,y) : mapCtx.moveTo(x,y); });
@@ -397,19 +398,31 @@ function drawStructure(x,y,side,label,robot,scale) {
 }
 function drawRobot(x,y,robot,scale,second) {
   const side=robot[R.side], label=ROLE_LABEL[robot[R.type]]||"?", radius=(robot[R.type]==="空中"?14:12.5)*scale;
+  const hp=Number(robot[R.hp]||0),max=Number(robot[R.max]||0),dead=hp<=0;
+  const avatarColor=dead?(side==="红"?COLORS.deadRed:COLORS.deadBlue):colorFor(side);
   const countered=robot[R.type]==="空中"&&uavCounterStatus(side,second).active;
   if (robot[R.vulnerable]||countered) { mapCtx.beginPath(); mapCtx.arc(x,y,radius+6*scale,0,Math.PI*2); mapCtx.strokeStyle=COLORS.gold; mapCtx.lineWidth=3*scale; mapCtx.stroke(); }
   mapCtx.beginPath(); mapCtx.arc(x+2*scale,y+3*scale,radius+1,0,Math.PI*2); mapCtx.fillStyle="rgba(0,0,0,.5)"; mapCtx.fill();
-  mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2); mapCtx.fillStyle=colorFor(side); mapCtx.fill(); mapCtx.strokeStyle="#f4f9fc"; mapCtx.lineWidth=1.4*scale; mapCtx.stroke();
+  mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2); mapCtx.fillStyle=avatarColor; mapCtx.fill(); mapCtx.strokeStyle="#f4f9fc"; mapCtx.lineWidth=1.4*scale; mapCtx.stroke();
   mapCtx.fillStyle="#fff"; mapCtx.font=`900 ${Math.max(10,(label==="AI"?9:11)*scale)}px sans-serif`; mapCtx.textAlign="center"; mapCtx.textBaseline="middle"; mapCtx.fillText(label,x,y);
-  if (robot[R.yaw]!=null) { const angle=(Number(robot[R.yaw])-90)*Math.PI/180,len=radius+8*scale; mapCtx.beginPath();mapCtx.moveTo(x,y);mapCtx.lineTo(x+Math.cos(angle)*len,y+Math.sin(angle)*len);mapCtx.strokeStyle="#fff";mapCtx.lineWidth=1.7*scale;mapCtx.stroke(); }
-  const hp=Number(robot[R.hp]||0),max=Number(robot[R.max]||0),ratio=max?clamp(hp/max,0,1):0,barW=radius*2.5,barH=4*scale,top=y-radius-8*scale;
+  if (robot[R.yaw]!=null) {
+    const angle=(Number(robot[R.yaw])-90)*Math.PI/180,ux=Math.cos(angle),uy=Math.sin(angle),px=-uy,py=ux;
+    const base=radius+1.5*scale,tip=radius+9*scale,half=3.2*scale;
+    mapCtx.beginPath();
+    mapCtx.moveTo(x+ux*tip,y+uy*tip);
+    mapCtx.lineTo(x+ux*base+px*half,y+uy*base+py*half);
+    mapCtx.lineTo(x+ux*base-px*half,y+uy*base-py*half);
+    mapCtx.closePath();
+    mapCtx.fillStyle="#fff";mapCtx.fill();
+    mapCtx.strokeStyle="rgba(3,7,11,.88)";mapCtx.lineWidth=.9*scale;mapCtx.stroke();
+  }
+  const ratio=max?clamp(hp/max,0,1):0,barW=radius*2.5,barH=4*scale,top=y-radius-12*scale;
   mapCtx.fillStyle="rgba(3,7,11,.9)";mapCtx.fillRect(x-barW/2,top,barW,barH);mapCtx.fillStyle=ratio>.45?COLORS.green:ratio>.2?COLORS.gold:COLORS.red;mapCtx.fillRect(x-barW/2,top,barW*ratio,barH);
   if (robot[R.type]!=="工程") {
     const caliber=robot[R.a42]!=null?"42":robot[R.a17]!=null?"17":"";
     const fired=caliber==="42"?robot[R.a42]:robot[R.a17];
     if (caliber&&fired!=null) {
-      const ammoText=`已发${caliber} ${Math.max(0,Math.round(Number(fired)||0)).toLocaleString()}`;
+      const ammoText=`已发 ${Math.max(0,Math.round(Number(fired)||0)).toLocaleString()}`;
       mapCtx.font=`800 ${Math.max(10,9.5*scale)}px sans-serif`;
       mapCtx.textAlign="center";mapCtx.textBaseline="middle";
       const pillH=Math.max(14,14*scale),pillW=mapCtx.measureText(ammoText).width+9*scale,pillY=y+radius+6*scale;
