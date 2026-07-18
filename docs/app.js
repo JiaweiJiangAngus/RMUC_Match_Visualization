@@ -20,12 +20,12 @@ const MEMORY_KEY = "rmuc-dashboard-memory-v1";
 const MEMORY_ENABLED_KEY = "rmuc-dashboard-memory-enabled";
 
 function emptyMemory() {
-  return {region:"",matches:{},rounds:{},positions:{},speed:1};
+  return {region:"",selection:{region:"",matchNo:"",gameId:""},matches:{},rounds:{},positions:{},speed:1};
 }
 function readMemory() {
   try {
     const saved = JSON.parse(localStorage.getItem(MEMORY_KEY) || "null") || {};
-    return {...emptyMemory(),...saved,matches:{...(saved.matches||{})},rounds:{...(saved.rounds||{})},positions:{...(saved.positions||{})}};
+    return {...emptyMemory(),...saved,selection:{...emptyMemory().selection,...(saved.selection||{})},matches:{...(saved.matches||{})},rounds:{...(saved.rounds||{})},positions:{...(saved.positions||{})}};
   } catch (_) { return emptyMemory(); }
 }
 function readMemoryEnabled() {
@@ -55,6 +55,18 @@ function restoreSelect(select,value) {
   if (!option) return false;
   select.value = option.value;
   return true;
+}
+function rememberSelection(immediate=false) {
+  if (!memoryEnabled) return;
+  const region=$("#region-select").value;
+  const matchNo=$("#match-select").value;
+  const gameId=$("#round-select").value;
+  if (!region||!matchNo||!gameId) return;
+  memory.region=region;
+  if (region&&matchNo) memory.matches[region]=matchNo;
+  if (region&&matchNo&&gameId) memory.rounds[`${region}::${matchNo}`]=gameId;
+  memory.selection={region,matchNo,gameId};
+  persistMemory(immediate);
 }
 function rememberPlayhead(immediate=false) {
   if (!memoryEnabled || !state.game) return;
@@ -151,7 +163,7 @@ async function init() {
   try {
     const regions = await getJson("/api/regions");
     fillSelect($("#region-select"), regions.regions.map(region => [region, region]));
-    if (memoryEnabled) restoreSelect($("#region-select"),memory.region);
+    if (memoryEnabled) restoreSelect($("#region-select"),memory.selection.region||memory.region);
     await loadMatches();
   } catch (error) { setLoading(false); showToast(error.message); }
 }
@@ -166,7 +178,9 @@ async function loadMatches() {
     fillSelect($("#match-select"), data.matches.map(match => [
       match.match_no, `第${match.match_no}场 · ${match.red} vs ${match.blue}`
     ]));
-    if (memoryEnabled) restoreSelect($("#match-select"),memory.matches[region]);
+    const selected=memory.selection;
+    const rememberedMatch=selected.region===region&&selected.matchNo ? selected.matchNo : memory.matches[region];
+    if (memoryEnabled) restoreSelect($("#match-select"),rememberedMatch);
     if (memoryEnabled) {
       memory.region = region;
       memory.matches[region] = $("#match-select").value;
@@ -183,11 +197,11 @@ async function loadRounds() {
     const data = await getJson(`/api/rounds?region=${encodeURIComponent(region)}&match_no=${encodeURIComponent(matchNo)}`);
     fillSelect($("#round-select"), data.rounds.map(round => [round.game_id, `第${round.round_no}局`]));
     const memoryKey = `${region}::${matchNo}`;
-    if (memoryEnabled) restoreSelect($("#round-select"),memory.rounds[memoryKey]);
-    if (memoryEnabled) {
-      memory.rounds[memoryKey] = $("#round-select").value;
-      persistMemory();
-    }
+    const selected=memory.selection;
+    const rememberedRound=selected.region===region&&String(selected.matchNo)===String(matchNo)&&selected.gameId
+      ? selected.gameId : memory.rounds[memoryKey];
+    if (memoryEnabled) restoreSelect($("#round-select"),rememberedRound);
+    rememberSelection(true);
     await loadGame();
   } catch (error) { setLoading(false); showToast(error.message); }
 }
@@ -470,9 +484,25 @@ function animation(now){
   requestAnimationFrame(animation);
 }
 
-$("#region-select").addEventListener("change",loadMatches);
-$("#match-select").addEventListener("change",loadRounds);
-$("#round-select").addEventListener("change",loadGame);
+$("#region-select").addEventListener("change",()=>{
+  if (memoryEnabled) {
+    const region=$("#region-select").value;
+    memory.region=region;
+    memory.selection={region,matchNo:memory.matches[region]||"",gameId:""};
+    persistMemory(true);
+  }
+  loadMatches();
+});
+$("#match-select").addEventListener("change",()=>{
+  if (memoryEnabled) {
+    const region=$("#region-select").value,matchNo=$("#match-select").value;
+    memory.region=region;memory.matches[region]=matchNo;
+    memory.selection={region,matchNo,gameId:memory.rounds[`${region}::${matchNo}`]||""};
+    persistMemory(true);
+  }
+  loadRounds();
+});
+$("#round-select").addEventListener("change",()=>{rememberSelection(true);loadGame();});
 $("#play-button").addEventListener("click",togglePlayback);
 $("#back-button").addEventListener("click",()=>seek(state.playhead-5));
 $("#forward-button").addEventListener("click",()=>seek(state.playhead+5));
@@ -522,10 +552,7 @@ function initDisplayControls() {
       try { localStorage.removeItem(MEMORY_KEY); } catch (_) {}
       showToast("浏览记忆已关闭并清除","success");
     } else {
-      const region = $("#region-select").value, matchNo = $("#match-select").value;
-      memory.region = region;
-      if (region && matchNo) memory.matches[region] = matchNo;
-      if (region && matchNo && $("#round-select").value) memory.rounds[`${region}::${matchNo}`] = $("#round-select").value;
+      rememberSelection(true);
       rememberPlayhead(true);
       showToast("浏览记忆已开启","success");
     }
@@ -545,5 +572,5 @@ function initDisplayControls() {
   syncLabels();
 }
 
-window.addEventListener("pagehide",()=>rememberPlayhead(true));
+window.addEventListener("pagehide",()=>{rememberSelection(true);rememberPlayhead(true);});
 initDisplayControls(); init(); requestAnimationFrame(animation);
