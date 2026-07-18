@@ -19,7 +19,7 @@
 ## 手机 / Windows 模式
 
 在 Qt 主窗口顶部点击“手机 / Windows”，程序会启动响应式 Web 界面并打开本机浏览器。
-Web 首页入口是项目根目录的 `index.html`；页面通过 `web_app.py` 读取 SQLite 数据，因此请通过下面的服务地址访问，不要直接使用 `file://` 打开。
+本地动态版首页入口是项目根目录的 `index.html`；页面通过 `web_app.py` 读取 SQLite 数据，因此请通过下面的服务地址访问，不要直接使用 `file://` 打开。
 
 - 本机访问：`http://127.0.0.1:8876`
 - 手机或其他 Windows 电脑：使用弹窗显示的局域网地址，例如 `http://192.168.43.34:8876`
@@ -34,6 +34,32 @@ Linux 上也可在终端直接启动 Web 版：
 ```
 
 若其他设备无法访问，请允许系统防火墙放行 TCP 端口 `8876`。
+
+## GitHub Pages 静态版
+
+`docs/` 中是可直接发布的完整静态站点，包含全部 613 局比赛。比赛数据按局保存为 gzip 文件，页面只在切换对局时下载对应文件，不需要运行 Python 后端。
+
+数据集更新后重新生成：
+
+```bash
+python3 export_pages.py
+```
+
+本地检查静态站点：
+
+```bash
+python3 -m http.server 8000 --directory docs
+```
+
+然后打开 `http://127.0.0.1:8000`。发布时提交 `docs/`，再到 GitHub 仓库的 `Settings → Pages` 选择：
+
+```text
+Source: Deploy from a branch
+Branch: main
+Folder: /docs
+```
+
+当前 `docs/` 总大小约 43 MB，其中分局压缩数据约 39 MB；不要把原始 1.2 GB SQLite 文件提交到仓库。
 
 ## 窗口内容
 
