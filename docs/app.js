@@ -11,10 +11,58 @@ const STRUCTURES = [
 const R = { id:0, type:1, side:2, hp:3, max:4, x:5, y:6, yaw:7, a17:8, a42:9, coins:10, vulnerable:11 };
 const E = { sec:0, type:1, robot:2, side:3, category:4, value:5, note:6, target:7 };
 const STATIC_DATA = Boolean(window.RMUC_STATIC_DATA);
+const MEMORY_KEY = "rmuc-dashboard-memory-v1";
+const MEMORY_ENABLED_KEY = "rmuc-dashboard-memory-enabled";
+
+function emptyMemory() {
+  return {region:"",matches:{},rounds:{},positions:{},speed:1};
+}
+function readMemory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MEMORY_KEY) || "null") || {};
+    return {...emptyMemory(),...saved,matches:{...(saved.matches||{})},rounds:{...(saved.rounds||{})},positions:{...(saved.positions||{})}};
+  } catch (_) { return emptyMemory(); }
+}
+function readMemoryEnabled() {
+  try { return localStorage.getItem(MEMORY_ENABLED_KEY) !== "false"; }
+  catch (_) { return true; }
+}
+
+let memory = readMemory();
+let memoryEnabled = readMemoryEnabled();
+let memorySaveTimer = 0;
+
+function writeMemory() {
+  if (!memoryEnabled) return;
+  const recent = Object.entries(memory.positions).sort((a,b)=>Number(b[1]?.updated||0)-Number(a[1]?.updated||0)).slice(0,50);
+  memory.positions = Object.fromEntries(recent);
+  try { localStorage.setItem(MEMORY_KEY,JSON.stringify(memory)); } catch (_) {}
+}
+function persistMemory(immediate=false) {
+  if (!memoryEnabled) return;
+  clearTimeout(memorySaveTimer);
+  if (immediate) writeMemory();
+  else memorySaveTimer = setTimeout(writeMemory,180);
+}
+function restoreSelect(select,value) {
+  if (value == null) return false;
+  const option = [...select.options].find(item=>String(item.value)===String(value));
+  if (!option) return false;
+  select.value = option.value;
+  return true;
+}
+function rememberPlayhead(immediate=false) {
+  if (!memoryEnabled || !state.game) return;
+  const gameId = String(state.game.info.game_id);
+  memory.positions[gameId] = {second:Math.floor(state.playhead),updated:Date.now()};
+  memory.speed = state.speed;
+  persistMemory(immediate);
+}
 
 const state = {
   game: null, playhead: 1, speed: 1, playing: false, lastSecond: -1,
   lastAnimation: performance.now(), lastDraw: 0, dirty: true, tracks: new Map(),
+  uavCounterWindows: new Map(),
 };
 
 const mapCanvas = $("#map-canvas");
@@ -40,9 +88,9 @@ function frameAt(second) {
 }
 function robotKey(robot) { return `${robot[R.side]}:${robot[R.id]}`; }
 function colorFor(side) { return side === "红" ? COLORS.red : COLORS.blue; }
-function showToast(message) {
-  const toast = $("#toast"); toast.textContent = message; toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 3200);
+function showToast(message,kind="error") {
+  const toast = $("#toast"); toast.textContent = message; toast.classList.toggle("success",kind==="success"); toast.classList.add("show");
+  setTimeout(() => { toast.classList.remove("show"); toast.classList.remove("success"); }, 3200);
 }
 function setLoading(active) { $("#loading").classList.toggle("hidden", !active); }
 
@@ -98,6 +146,7 @@ async function init() {
   try {
     const regions = await getJson("/api/regions");
     fillSelect($("#region-select"), regions.regions.map(region => [region, region]));
+    if (memoryEnabled) restoreSelect($("#region-select"),memory.region);
     await loadMatches();
   } catch (error) { setLoading(false); showToast(error.message); }
 }
@@ -112,6 +161,12 @@ async function loadMatches() {
     fillSelect($("#match-select"), data.matches.map(match => [
       match.match_no, `第${match.match_no}场 · ${match.red} vs ${match.blue}`
     ]));
+    if (memoryEnabled) restoreSelect($("#match-select"),memory.matches[region]);
+    if (memoryEnabled) {
+      memory.region = region;
+      memory.matches[region] = $("#match-select").value;
+      persistMemory();
+    }
     await loadRounds();
   } catch (error) { setLoading(false); showToast(error.message); }
 }
@@ -122,6 +177,12 @@ async function loadRounds() {
     const matchNo = $("#match-select").value;
     const data = await getJson(`/api/rounds?region=${encodeURIComponent(region)}&match_no=${encodeURIComponent(matchNo)}`);
     fillSelect($("#round-select"), data.rounds.map(round => [round.game_id, `第${round.round_no}局`]));
+    const memoryKey = `${region}::${matchNo}`;
+    if (memoryEnabled) restoreSelect($("#round-select"),memory.rounds[memoryKey]);
+    if (memoryEnabled) {
+      memory.rounds[memoryKey] = $("#round-select").value;
+      persistMemory();
+    }
     await loadGame();
   } catch (error) { setLoading(false); showToast(error.message); }
 }
@@ -132,11 +193,15 @@ async function loadGame() {
     state.game = await getJson(`/api/game?game_id=${encodeURIComponent(gameId)}`);
     buildTracks();
     const seconds = Object.keys(state.game.frames).map(Number);
-    state.playhead = Math.min(...seconds);
+    const firstSecond = seconds.length ? Math.min(...seconds) : 0;
+    const rememberedSecond = Number(memory.positions[String(gameId)]?.second);
+    state.playhead = memoryEnabled && Number.isFinite(rememberedSecond)
+      ? clamp(rememberedSecond,firstSecond,state.game.info.duration) : firstSecond;
     state.lastSecond = -1;
     $("#time-slider").max = state.game.info.duration;
     $("#time-slider").value = state.playhead;
     renderState(Math.floor(state.playhead));
+    rememberPlayhead();
     state.dirty = true;
     drawMap(); drawTimeline();
   } catch (error) { showToast(error.message); }
@@ -144,6 +209,7 @@ async function loadGame() {
 }
 function buildTracks() {
   state.tracks = new Map();
+  state.uavCounterWindows = new Map([["red",[]],["blue",[]],["红",[]],["蓝",[]]]);
   if (!state.game) return;
   for (const [second, robots] of Object.entries(state.game.frames)) {
     for (const robot of robots) {
@@ -153,6 +219,25 @@ function buildTracks() {
       state.tracks.get(key).push([Number(second), Number(robot[R.x]), Number(robot[R.y]), robot[R.side]]);
     }
   }
+  for (const event of state.game.events) {
+    if (event[E.type] !== "雷达反制UAV" || !state.uavCounterWindows.has(event[E.side])) continue;
+    const second = Number(event[E.sec]);
+    if (!Number.isFinite(second)) continue;
+    const windows = state.uavCounterWindows.get(event[E.side]);
+    const current = windows.at(-1);
+    if (current && second < current.end) {
+      current.end += 45;
+      current.count += 1;
+    } else {
+      windows.push({start:second,end:second+45,count:1});
+    }
+  }
+}
+
+function uavCounterStatus(side, second) {
+  const windows = state.uavCounterWindows.get(side) || [];
+  const active = windows.find(window => second >= window.start && second < window.end);
+  return active ? {active:true,remaining:Math.ceil(active.end-second),count:active.count} : {active:false,remaining:0,count:0};
 }
 
 function structureHtml(title, robot, side, reverse=false) {
@@ -295,7 +380,7 @@ function drawMap() {
     if (["基地","前哨站"].includes(robot[R.type]) || robot[R.x]==null || robot[R.y]==null) continue;
     let x=Number(robot[R.x]),y=Number(robot[R.y]); const after=next.get(robotKey(robot));
     if (after && after[R.x]!=null && after[R.y]!=null) { x+=(Number(after[R.x])-x)*alpha; y+=(Number(after[R.y])-y)*alpha; }
-    drawRobot(...mapPoint(x,y,width,height),robot,scale);
+    drawRobot(...mapPoint(x,y,width,height),robot,scale,state.playhead);
   }
   state.dirty=false;
 }
@@ -310,15 +395,28 @@ function drawStructure(x,y,side,label,robot,scale) {
   mapCtx.fillStyle=ratio>.45?COLORS.green:ratio>.2?COLORS.gold:COLORS.red; mapCtx.fillRect(x-barW/2,top,barW*ratio,barH);
   mapCtx.fillStyle="#f2f7fb"; mapCtx.font=`800 ${Math.max(9,8*scale)}px sans-serif`; mapCtx.fillText(hp.toLocaleString(),x,top+barH+8*scale);
 }
-function drawRobot(x,y,robot,scale) {
+function drawRobot(x,y,robot,scale,second) {
   const side=robot[R.side], label=ROLE_LABEL[robot[R.type]]||"?", radius=(robot[R.type]==="空中"?14:12.5)*scale;
-  if (robot[R.vulnerable]) { mapCtx.beginPath(); mapCtx.arc(x,y,radius+6*scale,0,Math.PI*2); mapCtx.strokeStyle=COLORS.gold; mapCtx.lineWidth=3*scale; mapCtx.stroke(); }
+  const countered=robot[R.type]==="空中"&&uavCounterStatus(side,second).active;
+  if (robot[R.vulnerable]||countered) { mapCtx.beginPath(); mapCtx.arc(x,y,radius+6*scale,0,Math.PI*2); mapCtx.strokeStyle=COLORS.gold; mapCtx.lineWidth=3*scale; mapCtx.stroke(); }
   mapCtx.beginPath(); mapCtx.arc(x+2*scale,y+3*scale,radius+1,0,Math.PI*2); mapCtx.fillStyle="rgba(0,0,0,.5)"; mapCtx.fill();
   mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2); mapCtx.fillStyle=colorFor(side); mapCtx.fill(); mapCtx.strokeStyle="#f4f9fc"; mapCtx.lineWidth=1.4*scale; mapCtx.stroke();
   mapCtx.fillStyle="#fff"; mapCtx.font=`900 ${Math.max(10,(label==="AI"?9:11)*scale)}px sans-serif`; mapCtx.textAlign="center"; mapCtx.textBaseline="middle"; mapCtx.fillText(label,x,y);
   if (robot[R.yaw]!=null) { const angle=(Number(robot[R.yaw])-90)*Math.PI/180,len=radius+8*scale; mapCtx.beginPath();mapCtx.moveTo(x,y);mapCtx.lineTo(x+Math.cos(angle)*len,y+Math.sin(angle)*len);mapCtx.strokeStyle="#fff";mapCtx.lineWidth=1.7*scale;mapCtx.stroke(); }
   const hp=Number(robot[R.hp]||0),max=Number(robot[R.max]||0),ratio=max?clamp(hp/max,0,1):0,barW=radius*2.5,barH=4*scale,top=y-radius-8*scale;
   mapCtx.fillStyle="rgba(3,7,11,.9)";mapCtx.fillRect(x-barW/2,top,barW,barH);mapCtx.fillStyle=ratio>.45?COLORS.green:ratio>.2?COLORS.gold:COLORS.red;mapCtx.fillRect(x-barW/2,top,barW*ratio,barH);
+  if (robot[R.type]!=="工程") {
+    const caliber=robot[R.a42]!=null?"42":robot[R.a17]!=null?"17":"";
+    const fired=caliber==="42"?robot[R.a42]:robot[R.a17];
+    if (caliber&&fired!=null) {
+      const ammoText=`已发${caliber} ${Math.max(0,Math.round(Number(fired)||0)).toLocaleString()}`;
+      mapCtx.font=`800 ${Math.max(10,9.5*scale)}px sans-serif`;
+      mapCtx.textAlign="center";mapCtx.textBaseline="middle";
+      const pillH=Math.max(14,14*scale),pillW=mapCtx.measureText(ammoText).width+9*scale,pillY=y+radius+6*scale;
+      mapCtx.fillStyle="rgba(3,7,11,.86)";mapCtx.beginPath();mapCtx.roundRect(x-pillW/2,pillY,pillW,pillH,4*scale);mapCtx.fill();
+      mapCtx.fillStyle="#f4f8fb";mapCtx.fillText(ammoText,x,pillY+pillH/2);
+    }
+  }
 }
 
 function drawTimeline() {
@@ -339,12 +437,13 @@ function drawTimeline() {
 function seek(second) {
   if (!state.game) return;
   state.playhead=clamp(Number(second),0,state.game.info.duration);state.lastSecond=-1;renderState(Math.floor(state.playhead));state.dirty=true;
+  rememberPlayhead();
 }
 function stopPlayback(){state.playing=false;$("#play-button").textContent="▶ 播放";}
 function togglePlayback(){if(!state.game)return;if(state.playhead>=state.game.info.duration)seek(0);state.playing=!state.playing;$("#play-button").textContent=state.playing?"Ⅱ 暂停":"▶ 播放";state.lastAnimation=performance.now();}
 function animation(now){
   const dt=Math.min(.2,(now-state.lastAnimation)/1000);state.lastAnimation=now;
-  if(state.playing&&state.game){state.playhead+=dt*state.speed;if(state.playhead>=state.game.info.duration){state.playhead=state.game.info.duration;stopPlayback();}const second=Math.floor(state.playhead);if(second!==state.lastSecond)renderState(second);state.dirty=true;}
+  if(state.playing&&state.game){state.playhead+=dt*state.speed;if(state.playhead>=state.game.info.duration){state.playhead=state.game.info.duration;stopPlayback();}const second=Math.floor(state.playhead);if(second!==state.lastSecond){renderState(second);rememberPlayhead();}state.dirty=true;}
   if(state.dirty&&now-state.lastDraw>30){drawMap();drawTimeline();state.lastDraw=now;}
   requestAnimationFrame(animation);
 }
@@ -356,7 +455,7 @@ $("#play-button").addEventListener("click",togglePlayback);
 $("#back-button").addEventListener("click",()=>seek(state.playhead-5));
 $("#forward-button").addEventListener("click",()=>seek(state.playhead+5));
 $("#time-slider").addEventListener("input",event=>seek(event.target.value));
-$("#speed-select").addEventListener("change",event=>state.speed=Number(event.target.value));
+$("#speed-select").addEventListener("change",event=>{state.speed=Number(event.target.value);memory.speed=state.speed;persistMemory();});
 timelineCanvas.addEventListener("pointerdown",event=>{if(!state.game)return;const rect=timelineCanvas.getBoundingClientRect(),x=clamp(event.clientX-rect.left-34,0,rect.width-44);seek(x/(rect.width-44)*state.game.info.duration);});
 $("#map-fullscreen")?.addEventListener("click",async()=>{
   try {
@@ -371,12 +470,15 @@ function initDisplayControls() {
   const root = document.documentElement;
   const themeButton = $("#theme-toggle");
   const backgroundButton = $("#background-toggle");
+  const memoryButton = $("#memory-toggle");
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   const syncLabels = () => {
     const day = root.dataset.theme === "day";
     const simple = root.dataset.background === "simple";
     if (themeButton) themeButton.textContent = day ? "☀ 白昼" : "☾ 黑夜";
     if (backgroundButton) backgroundButton.textContent = simple ? "▤ 简洁背景" : "▧ 动态背景";
+    if (memoryButton) memoryButton.textContent = memoryEnabled ? "记忆 开" : "记忆 关";
+    memoryButton?.classList.toggle("active",memoryEnabled);
     if (themeMeta) themeMeta.content = day ? "#edf2f6" : "#081019";
   };
   themeButton?.addEventListener("click", () => {
@@ -389,6 +491,29 @@ function initDisplayControls() {
     localStorage.setItem("rmuc-dashboard-background", root.dataset.background);
     syncLabels();
   });
+  memoryButton?.addEventListener("click", () => {
+    memoryEnabled = !memoryEnabled;
+    try { localStorage.setItem(MEMORY_ENABLED_KEY,String(memoryEnabled)); } catch (_) {}
+    if (!memoryEnabled) {
+      clearTimeout(memorySaveTimer);
+      memory = emptyMemory();
+      try { localStorage.removeItem(MEMORY_KEY); } catch (_) {}
+      showToast("浏览记忆已关闭并清除","success");
+    } else {
+      const region = $("#region-select").value, matchNo = $("#match-select").value;
+      memory.region = region;
+      if (region && matchNo) memory.matches[region] = matchNo;
+      if (region && matchNo && $("#round-select").value) memory.rounds[`${region}::${matchNo}`] = $("#round-select").value;
+      rememberPlayhead(true);
+      showToast("浏览记忆已开启","success");
+    }
+    syncLabels();
+  });
+  const rememberedSpeed = Number(memory.speed);
+  if (memoryEnabled && [...$("#speed-select").options].some(option=>Number(option.value)===rememberedSpeed)) {
+    state.speed = rememberedSpeed;
+    $("#speed-select").value = String(rememberedSpeed);
+  }
   document.querySelectorAll("[data-scroll-target]").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelectorAll("[data-scroll-target]").forEach(item => item.classList.toggle("active",item.dataset.scrollTarget===button.dataset.scrollTarget));
@@ -398,4 +523,5 @@ function initDisplayControls() {
   syncLabels();
 }
 
+window.addEventListener("pagehide",()=>rememberPlayhead(true));
 initDisplayControls(); init(); requestAnimationFrame(animation);
