@@ -1,0 +1,354 @@
+"use strict";
+
+const $ = (selector) => document.querySelector(selector);
+const COLORS = { red: "#ff526c", blue: "#48a0ff", gold: "#f3bd4d", green: "#38d39f" };
+const ROLE_ORDER = ["基地", "前哨站", "英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"];
+const ROLE_LABEL = { "英雄":"1", "工程":"2", "步兵3":"3", "步兵4":"4", "哨兵":"AI", "空中":"6" };
+const STRUCTURES = [
+  ["红", "基地", .095, .500, "基"], ["红", "前哨站", .393, .750, "前"],
+  ["蓝", "基地", .905, .500, "基"], ["蓝", "前哨站", .607, .250, "前"],
+];
+const R = { id:0, type:1, side:2, hp:3, max:4, x:5, y:6, yaw:7, a17:8, a42:9, coins:10, vulnerable:11 };
+const E = { sec:0, type:1, robot:2, side:3, category:4, value:5, note:6, target:7 };
+
+const state = {
+  game: null, playhead: 1, speed: 1, playing: false, lastSecond: -1,
+  lastAnimation: performance.now(), lastDraw: 0, dirty: true, tracks: new Map(),
+};
+
+const mapCanvas = $("#map-canvas");
+const mapCtx = mapCanvas.getContext("2d");
+const timelineCanvas = $("#timeline-canvas");
+const timelineCtx = timelineCanvas.getContext("2d");
+const mapImage = new Image();
+mapImage.src = "/assets/map.png";
+mapImage.onload = () => { state.dirty = true; drawMap(); };
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch]));
+}
+function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
+function fmtTime(seconds) {
+  seconds = Math.max(0, Math.floor(seconds || 0));
+  return `${String(Math.floor(seconds / 60)).padStart(2,"0")}:${String(seconds % 60).padStart(2,"0")}`;
+}
+function frameAt(second) {
+  if (!state.game) return [];
+  const frames = state.game.frames;
+  return frames[second] || frames[second - 1] || [];
+}
+function robotKey(robot) { return `${robot[R.side]}:${robot[R.id]}`; }
+function colorFor(side) { return side === "红" ? COLORS.red : COLORS.blue; }
+function showToast(message) {
+  const toast = $("#toast"); toast.textContent = message; toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 3200);
+}
+function setLoading(active) { $("#loading").classList.toggle("hidden", !active); }
+
+async function getJson(url) {
+  const response = await fetch(url);
+  const data = await response.json();
+  if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+async function init() {
+  try {
+    const [regions, info] = await Promise.all([getJson("/api/regions"), getJson("/api/info")]);
+    $("#network-hint").textContent = `手机访问：${info.phone_url}`;
+    fillSelect($("#region-select"), regions.regions.map(region => [region, region]));
+    await loadMatches();
+  } catch (error) { setLoading(false); showToast(error.message); }
+}
+function fillSelect(select, options) {
+  select.innerHTML = options.map(([value,label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("");
+}
+async function loadMatches() {
+  setLoading(true);
+  try {
+    const region = $("#region-select").value;
+    const data = await getJson(`/api/matches?region=${encodeURIComponent(region)}`);
+    fillSelect($("#match-select"), data.matches.map(match => [
+      match.match_no, `第${match.match_no}场 · ${match.red} vs ${match.blue}`
+    ]));
+    await loadRounds();
+  } catch (error) { setLoading(false); showToast(error.message); }
+}
+async function loadRounds() {
+  setLoading(true);
+  try {
+    const region = $("#region-select").value;
+    const matchNo = $("#match-select").value;
+    const data = await getJson(`/api/rounds?region=${encodeURIComponent(region)}&match_no=${encodeURIComponent(matchNo)}`);
+    fillSelect($("#round-select"), data.rounds.map(round => [round.game_id, `第${round.round_no}局`]));
+    await loadGame();
+  } catch (error) { setLoading(false); showToast(error.message); }
+}
+async function loadGame() {
+  setLoading(true); stopPlayback();
+  try {
+    const gameId = $("#round-select").value;
+    state.game = await getJson(`/api/game?game_id=${encodeURIComponent(gameId)}`);
+    buildTracks();
+    const seconds = Object.keys(state.game.frames).map(Number);
+    state.playhead = Math.min(...seconds);
+    state.lastSecond = -1;
+    $("#time-slider").max = state.game.info.duration;
+    $("#time-slider").value = state.playhead;
+    renderState(Math.floor(state.playhead));
+    state.dirty = true;
+    drawMap(); drawTimeline();
+  } catch (error) { showToast(error.message); }
+  finally { setLoading(false); }
+}
+function buildTracks() {
+  state.tracks = new Map();
+  if (!state.game) return;
+  for (const [second, robots] of Object.entries(state.game.frames)) {
+    for (const robot of robots) {
+      if (["基地","前哨站"].includes(robot[R.type]) || robot[R.x] == null || robot[R.y] == null) continue;
+      const key = robotKey(robot);
+      if (!state.tracks.has(key)) state.tracks.set(key, []);
+      state.tracks.get(key).push([Number(second), Number(robot[R.x]), Number(robot[R.y]), robot[R.side]]);
+    }
+  }
+}
+
+function structureHtml(title, robot, side, reverse=false) {
+  const hp = Number(robot?.[R.hp] || 0), max = Number(robot?.[R.max] || 0);
+  const ratio = max ? clamp(hp / max * 100, 0, 100) : 0;
+  const label = `<span>${title}</span>`, bar = `<div class="health-track"><div class="health-fill" style="width:${ratio}%"></div></div>`;
+  const value = `<b>${hp.toLocaleString()}/${max.toLocaleString()}</b>`;
+  return `<div class="structure">${reverse ? value + bar + label : label + bar + value}</div>`;
+}
+function updateTopHud(robots, second) {
+  const info = state.game.info;
+  const find = (side,type) => robots.find(robot => robot[R.side] === side && robot[R.type] === type);
+  for (const side of ["红","蓝"]) {
+    const isBlue = side === "蓝", other = isBlue ? "红" : "蓝";
+    const school = isBlue ? info.blue : info.red;
+    const winner = info.winner === side ? " · WIN" : "";
+    const allSideEvents = state.game.events.filter(event => event[E.side] === side);
+    const pastSideEvents = allSideEvents.filter(event => event[E.sec] <= second);
+    const gates = pastSideEvents.filter(event => event[E.type] === "飞镖闸门开").length;
+    const gateTotal = allSideEvents.filter(event => event[E.type] === "飞镖闸门开").length;
+    const hits = pastSideEvents.filter(event => event[E.type] === "飞镖命中");
+    const hitTotal = allSideEvents.filter(event => event[E.type] === "飞镖命中").length;
+    const damage = hits.reduce((sum,event) => sum + Math.abs(Number(event[E.value] || 0)), 0);
+    const counters = state.game.events.filter(event => event[E.type] === "雷达反制UAV" && event[E.side] === other);
+    const counterNow = counters.filter(event => event[E.sec] <= second).length;
+    const marked = robots.filter(robot => robot[R.side] === other && robot[R.vulnerable] && !["基地","前哨站"].includes(robot[R.type])).length;
+    const base = find(side,"基地"), outpost = find(side,"前哨站");
+    const structures = isBlue
+      ? structureHtml("前哨",outpost,side,true) + structureHtml("基地",base,side,true)
+      : structureHtml("基地",base,side) + structureHtml("前哨",outpost,side);
+    $(`#top-${isBlue ? "blue" : "red"}`).innerHTML = `
+      <div class="team-title">${side}方　${escapeHtml(school)}${winner}</div>
+      <div class="structure-row">${structures}</div>
+      <div class="special-line">飞镖　门 ${gates}/${gateTotal} · 命中 ${hits.length}/${hitTotal} · 伤害 ${damage.toLocaleString()}　　雷达　标记 ${marked} · 反制 ${counterNow}/${counters.length}</div>`;
+  }
+  $("#match-center").textContent = `第${info.match_no}场 · 第${info.round_no}局　${info.winner}方胜　${fmtTime(info.duration)}`;
+}
+
+function updateTeamPanel(side, robots) {
+  const isBlue = side === "蓝", info = state.game.info;
+  const school = isBlue ? info.blue : info.red;
+  const own = robots.filter(robot => robot[R.side] === side);
+  const byType = new Map(own.map(robot => [robot[R.type],robot]));
+  const coins = Math.max(0,...own.map(robot => Number(robot[R.coins] || 0)));
+  const mobile = own.filter(robot => !["基地","前哨站"].includes(robot[R.type]));
+  const alive = mobile.filter(robot => Number(robot[R.hp]) > 0).length;
+  const ammo17 = mobile.reduce((sum,robot) => sum + Number(robot[R.a17] || 0),0);
+  const ammo42 = mobile.reduce((sum,robot) => sum + Number(robot[R.a42] || 0),0);
+  const rows = ROLE_ORDER.map(role => {
+    const robot = byType.get(role), hp = Number(robot?.[R.hp] || 0), max = Number(robot?.[R.max] || 0);
+    const ratio = max ? clamp(hp / max * 100,0,100) : 0;
+    return `<div class="robot-row"><span class="role">${role}</span><div class="health-track"><div class="health-fill" style="width:${ratio}%"></div></div><span class="hp">${robot ? `${hp.toFixed(0)}/${max.toFixed(0)}` : "—"}</span></div>`;
+  }).join("");
+  $(`#${isBlue ? "blue" : "red"}-panel`).innerHTML = `
+    <div class="team-header"><h3>${side}方 · ${escapeHtml(school)}</h3><span class="coins">剩余金币 ${coins.toLocaleString()}</span></div>
+    <div class="robot-list">${rows}</div>
+    <div class="team-summary">在线 ${alive}/${mobile.length}　累计发弹<br>17mm　${ammo17.toLocaleString()}　　42mm　${ammo42.toLocaleString()}</div>`;
+}
+
+function eventDetails(event) {
+  const values = [];
+  if (event[E.category]) values.push(event[E.category]);
+  if (event[E.value] != null) values.push(Number(event[E.value]).toLocaleString());
+  if (event[E.target]) values.push(`→ ${event[E.target]}`);
+  if (event[E.note]) values.push(event[E.note]);
+  return values.join(" · ") || "—";
+}
+function updateEvents(second) {
+  const past = state.game.events.filter(event => event[E.sec] <= second);
+  const rows = past.slice(-9).reverse();
+  $("#event-count").textContent = `${past.length} 条`;
+  $("#event-list").innerHTML = rows.length ? rows.map(event => `
+    <div class="event-row"><span>${Math.floor(event[E.sec])}s</span>
+      <span class="${event[E.side] === "红" ? "side-red" : "side-blue"}">${event[E.side] || "—"}</span>
+      <span class="${event[E.type] === "受击" ? "hit" : ""}">${escapeHtml(event[E.type])}</span>
+      <span class="actor">${escapeHtml(event[E.robot] || "—")}</span>
+      <span>${escapeHtml(eventDetails(event))}</span></div>`).join("") : `<div class="empty">当前时刻暂无事件</div>`;
+}
+function renderState(second) {
+  if (!state.game) return;
+  const robots = frameAt(second);
+  updateTopHud(robots,second); updateTeamPanel("红",robots); updateTeamPanel("蓝",robots); updateEvents(second);
+  const info = state.game.info;
+  const mobile = robots.filter(robot => !["基地","前哨站"].includes(robot[R.type]));
+  const alive = mobile.filter(robot => Number(robot[R.hp]) > 0).length;
+  const eventTotal = Object.values(state.game.event_counts || {}).reduce((sum,value) => sum + Number(value || 0),0);
+  const overviewMatch = $("#overview-match");
+  if (overviewMatch) overviewMatch.textContent = `${info.region} · ${info.match_no}-${info.round_no}`;
+  const overviewDuration = $("#overview-duration");
+  if (overviewDuration) overviewDuration.textContent = fmtTime(info.duration);
+  const overviewRobots = $("#overview-robots");
+  if (overviewRobots) overviewRobots.textContent = `${alive}/${mobile.length}`;
+  const overviewEvents = $("#overview-events");
+  if (overviewEvents) overviewEvents.textContent = eventTotal.toLocaleString();
+  $("#map-match-label").textContent = `${info.region} 第${info.match_no}场 · 第${info.round_no}局 ${info.winner}方胜`;
+  $("#red-legend").textContent = info.red; $("#blue-legend").textContent = info.blue;
+  $("#map-time").textContent = `T + ${String(second).padStart(3,"0")}s`;
+  $("#time-output").textContent = `${fmtTime(second)} / ${fmtTime(info.duration)}`;
+  $("#time-slider").value = second;
+  drawTimeline(); state.lastSecond = second; state.dirty = true;
+}
+
+function canvasSize(canvas, ratio, fixedHeight=null) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(1, canvas.parentElement.clientWidth - (canvas === timelineCanvas ? 0 : 0));
+  const height = fixedHeight || width / ratio;
+  canvas.style.height = `${height}px`;
+  const pixelW = Math.round(width*dpr), pixelH = Math.round(height*dpr);
+  if (canvas.width !== pixelW || canvas.height !== pixelH) { canvas.width=pixelW; canvas.height=pixelH; }
+  const ctx = canvas.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return { width, height, dpr };
+}
+function mapPoint(x,y,width,height) { return [clamp(x/28,0,1)*width, (1-clamp(y/15,0,1))*height]; }
+function uvPoint(u,v,width,height) { return [u*width,v*height]; }
+
+function drawMap() {
+  if (!state.game || !mapImage.complete) return;
+  const ratio = mapImage.naturalWidth / mapImage.naturalHeight;
+  const {width,height} = canvasSize(mapCanvas,ratio);
+  mapCtx.clearRect(0,0,width,height); mapCtx.drawImage(mapImage,0,0,width,height);
+  mapCtx.fillStyle="rgba(2,7,12,.12)"; mapCtx.fillRect(0,0,width,height);
+  const second = Math.floor(state.playhead), alpha = state.playhead-second;
+  const robots = frameAt(second), next = new Map(frameAt(second+1).map(robot => [robotKey(robot),robot]));
+  const scale = clamp(width/850,.78,1.7);
+
+  for (const points of state.tracks.values()) {
+    const recent = points.filter(point => point[0] >= state.playhead-20 && point[0] <= state.playhead);
+    if (recent.length<2) continue;
+    mapCtx.beginPath();
+    recent.forEach((point,index) => { const [x,y]=mapPoint(point[1],point[2],width,height); index ? mapCtx.lineTo(x,y) : mapCtx.moveTo(x,y); });
+    mapCtx.strokeStyle = recent[0][3] === "红" ? "rgba(255,82,108,.52)" : "rgba(72,160,255,.52)";
+    mapCtx.lineWidth=2*scale; mapCtx.stroke();
+  }
+
+  for (const [side,type,u,v,label] of STRUCTURES) {
+    const robot=robots.find(item=>item[R.side]===side&&item[R.type]===type);
+    drawStructure(...uvPoint(u,v,width,height),side,label,robot,scale);
+  }
+  for (const robot of robots) {
+    if (["基地","前哨站"].includes(robot[R.type]) || robot[R.x]==null || robot[R.y]==null) continue;
+    let x=Number(robot[R.x]),y=Number(robot[R.y]); const after=next.get(robotKey(robot));
+    if (after && after[R.x]!=null && after[R.y]!=null) { x+=(Number(after[R.x])-x)*alpha; y+=(Number(after[R.y])-y)*alpha; }
+    drawRobot(...mapPoint(x,y,width,height),robot,scale);
+  }
+  state.dirty=false;
+}
+function drawStructure(x,y,side,label,robot,scale) {
+  const radius=14*scale, hp=Number(robot?.[R.hp]||0),max=Number(robot?.[R.max]||0),alive=!robot||hp>0;
+  mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2); mapCtx.fillStyle=alive?"rgba(7,13,20,.92)":"rgba(28,30,34,.92)"; mapCtx.fill();
+  mapCtx.lineWidth=2.6*scale; mapCtx.strokeStyle=alive?colorFor(side):"#687581"; mapCtx.stroke();
+  mapCtx.fillStyle=alive?"#f5f9fc":"#8c98a2"; mapCtx.font=`900 ${Math.max(11,11*scale)}px sans-serif`; mapCtx.textAlign="center"; mapCtx.textBaseline="middle"; mapCtx.fillText(label,x,y);
+  if (!robot) return;
+  const barW=44*scale,barH=5*scale,top=y+radius+5*scale,ratio=max?clamp(hp/max,0,1):0;
+  mapCtx.fillStyle="rgba(3,7,11,.9)"; mapCtx.fillRect(x-barW/2,top,barW,barH);
+  mapCtx.fillStyle=ratio>.45?COLORS.green:ratio>.2?COLORS.gold:COLORS.red; mapCtx.fillRect(x-barW/2,top,barW*ratio,barH);
+  mapCtx.fillStyle="#f2f7fb"; mapCtx.font=`800 ${Math.max(9,8*scale)}px sans-serif`; mapCtx.fillText(hp.toLocaleString(),x,top+barH+8*scale);
+}
+function drawRobot(x,y,robot,scale) {
+  const side=robot[R.side], label=ROLE_LABEL[robot[R.type]]||"?", radius=(robot[R.type]==="空中"?14:12.5)*scale;
+  if (robot[R.vulnerable]) { mapCtx.beginPath(); mapCtx.arc(x,y,radius+6*scale,0,Math.PI*2); mapCtx.strokeStyle=COLORS.gold; mapCtx.lineWidth=3*scale; mapCtx.stroke(); }
+  mapCtx.beginPath(); mapCtx.arc(x+2*scale,y+3*scale,radius+1,0,Math.PI*2); mapCtx.fillStyle="rgba(0,0,0,.5)"; mapCtx.fill();
+  mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2); mapCtx.fillStyle=colorFor(side); mapCtx.fill(); mapCtx.strokeStyle="#f4f9fc"; mapCtx.lineWidth=1.4*scale; mapCtx.stroke();
+  mapCtx.fillStyle="#fff"; mapCtx.font=`900 ${Math.max(10,(label==="AI"?9:11)*scale)}px sans-serif`; mapCtx.textAlign="center"; mapCtx.textBaseline="middle"; mapCtx.fillText(label,x,y);
+  if (robot[R.yaw]!=null) { const angle=(Number(robot[R.yaw])-90)*Math.PI/180,len=radius+8*scale; mapCtx.beginPath();mapCtx.moveTo(x,y);mapCtx.lineTo(x+Math.cos(angle)*len,y+Math.sin(angle)*len);mapCtx.strokeStyle="#fff";mapCtx.lineWidth=1.7*scale;mapCtx.stroke(); }
+  const hp=Number(robot[R.hp]||0),max=Number(robot[R.max]||0),ratio=max?clamp(hp/max,0,1):0,barW=radius*2.5,barH=4*scale,top=y-radius-8*scale;
+  mapCtx.fillStyle="rgba(3,7,11,.9)";mapCtx.fillRect(x-barW/2,top,barW,barH);mapCtx.fillStyle=ratio>.45?COLORS.green:ratio>.2?COLORS.gold:COLORS.red;mapCtx.fillRect(x-barW/2,top,barW*ratio,barH);
+}
+
+function drawTimeline() {
+  if (!state.game) return;
+  const height = parseFloat(getComputedStyle(timelineCanvas).height) || 180;
+  const {width} = canvasSize(timelineCanvas,5.5,height);
+  timelineCtx.clearRect(0,0,width,height); timelineCtx.fillStyle="#0b1620";timelineCtx.fillRect(34,4,width-44,height-28);
+  const chart={x:34,y:4,w:width-44,h:height-28},duration=state.game.info.duration;
+  timelineCtx.font="11px sans-serif";timelineCtx.textAlign="center";timelineCtx.textBaseline="top";
+  for(let i=0;i<8;i++){const x=chart.x+chart.w*i/7;timelineCtx.strokeStyle="rgba(82,106,121,.35)";timelineCtx.beginPath();timelineCtx.moveTo(x,chart.y);timelineCtx.lineTo(x,chart.y+chart.h);timelineCtx.stroke();timelineCtx.fillStyle="#8ba0b1";timelineCtx.fillText(`${Math.round(duration*i/7)}s`,x,chart.y+chart.h+5);}
+  const bucketCount=Math.max(50,Math.min(Math.floor(chart.w/3),duration)),buckets=Array.from({length:bucketCount},()=>[0,0,0]);
+  for(const [sec,shot,hit,other] of state.game.timeline){const index=Math.min(bucketCount-1,Math.floor(sec/duration*bucketCount));buckets[index][0]+=shot;buckets[index][1]+=hit;buckets[index][2]+=other;}
+  const max=Math.max(1,...buckets.map(values=>values.reduce((a,b)=>a+b,0))),barW=chart.w/bucketCount;
+  buckets.forEach((values,index)=>{let bottom=chart.y+chart.h;values.forEach((value,i)=>{if(!value)return;const h=chart.h*value/max;timelineCtx.fillStyle=[COLORS.blue,COLORS.red,COLORS.gold][i];timelineCtx.fillRect(chart.x+index*barW,bottom-h,Math.max(1,barW-.4),h);bottom-=h;});});
+  const cursor=chart.x+chart.w*state.playhead/duration;timelineCtx.strokeStyle="#fff";timelineCtx.lineWidth=1.5;timelineCtx.beginPath();timelineCtx.moveTo(cursor,chart.y-2);timelineCtx.lineTo(cursor,chart.y+chart.h+2);timelineCtx.stroke();
+}
+
+function seek(second) {
+  if (!state.game) return;
+  state.playhead=clamp(Number(second),0,state.game.info.duration);state.lastSecond=-1;renderState(Math.floor(state.playhead));state.dirty=true;
+}
+function stopPlayback(){state.playing=false;$("#play-button").textContent="▶ 播放";}
+function togglePlayback(){if(!state.game)return;if(state.playhead>=state.game.info.duration)seek(0);state.playing=!state.playing;$("#play-button").textContent=state.playing?"Ⅱ 暂停":"▶ 播放";state.lastAnimation=performance.now();}
+function animation(now){
+  const dt=Math.min(.2,(now-state.lastAnimation)/1000);state.lastAnimation=now;
+  if(state.playing&&state.game){state.playhead+=dt*state.speed;if(state.playhead>=state.game.info.duration){state.playhead=state.game.info.duration;stopPlayback();}const second=Math.floor(state.playhead);if(second!==state.lastSecond)renderState(second);state.dirty=true;}
+  if(state.dirty&&now-state.lastDraw>30){drawMap();drawTimeline();state.lastDraw=now;}
+  requestAnimationFrame(animation);
+}
+
+$("#region-select").addEventListener("change",loadMatches);
+$("#match-select").addEventListener("change",loadRounds);
+$("#round-select").addEventListener("change",loadGame);
+$("#play-button").addEventListener("click",togglePlayback);
+$("#back-button").addEventListener("click",()=>seek(state.playhead-5));
+$("#forward-button").addEventListener("click",()=>seek(state.playhead+5));
+$("#time-slider").addEventListener("input",event=>seek(event.target.value));
+$("#speed-select").addEventListener("change",event=>state.speed=Number(event.target.value));
+timelineCanvas.addEventListener("pointerdown",event=>{if(!state.game)return;const rect=timelineCanvas.getBoundingClientRect(),x=clamp(event.clientX-rect.left-34,0,rect.width-44);seek(x/(rect.width-44)*state.game.info.duration);});
+new ResizeObserver(()=>{state.dirty=true;drawMap();drawTimeline();}).observe($(".map-stage"));
+new ResizeObserver(()=>drawTimeline()).observe($(".timeline-panel"));
+
+function initDisplayControls() {
+  const root = document.documentElement;
+  const themeButton = $("#theme-toggle");
+  const backgroundButton = $("#background-toggle");
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  const syncLabels = () => {
+    const day = root.dataset.theme === "day";
+    const simple = root.dataset.background === "simple";
+    if (themeButton) themeButton.textContent = day ? "☀ 白昼" : "☾ 黑夜";
+    if (backgroundButton) backgroundButton.textContent = simple ? "▤ 简洁背景" : "▧ 动态背景";
+    if (themeMeta) themeMeta.content = day ? "#edf2f6" : "#081019";
+  };
+  themeButton?.addEventListener("click", () => {
+    root.dataset.theme = root.dataset.theme === "day" ? "night" : "day";
+    localStorage.setItem("rmuc-dashboard-theme", root.dataset.theme);
+    syncLabels(); state.dirty = true; drawTimeline();
+  });
+  backgroundButton?.addEventListener("click", () => {
+    root.dataset.background = root.dataset.background === "simple" ? "fancy" : "simple";
+    localStorage.setItem("rmuc-dashboard-background", root.dataset.background);
+    syncLabels();
+  });
+  document.querySelectorAll("[data-scroll-target]").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-scroll-target]").forEach(item => item.classList.toggle("active",item===button));
+      document.getElementById(button.dataset.scrollTarget)?.scrollIntoView({behavior:"smooth",block:"start"});
+    });
+  });
+  syncLabels();
+}
+
+initDisplayControls(); init(); requestAnimationFrame(animation);

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="night" data-background="fancy">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#081019">
+  <title>RMUC 2026 区域赛数据中心</title>
+  <script>
+    (() => {
+      const theme = localStorage.getItem("rmuc-dashboard-theme") || "night";
+      const background = localStorage.getItem("rmuc-dashboard-background") || "fancy";
+      document.documentElement.dataset.theme = theme === "day" ? "day" : "night";
+      document.documentElement.dataset.background = background === "simple" ? "simple" : "fancy";
+    })();
+  </script>
+  <link rel="stylesheet" href="/app.css?v=4">
+</head>
+<body>
+  <div class="animated-backdrop" aria-hidden="true">
+    <div class="aurora"></div><div class="grid"></div><div class="orb one"></div>
+    <div class="orb two"></div><div class="scanline"></div>
+  </div>
+  <div class="hud-frame" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <div class="cockpit-rail" aria-hidden="true">
+      <span>T-DT TACTICAL CORE</span><span>REGIONAL DATA LINK</span>
+      <span>MAP SYNC READY</span><span>PLAYBACK ONLINE</span>
+    </div>
+
+    <div class="nav-row">
+      <nav class="dataset-nav" aria-label="数据板块">
+        <button class="dataset-tab active" type="button" data-scroll-target="top"><b>01</b> 战场回放</button>
+        <button class="dataset-tab" type="button" data-scroll-target="events"><b>02</b> 比赛事件</button>
+        <button class="dataset-tab" type="button" data-scroll-target="access"><b>03</b> 跨端访问</button>
+      </nav>
+      <div class="display-controls" aria-label="显示设置">
+        <button id="background-toggle" class="display-button" type="button">▧ 动态背景</button>
+        <button id="theme-toggle" class="display-button" type="button">☾ 黑夜</button>
+      </div>
+    </div>
+
+    <header class="app-header panel hero-card" id="top">
+      <div class="brand">
+        <span class="eyebrow">RM ARMOR BAY // 2026 REGIONAL DATA CORE</span>
+        <h1>RMUC 2026 区域赛数据中心</h1>
+        <p>基于真实比赛时序数据的战场态势、机器人轨迹与事件回放</p>
+        <div class="combat-strip" aria-hidden="true">
+          <span><b>DATA</b> ONLINE</span><span><b>MAP</b> SYNC</span>
+          <span><b>MOBILE</b> READY</span><span><b>REPLAY</b> ACTIVE</span>
+        </div>
+      </div>
+      <div class="selectors" aria-label="比赛筛选">
+        <label><span>赛区</span><select id="region-select"></select></label>
+        <label class="match-select"><span>场次</span><select id="match-select"></select></label>
+        <label><span>局次</span><select id="round-select"></select></label>
+      </div>
+    </header>
+
+    <section class="overview-strip" aria-label="当前比赛概览">
+      <article class="overview-stat"><span>当前对局</span><b id="overview-match">载入中</b></article>
+      <article class="overview-stat"><span>比赛时长</span><b id="overview-duration">--:--</b></article>
+      <article class="overview-stat"><span>在线机器人</span><b id="overview-robots">--/--</b></article>
+      <article class="overview-stat"><span>事件总量</span><b id="overview-events">--</b></article>
+    </section>
+
+    <section class="top-hud panel">
+      <div id="top-red" class="top-team red"></div>
+      <div id="match-center" class="match-center">载入比赛中…</div>
+      <div id="top-blue" class="top-team blue mirror"></div>
+    </section>
+
+    <main class="dashboard-grid">
+      <aside id="red-panel" class="team-panel panel red"></aside>
+      <div class="center-stack">
+        <section class="map-stage panel">
+          <div class="map-heading">
+            <div><h2>实时战场 · 俯视图</h2><p>TDT Client 2026 战场地图 · 最近 20 秒轨迹</p></div>
+            <span id="map-match-label"></span>
+          </div>
+          <div class="map-wrap"><canvas id="map-canvas" aria-label="战场地图"></canvas></div>
+          <div class="map-legend">
+            <span class="red-dot"></span><span id="red-legend">红方</span>
+            <span class="blue-dot"></span><span id="blue-legend">蓝方</span>
+            <b id="map-time">T + 001s</b>
+          </div>
+        </section>
+        <section class="controls panel" aria-label="回放控制">
+          <button id="play-button" class="primary">▶ 播放</button>
+          <button id="back-button">−5s</button><button id="forward-button">+5s</button>
+          <input id="time-slider" type="range" min="0" max="420" value="1" aria-label="回放进度">
+          <output id="time-output">00:01 / 07:00</output>
+          <select id="speed-select" aria-label="播放速度">
+            <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+            <option value="2">2×</option><option value="4">4×</option>
+          </select>
+        </section>
+      </div>
+      <aside id="blue-panel" class="team-panel panel blue"></aside>
+    </main>
+
+    <section class="bottom-grid" id="events">
+      <div class="timeline-panel panel">
+        <div class="section-title"><h2>全局事件时间线</h2><span>蓝：发弹　红：受击　黄：其他</span></div>
+        <canvas id="timeline-canvas" aria-label="事件时间线"></canvas>
+      </div>
+      <div class="events-panel panel">
+        <div class="section-title"><h2>最近事件</h2><span id="event-count">0 条</span></div>
+        <div id="event-list" class="event-list"></div>
+      </div>
+    </section>
+
+    <footer id="access">
+      <span id="network-hint">正在获取手机访问地址…</span>
+      <span>手机与 Windows 设备需和服务端连接同一局域网</span>
+    </footer>
+  </div>
+
+  <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js?v=4"></script>
+</body>
+</html>
