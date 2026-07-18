@@ -53,10 +53,10 @@ def build_catalog(db: ApiDatabase):
 
 def export_frontend():
     source = (APP_DIR / "index.html").read_text(encoding="utf-8")
-    source = source.replace('href="/app.css?v=12"', 'href="./app.css?v=12"')
+    source = source.replace('href="/app.css?v=13"', 'href="./app.css?v=13"')
     source = source.replace(
-        '<script src="/app.js?v=12"></script>',
-        '<script>window.RMUC_STATIC_DATA = true;</script>\n  <script src="./app.js?v=12"></script>',
+        '<script src="/app.js?v=13"></script>',
+        '<script>window.RMUC_STATIC_DATA = true;</script>\n  <script src="./app.js?v=13"></script>',
     )
     write_if_changed(DOCS_DIR / "index.html", source.encode("utf-8"))
     write_if_changed(DOCS_DIR / "app.css", (APP_DIR / "web" / "app.css").read_bytes())

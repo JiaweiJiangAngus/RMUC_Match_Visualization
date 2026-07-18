@@ -10,6 +10,11 @@ const STRUCTURES = [
 ];
 const R = { id:0, type:1, side:2, hp:3, max:4, x:5, y:6, yaw:7, a17:8, a42:9, coins:10, vulnerable:11 };
 const E = { sec:0, type:1, robot:2, side:3, category:4, value:5, note:6, target:7 };
+const FIELD_WIDTH_METERS = 28;
+const FIELD_HEIGHT_METERS = 15;
+const MAP_HEIGHT_METERS = 17;
+const FIELD_Y_SPAN = FIELD_HEIGHT_METERS / MAP_HEIGHT_METERS;
+const FIELD_Y_OFFSET = (1 - FIELD_Y_SPAN) / 2;
 const STATIC_DATA = Boolean(window.RMUC_STATIC_DATA);
 const MEMORY_KEY = "rmuc-dashboard-memory-v1";
 const MEMORY_ENABLED_KEY = "rmuc-dashboard-memory-enabled";
@@ -350,7 +355,11 @@ function canvasSize(canvas, ratio, fixedHeight=null) {
   const ctx = canvas.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
   return { width, height, dpr };
 }
-function mapPoint(x,y,width,height) { return [clamp(x/28,0,1)*width, (1-clamp(y/15,0,1))*height]; }
+function mapPoint(x,y,width,height) {
+  const u=clamp(x/FIELD_WIDTH_METERS,0,1);
+  const fieldV=1-clamp(y/FIELD_HEIGHT_METERS,0,1);
+  return [u*width,(FIELD_Y_OFFSET+fieldV*FIELD_Y_SPAN)*height];
+}
 function uvPoint(u,v,width,height) { return [u*width,v*height]; }
 
 function drawMap() {
