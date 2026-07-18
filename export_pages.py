@@ -52,10 +52,10 @@ def build_catalog(db: ApiDatabase):
 
 def export_frontend():
     source = (APP_DIR / "index.html").read_text(encoding="utf-8")
-    source = source.replace('href="/app.css?v=5"', 'href="./app.css?v=5"')
+    source = source.replace('href="/app.css?v=6"', 'href="./app.css?v=6"')
     source = source.replace(
-        '<script src="/app.js?v=5"></script>',
-        '<script>window.RMUC_STATIC_DATA = true;</script>\n  <script src="./app.js?v=5"></script>',
+        '<script src="/app.js?v=6"></script>',
+        '<script>window.RMUC_STATIC_DATA = true;</script>\n  <script src="./app.js?v=6"></script>',
     )
     write_if_changed(DOCS_DIR / "index.html", source.encode("utf-8"))
     write_if_changed(DOCS_DIR / "app.css", (APP_DIR / "web" / "app.css").read_bytes())
@@ -71,13 +71,17 @@ def parse_args():
     parser = argparse.ArgumentParser(description="导出 RMUC 2026 GitHub Pages 静态站点")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite 数据集路径")
     parser.add_argument("--limit", type=int, default=0, help="仅导出前 N 局，用于快速检查")
+    parser.add_argument("--frontend-only", action="store_true", help="只更新页面、样式和脚本")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    db = ApiDatabase(args.db.resolve())
     export_frontend()
+    if args.frontend_only:
+        print(f"GitHub Pages 前端已更新：{DOCS_DIR}", flush=True)
+        return
+    db = ApiDatabase(args.db.resolve())
     catalog, game_ids = build_catalog(db)
     if args.limit > 0:
         game_ids = game_ids[:args.limit]

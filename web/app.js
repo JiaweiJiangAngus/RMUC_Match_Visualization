@@ -96,8 +96,7 @@ async function getJson(url) {
 
 async function init() {
   try {
-    const [regions, info] = await Promise.all([getJson("/api/regions"), getJson("/api/info")]);
-    $("#network-hint").textContent = `手机访问：${info.phone_url}`;
+    const regions = await getJson("/api/regions");
     fillSelect($("#region-select"), regions.regions.map(region => [region, region]));
     await loadMatches();
   } catch (error) { setLoading(false); showToast(error.message); }
@@ -359,6 +358,12 @@ $("#forward-button").addEventListener("click",()=>seek(state.playhead+5));
 $("#time-slider").addEventListener("input",event=>seek(event.target.value));
 $("#speed-select").addEventListener("change",event=>state.speed=Number(event.target.value));
 timelineCanvas.addEventListener("pointerdown",event=>{if(!state.game)return;const rect=timelineCanvas.getBoundingClientRect(),x=clamp(event.clientX-rect.left-34,0,rect.width-44);seek(x/(rect.width-44)*state.game.info.duration);});
+$("#map-fullscreen")?.addEventListener("click",async()=>{
+  try {
+    if(document.fullscreenElement) await document.exitFullscreen();
+    else await $(".map-stage").requestFullscreen();
+  } catch(error) { showToast("当前浏览器不支持地图全屏"); }
+});
 new ResizeObserver(()=>{state.dirty=true;drawMap();drawTimeline();}).observe($(".map-stage"));
 new ResizeObserver(()=>drawTimeline()).observe($(".timeline-panel"));
 
@@ -386,7 +391,7 @@ function initDisplayControls() {
   });
   document.querySelectorAll("[data-scroll-target]").forEach(button => {
     button.addEventListener("click", () => {
-      document.querySelectorAll("[data-scroll-target]").forEach(item => item.classList.toggle("active",item===button));
+      document.querySelectorAll("[data-scroll-target]").forEach(item => item.classList.toggle("active",item.dataset.scrollTarget===button.dataset.scrollTarget));
       document.getElementById(button.dataset.scrollTarget)?.scrollIntoView({behavior:"smooth",block:"start"});
     });
   });

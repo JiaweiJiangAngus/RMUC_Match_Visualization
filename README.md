@@ -16,33 +16,30 @@
 ./run.sh --db /path/to/dataset.sqlite
 ```
 
-## 手机 / Windows 模式
+## 本地 Web 开发模式
 
-在 Qt 主窗口顶部点击“手机 / Windows”，程序会启动响应式 Web 界面并打开本机浏览器。
-本地动态版首页入口是项目根目录的 `index.html`；页面通过 `web_app.py` 读取 SQLite 数据，因此请通过下面的服务地址访问，不要直接使用 `file://` 打开。
-
-- 本机访问：`http://127.0.0.1:8876`
-- 手机或其他 Windows 电脑：使用弹窗显示的局域网地址，例如 `http://192.168.43.34:8876`
-- 手机、Windows 电脑与运行服务的电脑需要连接同一局域网
-- 手机端会自动改为单列触控布局；Windows 端会自动使用宽屏三栏布局
-- Windows 上若已复制完整数据目录，也可以双击 `start_web.bat` 独立启动
-
-Linux 上也可在终端直接启动 Web 版：
+项目根目录的 `index.html` 是连接 SQLite API 的本地开发版。启动方式：
 
 ```bash
 ./start_web.sh
 ```
 
-若其他设备无法访问，请允许系统防火墙放行 TCP 端口 `8876`。
+然后访问 `http://127.0.0.1:8876`。Windows 本地开发可运行 `start_web.bat`。
 
 ## GitHub Pages 静态版
 
-`docs/` 中是可直接发布的完整静态站点，包含全部 613 局比赛。比赛数据按局保存为 gzip 文件，页面只在切换对局时下载对应文件，不需要运行 Python 后端。
+`docs/` 中是可直接发布的完整静态站点，包含全部 613 局比赛。比赛数据按局保存为 gzip 文件，页面只在切换对局时下载对应文件，不需要运行 Python 后端。手机直接打开 GitHub Pages 地址即可使用，并提供底部触控导航、地图全屏和手机优先的信息顺序。
 
 数据集更新后重新生成：
 
 ```bash
 python3 export_pages.py
+```
+
+如果只修改了 HTML、CSS 或 JavaScript，可以快速更新前端而不重新导出比赛数据：
+
+```bash
+python3 export_pages.py --frontend-only
 ```
 
 本地检查静态站点：

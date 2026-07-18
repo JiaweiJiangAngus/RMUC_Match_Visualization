@@ -7,7 +7,6 @@ import argparse
 import bisect
 import math
 import os
-import socket
 import sqlite3
 import sys
 from collections import defaultdict
@@ -15,8 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PyQt5.QtCore import QPointF, QProcess, QRectF, Qt, QTimer, QUrl, pyqtSignal
-from PyQt5.QtGui import QColor, QDesktopServices, QFont, QImage, QPainter, QPainterPath, QPen
+from PyQt5.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -661,7 +660,6 @@ class TimelineWidget(QWidget):
         self.setMinimumHeight(195)
         self.setMaximumHeight(220)
         self.duration = 420
-        self.web_process: Optional[QProcess] = None
         self.second = 0
         self.data = {}
         self.setCursor(Qt.PointingHandCursor)
@@ -783,11 +781,6 @@ class MainWindow(QMainWindow):
         header.addWidget(self._field("赛区", self.region_combo))
         header.addWidget(self._field("场次", self.match_combo))
         header.addWidget(self._field("局次", self.round_combo))
-        self.web_button = QPushButton("手机 / Windows")
-        self.web_button.setObjectName("webButton")
-        self.web_button.setFixedHeight(43)
-        self.web_button.clicked.connect(self._open_web_mode)
-        header.addWidget(self._field("跨平台", self.web_button))
         outer.addLayout(header)
 
         match_hud = QFrame()
@@ -941,9 +934,6 @@ class MainWindow(QMainWindow):
             QPushButton:hover {{ background: #20384c; color: white; }}
             QPushButton#primaryButton {{ background: #16755e; color: white; border-color: #26977c; font-weight: 700; }}
             QPushButton#primaryButton:hover {{ background: #1a8b70; }}
-            QPushButton#webButton {{ color: #e9fbf6; background: #1b5e70; border-color: #318399;
-                                     font-weight: 800; padding: 7px 14px; }}
-            QPushButton#webButton:hover {{ background: #23768a; }}
             QSlider::groove:horizontal {{ height: 4px; background: #2a3c4b; border-radius: 2px; }}
             QSlider::sub-page:horizontal {{ background: {GREEN}; border-radius: 2px; }}
             QSlider::handle:horizontal {{ background: #f3fbff; width: 14px; margin: -5px 0; border-radius: 7px; }}
@@ -1168,44 +1158,6 @@ class MainWindow(QMainWindow):
                 elif col == 2 and text_value == "受击":
                     item.setForeground(QColor(GOLD))
                 self.event_table.setItem(row_idx, col, item)
-
-    @staticmethod
-    def _lan_ip() -> str:
-        try:
-            from web_app import local_ip
-            return local_ip()
-        except (ImportError, OSError):
-            return "本机IP"
-
-    @staticmethod
-    def _web_server_running() -> bool:
-        try:
-            with socket.create_connection(("127.0.0.1", 8876), timeout=0.2):
-                return True
-        except OSError:
-            return False
-
-    def _open_web_mode(self):
-        if not self._web_server_running():
-            self.web_process = QProcess(self)
-            self.web_process.setProgram(sys.executable)
-            self.web_process.setArguments([
-                str(APP_DIR / "web_app.py"), "--host", "0.0.0.0", "--port", "8876",
-                "--db", str(self.store.path),
-            ])
-            self.web_process.setWorkingDirectory(str(APP_DIR))
-            self.web_process.setProcessChannelMode(QProcess.MergedChannels)
-            self.web_process.start()
-            self.web_process.waitForStarted(1500)
-        QTimer.singleShot(500, lambda: QDesktopServices.openUrl(QUrl("http://127.0.0.1:8876")))
-        QMessageBox.information(
-            self,
-            "手机 / Windows 模式",
-            "Web 可视化已启动。\n\n"
-            "本机浏览器：\nhttp://127.0.0.1:8876\n\n"
-            f"手机或其他 Windows 电脑（同一局域网）：\n"
-            f"http://{self._lan_ip()}:8876",
-        )
 
     @staticmethod
     def _format_duration(seconds: int) -> str:
