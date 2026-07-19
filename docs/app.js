@@ -80,6 +80,10 @@ const state = {
   game: null, playhead: 1, speed: 1, playing: false, lastSecond: -1,
   lastAnimation: performance.now(), lastDraw: 0, dirty: true, tracks: new Map(),
   uavCounterWindows: new Map(),
+  predictionEnabled: false, predictionWorker: null, predictionReady: false,
+  predictionPending: false, predictionRequestId: 0, predictionActiveRequest: 0,
+  predictionGeneration: 0, predictionWantedSecond: null, predictionSecond: -1,
+  predictionLatency: 0, predictions: [],
 };
 
 const mapCanvas = $("#map-canvas");
@@ -210,6 +214,11 @@ async function loadGame() {
   try {
     const gameId = $("#round-select").value;
     state.game = await getJson(`/api/game?game_id=${encodeURIComponent(gameId)}`);
+    state.predictionGeneration += 1;
+    state.predictionPending = false;
+    state.predictionWantedSecond = null;
+    state.predictionSecond = -1;
+    state.predictions = [];
     buildTracks();
     const seconds = Object.keys(state.game.frames).map(Number);
     const firstSecond = seconds.length ? Math.min(...seconds) : 0;
@@ -357,6 +366,98 @@ function renderState(second) {
   $("#time-output").textContent = `${fmtTime(second)} / ${fmtTime(info.duration)}`;
   $("#time-slider").value = second;
   drawTimeline(); state.lastSecond = second; state.dirty = true;
+  schedulePrediction(second);
+}
+
+function setPredictionStatus(text,kind="") {
+  const label=$("#prediction-status");
+  if (!label) return;
+  label.textContent=text;
+  label.classList.toggle("ready",kind==="ready");
+  label.classList.toggle("error",kind==="error");
+}
+function ensurePredictionWorker() {
+  if (state.predictionWorker) return true;
+  if (!("Worker" in window)) {
+    setPredictionStatus("浏览器不支持后台预测","error");
+    return false;
+  }
+  const worker=new Worker("./prediction-worker.js?v=15");
+  worker.onmessage=event=>{
+    const message=event.data||{};
+    if (message.type==="status") {
+      state.predictionReady=message.status==="ready";
+      if (state.predictionEnabled) setPredictionStatus(message.text,message.status==="ready"?"ready":"");
+      return;
+    }
+    if (message.type==="error") {
+      if (message.requestId===state.predictionActiveRequest) state.predictionPending=false;
+      if (message.generation!==state.predictionGeneration) return;
+      state.predictions=[]; state.predictionSecond=-1;
+      setPredictionStatus(`预测失败：${message.message}`,"error"); state.dirty=true;
+      return;
+    }
+    if (message.type!=="result") return;
+    if (message.requestId===state.predictionActiveRequest) state.predictionPending=false;
+    if (message.generation!==state.predictionGeneration||!state.predictionEnabled) return;
+    const currentSecond=Math.floor(state.playhead);
+    if (message.second===currentSecond) {
+      state.predictions=message.predictions||[];
+      state.predictionSecond=message.second;
+      state.predictionLatency=Number(message.latencyMs||0);
+      const moving=state.predictions.filter(item=>item.moving).length;
+      setPredictionStatus(`${state.predictions.length} 台 · ${state.predictionLatency.toFixed(0)}ms · 运动 ${moving}`,"ready");
+      state.dirty=true;
+    }
+    const wanted=state.predictionWantedSecond;
+    state.predictionWantedSecond=null;
+    if (wanted!=null&&wanted!==message.second) schedulePrediction(wanted);
+    else if (currentSecond!==message.second) schedulePrediction(currentSecond);
+  };
+  worker.onerror=event=>{
+    state.predictionPending=false; state.predictionReady=false; state.predictions=[];
+    setPredictionStatus(`预测线程错误：${event.message||"未知错误"}`,"error");
+  };
+  state.predictionWorker=worker;
+  return true;
+}
+function schedulePrediction(second) {
+  if (!state.predictionEnabled||!state.game) return;
+  second=Math.floor(Number(second));
+  if (second<5) {
+    state.predictions=[]; state.predictionSecond=-1;
+    setPredictionStatus("需要前 5 秒轨迹","ready");
+    return;
+  }
+  if (state.predictionPending) {
+    state.predictionWantedSecond=second;
+    return;
+  }
+  if (!ensurePredictionWorker()) return;
+  const history={};
+  for (const offset of [0,1,3,5]) history[String(offset)]=frameAt(Math.max(0,second-offset));
+  const requestId=++state.predictionRequestId;
+  state.predictionActiveRequest=requestId;
+  state.predictionPending=true;
+  state.predictionWantedSecond=null;
+  state.predictionWorker.postMessage({
+    type:"predict", requestId, generation:state.predictionGeneration, second,
+    duration:state.game.info.duration, history,
+  });
+}
+function togglePrediction() {
+  state.predictionEnabled=!state.predictionEnabled;
+  const button=$("#prediction-button");
+  button.classList.toggle("active",state.predictionEnabled);
+  button.setAttribute("aria-pressed",String(state.predictionEnabled));
+  button.textContent=state.predictionEnabled?"预测 开":"预测 关";
+  if (!state.predictionEnabled) {
+    state.predictions=[]; state.predictionSecond=-1; state.predictionWantedSecond=null;
+    setPredictionStatus("预测已关闭"); state.dirty=true;
+    return;
+  }
+  setPredictionStatus(state.predictionReady?"预测已开启":"模型加载中",state.predictionReady?"ready":"");
+  schedulePrediction(Math.floor(state.playhead));
 }
 
 function canvasSize(canvas, ratio, fixedHeight=null) {
@@ -396,6 +497,8 @@ function drawMap() {
     mapCtx.lineWidth=2*scale; mapCtx.stroke();
   }
 
+  drawPredictions(width,height,scale,second);
+
   for (const [side,type,u,v,label] of STRUCTURES) {
     const robot=robots.find(item=>item[R.side]===side&&item[R.type]===type);
     drawStructure(...uvPoint(u,v,width,height),side,label,robot,scale);
@@ -407,6 +510,46 @@ function drawMap() {
     drawRobot(...mapPoint(x,y,width,height),robot,scale,state.playhead);
   }
   state.dirty=false;
+}
+function drawPredictions(width,height,scale,second) {
+  if (!state.predictionEnabled||state.predictionSecond!==second||!state.predictions.length) return;
+  mapCtx.save();
+  for (let predictionIndex=0;predictionIndex<state.predictions.length;predictionIndex++) {
+    const prediction=state.predictions[predictionIndex];
+    const route=prediction.points.filter(point=>point.horizon<=10);
+    if (!route.length) continue;
+    const color=colorFor(prediction.side), [startX,startY]=mapPoint(prediction.current[0],prediction.current[1],width,height);
+    mapCtx.beginPath(); mapCtx.moveTo(startX,startY);
+    for (const point of route) mapCtx.lineTo(...mapPoint(point.x,point.y,width,height));
+    mapCtx.setLineDash([6*scale,4*scale]);
+    mapCtx.strokeStyle=color; mapCtx.globalAlpha=.84; mapCtx.lineWidth=2.2*scale; mapCtx.stroke();
+    mapCtx.setLineDash([]); mapCtx.globalAlpha=1;
+    for (const point of route) {
+      const [x,y]=mapPoint(point.x,point.y,width,height);
+      const radius=(point===route.at(-1)?5:3.2)*scale;
+      mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2);
+      mapCtx.fillStyle="rgba(4,11,17,.82)"; mapCtx.fill();
+      mapCtx.strokeStyle=color; mapCtx.lineWidth=1.8*scale; mapCtx.stroke();
+    }
+    const primary=route.at(-1), [x,y]=mapPoint(primary.x,primary.y,width,height);
+    const confidence=Math.round(Number(prediction.confidence||0)*100);
+    const compact=width<690;
+    const label=compact
+      ? `${prediction.role}→${prediction.destination}`
+      : `${prediction.role} → ${prediction.destination}  ≈${confidence}%`;
+    mapCtx.font=`800 ${Math.max(9,9.5*scale)}px sans-serif`;
+    const padding=5*scale, boxHeight=18*scale, boxWidth=mapCtx.measureText(label).width+padding*2;
+    const preferLeft=prediction.side==="蓝";
+    let boxX=preferLeft?x-boxWidth-7*scale:x+7*scale;
+    boxX=clamp(boxX,2,width-boxWidth-2);
+    let boxY=y+(predictionIndex%2===0?-boxHeight-7*scale:7*scale);
+    boxY=clamp(boxY,2,height-boxHeight-2);
+    mapCtx.fillStyle="rgba(3,10,16,.89)"; mapCtx.strokeStyle=color; mapCtx.lineWidth=1*scale;
+    mapCtx.beginPath(); mapCtx.roundRect(boxX,boxY,boxWidth,boxHeight,4*scale); mapCtx.fill(); mapCtx.stroke();
+    mapCtx.fillStyle="#f3f8fb"; mapCtx.textAlign="left"; mapCtx.textBaseline="middle";
+    mapCtx.fillText(label,boxX+padding,boxY+boxHeight/2);
+  }
+  mapCtx.restore();
 }
 function drawStructure(x,y,side,label,robot,scale) {
   const radius=14*scale, hp=Number(robot?.[R.hp]||0),max=Number(robot?.[R.max]||0),alive=!robot||hp>0;
@@ -508,6 +651,7 @@ $("#back-button").addEventListener("click",()=>seek(state.playhead-5));
 $("#forward-button").addEventListener("click",()=>seek(state.playhead+5));
 $("#time-slider").addEventListener("input",event=>seek(event.target.value));
 $("#speed-select").addEventListener("change",event=>{state.speed=Number(event.target.value);memory.speed=state.speed;persistMemory();});
+$("#prediction-button")?.addEventListener("click",togglePrediction);
 timelineCanvas.addEventListener("pointerdown",event=>{if(!state.game)return;const rect=timelineCanvas.getBoundingClientRect(),x=clamp(event.clientX-rect.left-34,0,rect.width-44);seek(x/(rect.width-44)*state.game.info.duration);});
 $("#map-fullscreen")?.addEventListener("click",async()=>{
   try {

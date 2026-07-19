@@ -1,0 +1,168 @@
+{
+  "teams": 44,
+  "ground_roles": 5,
+  "team_role_rows": 220,
+  "ability_rows": 1980,
+  "status_counts": {
+    "central_highland_step": {
+      "人工确认": 0,
+      "已证实": 80,
+      "较强迹象": 19,
+      "可能具备": 2,
+      "弱迹象": 4,
+      "未观察到": 115,
+      "无样本": 0
+    },
+    "road_step": {
+      "人工确认": 0,
+      "已证实": 99,
+      "较强迹象": 23,
+      "可能具备": 5,
+      "弱迹象": 11,
+      "未观察到": 82,
+      "无样本": 0
+    },
+    "fly_ramp": {
+      "人工确认": 0,
+      "已证实": 57,
+      "较强迹象": 0,
+      "可能具备": 0,
+      "弱迹象": 0,
+      "未观察到": 163,
+      "无样本": 0
+    },
+    "rough_road": {
+      "人工确认": 0,
+      "已证实": 0,
+      "较强迹象": 30,
+      "可能具备": 10,
+      "弱迹象": 13,
+      "未观察到": 167,
+      "无样本": 0
+    },
+    "road_tunnel": {
+      "人工确认": 0,
+      "已证实": 0,
+      "较强迹象": 35,
+      "可能具备": 1,
+      "弱迹象": 7,
+      "未观察到": 177,
+      "无样本": 0
+    },
+    "highland_tunnel": {
+      "人工确认": 0,
+      "已证实": 0,
+      "较强迹象": 49,
+      "可能具备": 11,
+      "弱迹象": 11,
+      "未观察到": 149,
+      "无样本": 0
+    },
+    "slope_43": {
+      "人工确认": 0,
+      "已证实": 0,
+      "较强迹象": 5,
+      "可能具备": 2,
+      "弱迹象": 9,
+      "未观察到": 204,
+      "无样本": 0
+    },
+    "trapezoid_highland_step": {
+      "人工确认": 0,
+      "已证实": 0,
+      "较强迹象": 9,
+      "可能具备": 8,
+      "弱迹象": 13,
+      "未观察到": 190,
+      "无样本": 0
+    },
+    "central_highland_400mm_jump": {
+      "人工确认": 9,
+      "已证实": 0,
+      "较强迹象": 3,
+      "可能具备": 2,
+      "弱迹象": 6,
+      "未观察到": 200,
+      "无样本": 0
+    }
+  },
+  "method": {
+    "manual_confirmations": {
+      "path": "/home/jwj/Desktop/RMUC2026数据可视化/analysis/manual_terrain_capabilities.csv",
+      "count": 9,
+      "priority": "higher_than_official_and_trajectory_evidence"
+    },
+    "official_event_mapping": {
+      "过中央高地": "central_highland_step",
+      "台阶跨越": "road_step",
+      "飞坡": "fly_ramp"
+    },
+    "trajectory_gate_detector": {
+      "complete_side_to_side_passage": true,
+      "max_time_seconds": {
+        "central_highland_step": 8.0,
+        "road_step": 7.0,
+        "fly_ramp": 12.0,
+        "rough_road": 12.0,
+        "road_tunnel": 8.0,
+        "highland_tunnel": 10.0,
+        "slope_43": 12.0,
+        "trapezoid_highland_step": 10.0
+      },
+      "lateral_margin_m": 0.28,
+      "approach_margin_m": 0.65,
+      "position_interval_expected_seconds": 1.0
+    },
+    "jump_400mm": {
+      "direction": "outside_low_to_central_highland_inside_high",
+      "minimum_median_z_gain_m": 0.2,
+      "xy_step_range_m": [
+        0.55,
+        2.8
+      ],
+      "requires_consecutive_outside_points": 2,
+      "requires_consecutive_inside_points": 3,
+      "excludes_designed_entrances": [
+        "central_highland_step",
+        "road_tunnel",
+        "highland_tunnel"
+      ],
+      "tunnel_exclusion_radius_m": {
+        "highland_tunnel": 2.8,
+        "road_tunnel": 2.2
+      }
+    },
+    "detector_crossing_counts": {
+      "rough_road": 541,
+      "road_tunnel": 687,
+      "highland_tunnel": 1178,
+      "road_step": 1892,
+      "central_highland_step": 1707,
+      "trapezoid_highland_step": 87,
+      "fly_ramp": 262,
+      "slope_43": 59,
+      "central_highland_400mm_jump": 102
+    },
+    "official_event_detector_validation": {
+      "fly_ramp": {
+        "events": 566,
+        "matched": 183,
+        "match_rate": 0.3233,
+        "tolerance_seconds": 15.0
+      },
+      "road_step": {
+        "events": 715,
+        "matched": 428,
+        "match_rate": 0.5986,
+        "tolerance_seconds": 15.0
+      },
+      "central_highland_step": {
+        "events": 917,
+        "matched": 674,
+        "match_rate": 0.735,
+        "tolerance_seconds": 15.0
+      }
+    },
+    "caveat": "trajectory-only evidence is probabilistic; not observed is not a negative capability label"
+  }
+}

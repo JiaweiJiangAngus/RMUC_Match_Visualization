@@ -1,0 +1,433 @@
+{
+  "methodology": {
+    "team_count": 44,
+    "direct_count": 28,
+    "revival_count": 16,
+    "central_highland_polygon_m": [
+      [
+        9.4,
+        4.2
+      ],
+      [
+        10.8,
+        2.6
+      ],
+      [
+        16.0,
+        2.6
+      ],
+      [
+        18.6,
+        4.7
+      ],
+      [
+        18.6,
+        10.2
+      ],
+      [
+        17.0,
+        12.1
+      ],
+      [
+        11.4,
+        12.1
+      ],
+      [
+        9.4,
+        10.1
+      ]
+    ],
+    "z_flat_baseline_by_type": {
+      "步兵3": 0.166,
+      "步兵4": 0.128,
+      "英雄": 0.338,
+      "工程": 0.473,
+      "哨兵": 0.187
+    },
+    "terrain_confirmation": "中央高地范围内、比兵种开局平地Z基线高0.25m、连续至少3秒；至少2局且某兵种累计高位活动30秒，记为中央高地已观察",
+    "limitation": "样本中未观察到不等于机器人不能跨越；17mm基地伤害不能由裁判数据唯一归因到步兵/哨兵/空中。"
+  },
+  "cohorts": {
+    "direct_win_rate": 0.6888,
+    "revival_win_rate": 0.5407,
+    "confirmed_terrain_teams": 44,
+    "direct": {
+      "teams": 28,
+      "games": 448,
+      "base_damage_per_game": 871.4688,
+      "base_damage_mix": {
+        "17mm": 0.469,
+        "42mm": 0.3743,
+        "飞镖": 0.1568
+      },
+      "mean_enemy_half_rate": 0.2218,
+      "mean_deep_rate": 0.0433,
+      "outpost_damage_per_game": 1477.9107
+    },
+    "revival": {
+      "teams": 16,
+      "games": 261,
+      "base_damage_per_game": 352.4636,
+      "base_damage_mix": {
+        "17mm": 0.6039,
+        "42mm": 0.1981,
+        "飞镖": 0.1979
+      },
+      "mean_enemy_half_rate": 0.2005,
+      "mean_deep_rate": 0.0305,
+      "outpost_damage_per_game": 1465.0115
+    }
+  },
+  "leaders": {
+    "base_damage_per_game": [
+      {
+        "school": "东北大学",
+        "team": "TDT",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 2576.3333
+      },
+      {
+        "school": "五邑大学",
+        "team": "IMCA",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 2192.6667
+      },
+      {
+        "school": "中国石油大学（华东）",
+        "team": "RPS",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 1763.375
+      },
+      {
+        "school": "西安交通大学",
+        "team": "笃行",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 1743.8182
+      },
+      {
+        "school": "同济大学",
+        "team": "SuperPower",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 1594.5
+      },
+      {
+        "school": "哈尔滨工业大学（威海）",
+        "team": "HERO",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 1387.2381
+      },
+      {
+        "school": "华南农业大学",
+        "team": "Taurus",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 1355.95
+      },
+      {
+        "school": "深圳大学",
+        "team": "RobotPilots",
+        "stage": "全国赛直通",
+        "base_damage_per_game": 1187.4615
+      }
+    ],
+    "outpost_damage_per_game": [
+      {
+        "school": "华南农业大学",
+        "team": "Taurus",
+        "stage": "全国赛直通",
+        "outpost_damage_per_game": 1612.5
+      },
+      {
+        "school": "五邑大学",
+        "team": "IMCA",
+        "stage": "全国赛直通",
+        "outpost_damage_per_game": 1600.0
+      },
+      {
+        "school": "山东科技大学",
+        "team": "SmartRobot",
+        "stage": "全国赛直通",
+        "outpost_damage_per_game": 1564.1176
+      },
+      {
+        "school": "沈阳理工大学",
+        "team": "Ambition",
+        "stage": "复活赛",
+        "outpost_damage_per_game": 1544.1176
+      },
+      {
+        "school": "广州城市理工学院",
+        "team": "野狼",
+        "stage": "全国赛直通",
+        "outpost_damage_per_game": 1537.5
+      },
+      {
+        "school": "东莞理工学院",
+        "team": "ACE",
+        "stage": "全国赛直通",
+        "outpost_damage_per_game": 1534.0909
+      },
+      {
+        "school": "电子科技大学中山学院",
+        "team": "RoboBraver",
+        "stage": "全国赛直通",
+        "outpost_damage_per_game": 1500.0
+      },
+      {
+        "school": "上海交通大学",
+        "team": "交龙",
+        "stage": "全国赛直通",
+        "outpost_damage_per_game": 1500.0
+      }
+    ],
+    "deep_rate": [
+      {
+        "school": "西安交通大学",
+        "team": "笃行",
+        "stage": "全国赛直通",
+        "deep_rate": 0.098
+      },
+      {
+        "school": "中国石油大学（华东）",
+        "team": "RPS",
+        "stage": "全国赛直通",
+        "deep_rate": 0.0963
+      },
+      {
+        "school": "哈尔滨工业大学（威海）",
+        "team": "HERO",
+        "stage": "全国赛直通",
+        "deep_rate": 0.0927
+      },
+      {
+        "school": "东北大学",
+        "team": "TDT",
+        "stage": "全国赛直通",
+        "deep_rate": 0.0915
+      },
+      {
+        "school": "深圳大学",
+        "team": "RobotPilots",
+        "stage": "全国赛直通",
+        "deep_rate": 0.0755
+      },
+      {
+        "school": "五邑大学",
+        "team": "IMCA",
+        "stage": "全国赛直通",
+        "deep_rate": 0.0749
+      },
+      {
+        "school": "厦门大学嘉庚学院",
+        "team": "TCR",
+        "stage": "复活赛",
+        "deep_rate": 0.0686
+      },
+      {
+        "school": "北京理工大学",
+        "team": "追梦",
+        "stage": "全国赛直通",
+        "deep_rate": 0.0659
+      }
+    ],
+    "terrain_seconds_per_game": [
+      {
+        "school": "深圳大学",
+        "team": "RobotPilots",
+        "stage": "全国赛直通",
+        "terrain_seconds_per_game": 459.0
+      },
+      {
+        "school": "北京理工大学",
+        "team": "追梦",
+        "stage": "全国赛直通",
+        "terrain_seconds_per_game": 458.5
+      },
+      {
+        "school": "华南理工大学",
+        "team": "华南虎",
+        "stage": "全国赛直通",
+        "terrain_seconds_per_game": 393.8824
+      },
+      {
+        "school": "仲恺农业工程学院",
+        "team": "奇点",
+        "stage": "全国赛直通",
+        "terrain_seconds_per_game": 388.3333
+      },
+      {
+        "school": "东北大学",
+        "team": "TDT",
+        "stage": "全国赛直通",
+        "terrain_seconds_per_game": 371.4444
+      },
+      {
+        "school": "西安交通大学",
+        "team": "笃行",
+        "stage": "全国赛直通",
+        "terrain_seconds_per_game": 351.4545
+      },
+      {
+        "school": "上海交通大学",
+        "team": "交龙",
+        "stage": "全国赛直通",
+        "terrain_seconds_per_game": 350.1818
+      },
+      {
+        "school": "南京航空航天大学金城学院",
+        "team": "Born of Fire",
+        "stage": "复活赛",
+        "terrain_seconds_per_game": 348.0
+      }
+    ],
+    "sentry_mean_x": [
+      {
+        "school": "北京理工大学",
+        "team": "追梦",
+        "stage": "全国赛直通",
+        "sentry_mean_x": 15.5473
+      },
+      {
+        "school": "复旦大学",
+        "team": "星云EGA",
+        "stage": "全国赛直通",
+        "sentry_mean_x": 12.5995
+      },
+      {
+        "school": "西安交通大学",
+        "team": "笃行",
+        "stage": "全国赛直通",
+        "sentry_mean_x": 12.0365
+      },
+      {
+        "school": "深圳大学",
+        "team": "RobotPilots",
+        "stage": "全国赛直通",
+        "sentry_mean_x": 11.3428
+      },
+      {
+        "school": "中国科学技术大学",
+        "team": "RoboWalker",
+        "stage": "复活赛",
+        "sentry_mean_x": 10.9863
+      },
+      {
+        "school": "仲恺农业工程学院",
+        "team": "奇点",
+        "stage": "全国赛直通",
+        "sentry_mean_x": 10.1176
+      },
+      {
+        "school": "东北大学",
+        "team": "TDT",
+        "stage": "全国赛直通",
+        "sentry_mean_x": 9.9441
+      },
+      {
+        "school": "五邑大学",
+        "team": "IMCA",
+        "stage": "全国赛直通",
+        "sentry_mean_x": 9.908
+      }
+    ],
+    "base_dart_share": [
+      {
+        "school": "华中科技大学",
+        "team": "狼牙",
+        "stage": "复活赛",
+        "base_dart_share": 0.9244
+      },
+      {
+        "school": "长安大学",
+        "team": "VGD",
+        "stage": "全国赛直通",
+        "base_dart_share": 0.8765
+      },
+      {
+        "school": "深圳技术大学",
+        "team": "悍匠",
+        "stage": "复活赛",
+        "base_dart_share": 0.7183
+      },
+      {
+        "school": "桂林电子科技大学",
+        "team": "Evolution",
+        "stage": "复活赛",
+        "base_dart_share": 0.7165
+      },
+      {
+        "school": "大连理工大学",
+        "team": "凌BUG",
+        "stage": "全国赛直通",
+        "base_dart_share": 0.7051
+      },
+      {
+        "school": "电子科技大学中山学院",
+        "team": "RoboBraver",
+        "stage": "全国赛直通",
+        "base_dart_share": 0.7014
+      },
+      {
+        "school": "广东工业大学",
+        "team": "DynamicX",
+        "stage": "复活赛",
+        "base_dart_share": 0.5698
+      },
+      {
+        "school": "哈尔滨工业大学",
+        "team": "I Hiter",
+        "stage": "全国赛直通",
+        "base_dart_share": 0.5533
+      }
+    ],
+    "base_42_share": [
+      {
+        "school": "东莞理工学院",
+        "team": "ACE",
+        "stage": "全国赛直通",
+        "base_42_share": 0.872
+      },
+      {
+        "school": "同济大学",
+        "team": "SuperPower",
+        "stage": "全国赛直通",
+        "base_42_share": 0.8003
+      },
+      {
+        "school": "广州城市理工学院",
+        "team": "野狼",
+        "stage": "全国赛直通",
+        "base_42_share": 0.7247
+      },
+      {
+        "school": "西北工业大学",
+        "team": "WMJ",
+        "stage": "全国赛直通",
+        "base_42_share": 0.6701
+      },
+      {
+        "school": "江南大学霞客湾校区",
+        "team": "SHARK",
+        "stage": "复活赛",
+        "base_42_share": 0.6667
+      },
+      {
+        "school": "武汉工程大学",
+        "team": "Nautilus",
+        "stage": "全国赛直通",
+        "base_42_share": 0.5927
+      },
+      {
+        "school": "北京理工大学",
+        "team": "追梦",
+        "stage": "全国赛直通",
+        "base_42_share": 0.4695
+      },
+      {
+        "school": "华南农业大学",
+        "team": "Taurus",
+        "stage": "全国赛直通",
+        "base_42_share": 0.4489
+      }
+    ]
+  }
+}

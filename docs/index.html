@@ -13,7 +13,7 @@
       document.documentElement.dataset.background = background === "simple" ? "simple" : "fancy";
     })();
   </script>
-  <link rel="stylesheet" href="./app.css?v=14">
+  <link rel="stylesheet" href="./app.css?v=15">
 </head>
 <body>
   <div class="animated-backdrop" aria-hidden="true">
@@ -84,7 +84,7 @@
           <div class="map-legend">
             <span class="red-dot"></span><span id="red-legend">红方</span>
             <span class="blue-dot"></span><span id="blue-legend">蓝方</span>
-            <span class="map-note">图标下方：累计已发　黄圈：易伤 / 无人机反制 45s（可叠加）</span>
+            <span class="map-note">图标下方：累计已发　黄圈：易伤　预测虚线：未来 10 秒路线</span>
             <b id="map-time">T + 001s</b>
           </div>
         </section>
@@ -97,6 +97,8 @@
             <option value="0.5">0.5×</option><option value="1" selected>1×</option>
             <option value="2">2×</option><option value="4">4×</option>
           </select>
+          <button id="prediction-button" class="prediction-button" type="button" aria-pressed="false">预测 关</button>
+          <span id="prediction-status" class="prediction-status" title="百分比为测试集同类状态的区域命中率，不是单次概率">后台线程未启动</span>
         </section>
       </div>
       <aside id="blue-panel" class="team-panel panel blue"></aside>
@@ -129,6 +131,6 @@
   <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
-  <script src="./app.js?v=14"></script>
+  <script src="./app.js?v=15"></script>
 </body>
 </html>

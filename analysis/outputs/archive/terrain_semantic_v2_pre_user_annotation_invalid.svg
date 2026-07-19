@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2337" height="1545" viewBox="0 0 2337 1545">
+  <defs>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.8"/>
+    </filter>
+    <style>
+      .marker text { fill:#fff; font:700 25px sans-serif; text-anchor:middle; dominant-baseline:central; }
+      .marker circle { fill:#121820; stroke-width:6; filter:url(#shadow); }
+      .highland circle { stroke:#c477ff; }
+      .road circle { stroke:#3fe5ff; }
+      .ramp circle { stroke:#ff4fb8; }
+      .tunnel circle { stroke:#fff; stroke-dasharray:8 5; }
+      .rough circle { stroke:#ffd238; }
+      .not-terrain circle { stroke:#ff6b6b; }
+      .not-terrain text { fill:#ffdddd; }
+      .legend-title { fill:#fff; font:700 31px sans-serif; }
+      .legend-text { fill:#e9eef5; font:500 24px sans-serif; }
+      .legend-note { fill:#b8c0cc; font:400 21px sans-serif; }
+      .chip { font:700 22px sans-serif; text-anchor:middle; dominant-baseline:central; }
+    </style>
+  </defs>
+
+  <!-- 原地图不做任何重绘；所有地形信息仅用编号锚点标注。 -->
+  <image href="../../web/assets/map.webp" x="0" y="0" width="2337" height="1283"/>
+
+  <g class="marker highland" aria-label="高地区">
+    <g transform="translate(1170 490)"><circle r="29"/><text y="1">1</text></g>
+    <g transform="translate(520 185)"><circle r="29"/><text y="1">2</text></g>
+    <g transform="translate(1817 1068)"><circle r="29"/><text y="1">3</text></g>
+  </g>
+
+  <g class="marker road" aria-label="公路区">
+    <g transform="translate(748 300)"><circle r="29"/><text y="1">4</text></g>
+    <g transform="translate(1589 983)"><circle r="29"/><text y="1">5</text></g>
+  </g>
+
+  <g class="marker ramp" aria-label="飞坡">
+    <g transform="translate(948 157)"><circle r="29"/><text y="1">6</text></g>
+    <g transform="translate(1389 1126)"><circle r="29"/><text y="1">7</text></g>
+  </g>
+
+  <g class="marker tunnel" aria-label="公路隧道">
+    <g transform="translate(1092 151)"><circle r="29"/><text y="1">8</text></g>
+    <g transform="translate(1245 1132)"><circle r="29"/><text y="1">9</text></g>
+  </g>
+
+  <g class="marker rough" aria-label="起伏路段">
+    <g transform="translate(520 1060)"><circle r="29"/><text y="1">10</text></g>
+    <g transform="translate(1817 223)"><circle r="29"/><text y="1">11</text></g>
+  </g>
+
+  <!-- 六边形是堡垒，不属于高地；特意标叉避免再次混淆。 -->
+  <g class="marker not-terrain" aria-label="堡垒，不是地形">
+    <g transform="translate(555 646)"><circle r="29"/><text y="1">×</text></g>
+    <g transform="translate(1782 637)"><circle r="29"/><text y="1">×</text></g>
+  </g>
+
+  <g transform="translate(0 1283)">
+    <rect width="2337" height="262" fill="#10161d"/>
+    <rect x="0" y="0" width="2337" height="4" fill="#303b48"/>
+
+    <text class="legend-title" x="42" y="45">RMUC 2026 地形定位 V0.2（编号只落点，不猜边界）</text>
+
+    <g transform="translate(43 82)">
+      <rect width="45" height="34" rx="17" fill="#23152f" stroke="#c477ff" stroke-width="4"/>
+      <text class="chip" x="22.5" y="17" fill="#fff">1</text>
+      <text class="legend-text" x="62" y="25">中央高地：中部大平台；两端以 10.5° 坡连接公路区。</text>
+
+      <rect x="0" y="55" width="74" height="34" rx="17" fill="#23152f" stroke="#c477ff" stroke-width="4"/>
+      <text class="chip" x="37" y="72" fill="#fff">2/3</text>
+      <text class="legend-text" x="91" y="80">梯形高地：红方左上、蓝方右下；带 R 资源站的整块异形平台。</text>
+
+      <rect x="0" y="110" width="74" height="34" rx="17" fill="#102a31" stroke="#3fe5ff" stroke-width="4"/>
+      <text class="chip" x="37" y="127" fill="#fff">4/5</text>
+      <text class="legend-text" x="91" y="135">公路区：两条长斜向通道，连接梯形高地与中央高地。</text>
+    </g>
+
+    <g transform="translate(1220 82)">
+      <rect width="74" height="34" rx="17" fill="#31152a" stroke="#ff4fb8" stroke-width="4"/>
+      <text class="chip" x="37" y="17" fill="#fff">6/7</text>
+      <text class="legend-text" x="91" y="25">飞坡：三箭头标记处，坡度 17°。</text>
+
+      <rect x="0" y="55" width="74" height="34" rx="17" fill="#20252b" stroke="#fff" stroke-width="4" stroke-dasharray="8 5"/>
+      <text class="chip" x="37" y="72" fill="#fff">8/9</text>
+      <text class="legend-text" x="91" y="80">公路隧道：中央高地上、下两处连接口。</text>
+
+      <rect x="0" y="110" width="88" height="34" rx="17" fill="#332b11" stroke="#ffd238" stroke-width="4"/>
+      <text class="chip" x="44" y="127" fill="#fff">10/11</text>
+      <text class="legend-text" x="105" y="135">起伏路段：红方左下、蓝方右上的密集凸起区。</text>
+
+      <text class="legend-note" x="0" y="188">红色 ×：六边形结构是堡垒，不是梯形高地。R 是资源站标识。</text>
+    </g>
+  </g>
+</svg>

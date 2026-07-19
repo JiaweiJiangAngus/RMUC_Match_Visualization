@@ -10,11 +10,12 @@ import os
 import sqlite3
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PyQt5.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QObject, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QApplication,
@@ -94,6 +95,50 @@ class EventRow:
     value: Optional[float]
     note: str
     target_type: str
+
+
+class PredictionRunner(QObject):
+    """Lazily load and run the tactical model outside the UI thread."""
+
+    ready = pyqtSignal(int, int, object)
+    failed = pyqtSignal(int, int, str)
+    status = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rmuc-predict")
+        self.engine = None
+
+    def request(self, generation: int, second: int, info: dict, frames: dict):
+        future = self.executor.submit(self._run, info, frames, second)
+
+        def completed(task):
+            try:
+                result = task.result()
+            except Exception as exc:  # Surface model/schema failures in the HUD.
+                self.failed.emit(generation, second, str(exc))
+            else:
+                self.ready.emit(generation, second, result)
+
+        future.add_done_callback(completed)
+
+    def _run(self, info: dict, raw_frames: dict, second: int):
+        if self.engine is None:
+            self.status.emit("正在加载预测模型…")
+            from ml.tactical_inference import TacticalInferenceEngine, index_frame
+
+            self.engine = TacticalInferenceEngine(mc_samples=16)
+            self.status.emit("预测模型已就绪")
+        else:
+            from ml.tactical_inference import index_frame
+        frames = {
+            int(frame_second): index_frame(rows)
+            for frame_second, rows in raw_frames.items()
+        }
+        return self.engine.predict(frames, second, info)
+
+    def shutdown(self):
+        self.executor.shutdown(wait=False, cancel_futures=True)
 
 
 class DataStore:
@@ -313,17 +358,37 @@ class BattlefieldWidget(QWidget):
         self.blue_name = "蓝方"
         self.match_badge = "等待载入比赛"
         self.map_image = QImage(str(TDT_MAP_PATH))
+        self.prediction_enabled = False
+        self.prediction_second: Optional[int] = None
+        self.prediction_data: List[dict] = []
 
     def set_game(self, frames, tracks, red_name: str, blue_name: str):
         self.frames = frames
         self.tracks = tracks
         self.red_name = red_name
         self.blue_name = blue_name
+        self.clear_predictions()
         self.update()
 
     def set_second(self, second: float):
         self.time_value = max(0.0, float(second))
         self.second = int(self.time_value)
+        self.update()
+
+    def set_prediction_enabled(self, enabled: bool):
+        self.prediction_enabled = bool(enabled)
+        if not enabled:
+            self.clear_predictions()
+        self.update()
+
+    def set_predictions(self, second: int, output: dict):
+        self.prediction_second = int(second)
+        self.prediction_data = list(output.get("predictions", []))
+        self.update()
+
+    def clear_predictions(self):
+        self.prediction_second = None
+        self.prediction_data = []
         self.update()
 
     def set_match_info(self, info: MatchInfo):
@@ -426,6 +491,14 @@ class BattlefieldWidget(QWidget):
                 trail.lineTo(self._point(x, y, field))
             painter.drawPath(trail)
 
+        if (
+            self.prediction_enabled
+            and self.prediction_data
+            and self.prediction_second is not None
+            and abs(self.second - self.prediction_second) <= 2
+        ):
+            self._draw_predictions(painter, field, marker_scale)
+
         # QtUI 的静态结构标记位置，血量来自当前回放帧。
         states = self.frames.get(self.second, [])
         if not states and self.second > 0:
@@ -478,6 +551,95 @@ class BattlefieldWidget(QWidget):
         self._legend(painter, field.left() + min(250, field.width() * .45), self.height() - 23, QColor(BLUE), self.blue_name)
         painter.setPen(QColor(MUTED))
         painter.drawText(QRectF(field.right() - 100, self.height() - 31, 100, 22), Qt.AlignRight | Qt.AlignVCenter, f"T + {self.second:03d}s")
+
+    def _draw_predictions(self, painter: QPainter, field: QRectF, scale: float):
+        badge = QRectF(field.left() + 10, field.top() + 9, 150, 24)
+        painter.setPen(QPen(QColor(86, 226, 186, 220), 1.2))
+        painter.setBrush(QColor(5, 28, 27, 210))
+        painter.drawRoundedRect(badge, 6, 6)
+        painter.setPen(QColor("#8ff4d4"))
+        painter.setFont(QFont("Noto Sans CJK SC", 9, QFont.Bold))
+        painter.drawText(
+            badge,
+            Qt.AlignCenter,
+            f"AI 预测  T+{self.prediction_second:03d}s",
+        )
+
+        short_names = {"英雄": "1", "工程": "2", "步兵3": "3", "步兵4": "4", "哨兵": "AI"}
+        draw_items = []
+        for prediction in self.prediction_data:
+            points = [tuple(prediction.get("current_xy_m", (0, 0)))]
+            points.extend(
+                tuple(item.get("predicted_xy_m", (0, 0)))
+                for item in prediction.get("horizons", [])
+                if item.get("after_seconds", 0) <= 10
+            )
+            if len(points) >= 2:
+                draw_items.append((prediction, points, self._point(*points[-1], field)))
+
+        draw_items.sort(key=lambda item: (item[0].get("side", ""), item[2].y()))
+        last_label_bottom = {"红": field.top() + 34, "蓝": field.top() + 34}
+        for prediction, points, target in draw_items:
+            side = prediction.get("side", "")
+            color = self._color(side)
+            path_color = QColor(color)
+            path_color.setAlpha(205)
+
+            pen = QPen(path_color, 2.0 * scale)
+            pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            path = QPainterPath(self._point(*points[0], field))
+            for point in points[1:]:
+                path.lineTo(self._point(*point, field))
+            painter.drawPath(path)
+
+            for point in points[1:-1]:
+                painter.setPen(Qt.NoPen)
+                dot = QColor(color)
+                dot.setAlpha(155)
+                painter.setBrush(dot)
+                painter.drawEllipse(self._point(*point, field), 2.5 * scale, 2.5 * scale)
+
+            painter.setPen(QPen(QColor("#ffffff"), 1.4))
+            painter.setBrush(QColor(color))
+            painter.drawEllipse(target, 6.2 * scale, 6.2 * scale)
+            painter.setBrush(Qt.NoBrush)
+            ring = QColor(color)
+            ring.setAlpha(180)
+            painter.setPen(QPen(ring, 2.0))
+            painter.drawEllipse(target, 10.5 * scale, 10.5 * scale)
+
+            primary = prediction.get("primary_destination", {})
+            zone = str(primary.get("zone", "未知区域"))
+            confidence = round(float(primary.get("display_confidence", 0.0)) * 100)
+            short = short_names.get(prediction.get("robot_type", ""), "?")
+            compact_zone = (
+                zone.replace("己方", "己").replace("敌方", "敌").replace("·", "")
+            )
+            if len(compact_zone) > 8:
+                compact_zone = compact_zone[:8]
+            label_width = 122.0 * scale
+            label_height = 22.0 * scale
+            if side == "蓝":
+                left = max(field.left() + 5, target.x() - label_width - 10 * scale)
+            else:
+                left = min(field.right() - label_width - 5, target.x() + 10 * scale)
+            desired_top = target.y() - label_height / 2
+            top = max(last_label_bottom.get(side, field.top() + 34) + 3, desired_top)
+            top = min(field.bottom() - label_height - 5, top)
+            last_label_bottom[side] = top + label_height
+            label_rect = QRectF(left, top, label_width, label_height)
+            painter.setPen(QPen(QColor(color), 1.0))
+            painter.setBrush(QColor(4, 12, 18, 218))
+            painter.drawRoundedRect(label_rect, 5, 5)
+            painter.setPen(QColor("#f4f9fc"))
+            painter.setFont(QFont("Noto Sans CJK SC", max(8, round(8 * scale)), QFont.Bold))
+            painter.drawText(
+                QRectF(label_rect.left() + 6, label_rect.top() + 1, label_rect.width() - 12, label_rect.height() - 2),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                f"{short}→{compact_zone}  {confidence}%",
+            )
 
     def _draw_structure(
         self,
@@ -744,12 +906,20 @@ class MainWindow(QMainWindow):
         self.playhead = 0.0
         self.speed = 1.0
         self.duration = 420
+        self.prediction_generation = 0
+        self.prediction_pending = False
+        self.prediction_last_requested: Optional[int] = None
 
         self.setWindowTitle("RMUC 2026 区域赛 · 数据可视化")
         self.resize(1700, 1040)
         self.setMinimumSize(1360, 860)
         self._build_ui()
         self._apply_style()
+
+        self.prediction_runner = PredictionRunner(self)
+        self.prediction_runner.ready.connect(self._prediction_ready)
+        self.prediction_runner.failed.connect(self._prediction_failed)
+        self.prediction_runner.status.connect(self._prediction_status_changed)
 
         self.timer = QTimer(self)
         self.timer.setInterval(100)
@@ -836,12 +1006,23 @@ class MainWindow(QMainWindow):
         self.speed_combo.setCurrentIndex(1)
         self.speed_combo.setFixedWidth(82)
         self.speed_combo.currentIndexChanged.connect(self._speed_changed)
+        self.predict_btn = QPushButton("开启预测")
+        self.predict_btn.setObjectName("predictionButton")
+        self.predict_btn.setCheckable(True)
+        self.predict_btn.setFixedWidth(108)
+        self.predict_btn.toggled.connect(self._toggle_prediction)
+        self.prediction_status = QLabel("预测关闭")
+        self.prediction_status.setObjectName("predictionStatus")
+        self.prediction_status.setFixedWidth(170)
+        self.prediction_status.setAlignment(Qt.AlignCenter)
         control_layout.addWidget(self.play_btn)
         control_layout.addWidget(back)
         control_layout.addWidget(forward)
         control_layout.addWidget(self.slider, 1)
         control_layout.addWidget(self.time_label)
         control_layout.addWidget(self.speed_combo)
+        control_layout.addWidget(self.predict_btn)
+        control_layout.addWidget(self.prediction_status)
         outer.addWidget(control)
 
         bottom = QSplitter(Qt.Horizontal)
@@ -929,11 +1110,15 @@ class MainWindow(QMainWindow):
                                   border-radius: 7px; padding: 12px; font-size: 12px; font-weight: 600; }}
             QLabel#timeLabel {{ font-family: "JetBrains Mono", monospace; font-size: 13px;
                                 font-weight: 700; color: #d6e4ee; }}
+            QLabel#predictionStatus {{ color: #78909f; background: #0b1721; border: 1px solid #243b4b;
+                                       border-radius: 7px; padding: 7px; font-size: 11px; font-weight: 700; }}
             QPushButton {{ background: #172838; color: #b7c7d4; border: 1px solid #2a4254;
                            border-radius: 7px; padding: 8px 12px; font-size: 12px; font-weight: 600; }}
             QPushButton:hover {{ background: #20384c; color: white; }}
             QPushButton#primaryButton {{ background: #16755e; color: white; border-color: #26977c; font-weight: 700; }}
             QPushButton#primaryButton:hover {{ background: #1a8b70; }}
+            QPushButton#predictionButton:checked {{ background: #176f66; color: #eafff9;
+                                                     border-color: #48cbb0; }}
             QSlider::groove:horizontal {{ height: 4px; background: #2a3c4b; border-radius: 2px; }}
             QSlider::sub-page:horizontal {{ background: {GREEN}; border-radius: 2px; }}
             QSlider::handle:horizontal {{ background: #f3fbff; width: 14px; margin: -5px 0; border-radius: 7px; }}
@@ -990,6 +1175,12 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= len(self.round_infos):
             return
         self._stop()
+        self.prediction_generation += 1
+        self.prediction_pending = False
+        self.prediction_last_requested = None
+        self.field.clear_predictions()
+        if self.predict_btn.isChecked():
+            self.prediction_status.setText("等待新对局…")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
@@ -1062,6 +1253,95 @@ class MainWindow(QMainWindow):
     def _speed_changed(self, index):
         self.speed = [0.5, 1.0, 2.0, 4.0][max(0, index)]
 
+    def _toggle_prediction(self, enabled: bool):
+        self.prediction_generation += 1
+        self.prediction_pending = False
+        self.prediction_last_requested = None
+        self.field.set_prediction_enabled(enabled)
+        if enabled:
+            self.predict_btn.setText("关闭预测")
+            self.prediction_status.setText("准备模型…")
+            self._schedule_prediction(int(self.playhead))
+        else:
+            self.predict_btn.setText("开启预测")
+            self.prediction_status.setText("预测关闭")
+
+    @staticmethod
+    def _compact_prediction_frame(states: List[RobotState]) -> list[list]:
+        return [
+            [
+                state.robot_id,
+                state.robot_type,
+                state.side,
+                state.hp,
+                state.max_hp,
+                state.x,
+                state.y,
+                state.heading,
+                state.ammo17,
+                state.ammo42,
+                state.coins,
+                int(state.vulnerable),
+            ]
+            for state in states
+        ]
+
+    def _schedule_prediction(self, second: int):
+        if (
+            not self.predict_btn.isChecked()
+            or self.current_info is None
+            or not self.frames
+            or self.prediction_pending
+            or self.prediction_last_requested == second
+        ):
+            return
+        available = [value for value in self.frames if second - 5 <= value <= second]
+        if second not in self.frames or not available:
+            return
+        raw_frames = {
+            frame_second: self._compact_prediction_frame(self.frames[frame_second])
+            for frame_second in available
+        }
+        info = {
+            "game_id": self.current_info.game_id,
+            "red": self.current_info.red_school,
+            "blue": self.current_info.blue_school,
+            "duration": self.current_info.duration,
+        }
+        self.prediction_pending = True
+        self.prediction_last_requested = second
+        self.prediction_status.setText(f"推理 {second}s…")
+        self.prediction_runner.request(
+            self.prediction_generation, second, info, raw_frames,
+        )
+
+    def _prediction_ready(self, generation: int, second: int, output: dict):
+        if generation != self.prediction_generation:
+            return
+        self.prediction_pending = False
+        if not self.predict_btn.isChecked():
+            return
+        self.field.set_predictions(second, output)
+        count = len(output.get("predictions", []))
+        elapsed = output.get("total_inference_ms", 0)
+        self.prediction_status.setText(f"{count}车 · {elapsed:.0f}ms")
+        current_second = int(self.playhead)
+        if current_second != second:
+            self._schedule_prediction(current_second)
+
+    def _prediction_failed(self, generation: int, second: int, message: str):
+        if generation != self.prediction_generation:
+            return
+        self.prediction_pending = False
+        self.prediction_last_requested = None
+        self.field.clear_predictions()
+        self.prediction_status.setText("预测失败")
+        self.prediction_status.setToolTip(f"{second}s: {message}")
+
+    def _prediction_status_changed(self, message: str):
+        if self.predict_btn.isChecked():
+            self.prediction_status.setText(message)
+
     def _seek(self, second: int):
         second = max(0, min(self.duration, int(second)))
         self.playhead = float(second)
@@ -1082,6 +1362,7 @@ class MainWindow(QMainWindow):
         self._update_live_hud(states, second)
         self.time_label.setText(f"{self._format_duration(second)} / {self._format_duration(self.duration)}")
         self._update_event_table(second)
+        self._schedule_prediction(second)
 
     def _update_live_hud(self, states: List[RobotState], second: int):
         info = self.current_info
@@ -1169,6 +1450,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._stop()
+        self.prediction_generation += 1
+        self.prediction_runner.shutdown()
         self.store.conn.close()
         event.accept()
 
