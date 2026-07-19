@@ -515,42 +515,24 @@ function drawMap() {
 function drawPredictions(width,height,scale,second) {
   if (!state.predictionEnabled||state.predictionSecond!==second||!state.predictions.length) return;
   mapCtx.save();
-  for (let predictionIndex=0;predictionIndex<state.predictions.length;predictionIndex++) {
-    const prediction=state.predictions[predictionIndex];
-    const markers=prediction.points.filter(point=>point.horizon<=10);
-    const route=prediction.route?.length?prediction.route:markers;
-    if (!route.length||!markers.length) continue;
+  for (const prediction of state.predictions) {
+    const route=prediction.route?.length?prediction.route:prediction.points.filter(point=>point.horizon<=10);
+    if (route.length<2) continue;
     const color=colorFor(prediction.side), [startX,startY]=mapPoint(prediction.current[0],prediction.current[1],width,height);
     mapCtx.beginPath(); mapCtx.moveTo(startX,startY);
     for (const point of route) mapCtx.lineTo(...mapPoint(point.x,point.y,width,height));
     mapCtx.setLineDash([6*scale,4*scale]);
     mapCtx.strokeStyle=color; mapCtx.globalAlpha=.84; mapCtx.lineWidth=2.2*scale; mapCtx.stroke();
     mapCtx.setLineDash([]); mapCtx.globalAlpha=1;
-    for (const point of markers) {
-      const [x,y]=mapPoint(point.x,point.y,width,height);
-      const radius=(point===markers.at(-1)?5:3.2)*scale;
-      mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2);
-      mapCtx.fillStyle="rgba(4,11,17,.82)"; mapCtx.fill();
-      mapCtx.strokeStyle=color; mapCtx.lineWidth=1.8*scale; mapCtx.stroke();
-    }
-    const primary=markers.at(-1), [x,y]=mapPoint(primary.x,primary.y,width,height);
-    const confidence=Math.round(Number(prediction.confidence||0)*100);
-    const compact=width<690;
-    const passage=prediction.passages?.[0]||"";
-    const label=compact
-      ? `${prediction.role}→${prediction.destination}${passage?"·"+passage:""}`
-      : `${prediction.role} → ${prediction.destination}  ≈${confidence}%${passage?" · "+passage:""}`;
-    mapCtx.font=`800 ${Math.max(9,9.5*scale)}px sans-serif`;
-    const padding=5*scale, boxHeight=18*scale, boxWidth=mapCtx.measureText(label).width+padding*2;
-    const preferLeft=prediction.side==="蓝";
-    let boxX=preferLeft?x-boxWidth-7*scale:x+7*scale;
-    boxX=clamp(boxX,2,width-boxWidth-2);
-    let boxY=y+(predictionIndex%2===0?-boxHeight-7*scale:7*scale);
-    boxY=clamp(boxY,2,height-boxHeight-2);
-    mapCtx.fillStyle="rgba(3,10,16,.89)"; mapCtx.strokeStyle=color; mapCtx.lineWidth=1*scale;
-    mapCtx.beginPath(); mapCtx.roundRect(boxX,boxY,boxWidth,boxHeight,4*scale); mapCtx.fill(); mapCtx.stroke();
-    mapCtx.fillStyle="#f3f8fb"; mapCtx.textAlign="left"; mapCtx.textBaseline="middle";
-    mapCtx.fillText(label,boxX+padding,boxY+boxHeight/2);
+    const previous=route.at(-2), endpoint=route.at(-1);
+    const [previousX,previousY]=mapPoint(previous.x,previous.y,width,height);
+    const [endX,endY]=mapPoint(endpoint.x,endpoint.y,width,height);
+    const angle=Math.atan2(endY-previousY,endX-previousX),arrowLength=8*scale,arrowHalf=4.5*scale;
+    mapCtx.beginPath();
+    mapCtx.moveTo(endX,endY);
+    mapCtx.lineTo(endX-Math.cos(angle)*arrowLength+Math.sin(angle)*arrowHalf,endY-Math.sin(angle)*arrowLength-Math.cos(angle)*arrowHalf);
+    mapCtx.lineTo(endX-Math.cos(angle)*arrowLength-Math.sin(angle)*arrowHalf,endY-Math.sin(angle)*arrowLength+Math.cos(angle)*arrowHalf);
+    mapCtx.closePath(); mapCtx.fillStyle=color; mapCtx.fill();
   }
   mapCtx.restore();
 }
