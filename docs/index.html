@@ -13,7 +13,7 @@
       document.documentElement.dataset.background = background === "simple" ? "simple" : "fancy";
     })();
   </script>
-  <link rel="stylesheet" href="./app.css?v=15">
+  <link rel="stylesheet" href="./app.css?v=16">
 </head>
 <body>
   <div class="animated-backdrop" aria-hidden="true">
@@ -33,6 +33,7 @@
         <button class="dataset-tab active" type="button" data-scroll-target="battlefield"><b>01</b> 战场回放</button>
         <button class="dataset-tab" type="button" data-scroll-target="status"><b>02</b> 双方状态</button>
         <button class="dataset-tab" type="button" data-scroll-target="events"><b>03</b> 比赛事件</button>
+        <button class="dataset-tab" type="button" data-scroll-target="simulator"><b>04</b> 对局模拟</button>
       </nav>
       <div class="display-controls" aria-label="显示设置">
         <button id="memory-toggle" class="display-button" type="button">记忆 开</button>
@@ -114,6 +115,63 @@
         <div id="event-list" class="event-list"></div>
       </div>
     </section>
+
+    <section class="simulator-panel panel" id="simulator" aria-labelledby="simulator-title">
+      <div class="simulator-heading">
+        <div>
+          <span class="eyebrow">TACTICAL CHESS // COUNTERFACTUAL MATCH</span>
+          <h2 id="simulator-title">战队对局模拟器</h2>
+          <p>把 420 秒拆成 28 手：伤害节奏、飞镖、堡垒驻留、增益与地形转点均来自真实比赛样本。</p>
+        </div>
+        <span id="sim-model-status" class="sim-model-status">载入 44 队棋谱…</span>
+      </div>
+
+      <div class="simulator-toolbar" aria-label="模拟设置">
+        <label class="sim-team-picker red"><span>红方学校</span><select id="sim-red-team"></select></label>
+        <strong class="sim-versus">VS</strong>
+        <label class="sim-team-picker blue"><span>蓝方学校</span><select id="sim-blue-team"></select></label>
+        <div class="sim-buttons">
+          <button id="sim-reset" type="button">↻ 新开一局</button>
+          <button id="sim-step" class="primary" type="button">下一手 +15s</button>
+          <button id="sim-auto" type="button">▶ 自动演算</button>
+          <button id="sim-monte-carlo" type="button">模拟 500 局</button>
+        </div>
+      </div>
+
+      <div class="simulator-grid">
+        <article id="sim-red-profile" class="sim-profile red"></article>
+        <div class="sim-board" aria-live="polite">
+          <div class="sim-board-head">
+            <span id="sim-turn">第 0 / 28 手</span>
+            <b id="sim-clock">07:00</b>
+            <span id="sim-state">等待开局</span>
+          </div>
+          <div id="sim-scoreboard" class="sim-scoreboard"></div>
+          <div id="sim-fortresses" class="sim-fortresses"></div>
+          <div class="sim-action-row">
+            <div class="red"><span>红方本手</span><b id="sim-red-action">部署</b></div>
+            <div class="blue"><span>蓝方本手</span><b id="sim-blue-action">部署</b></div>
+          </div>
+        </div>
+        <article id="sim-blue-profile" class="sim-profile blue"></article>
+      </div>
+
+      <div class="simulator-analysis">
+        <article class="sim-breakdown">
+          <div class="section-title"><h3>本局伤害分布</h3><span>实际采样值</span></div>
+          <div id="sim-damage-breakdown"></div>
+        </article>
+        <article class="sim-monte">
+          <div class="section-title"><h3>批量推演</h3><span>不是官方胜率</span></div>
+          <div id="sim-monte-result" class="sim-monte-empty">点“模拟 500 局”查看对阵分布</div>
+        </article>
+        <article class="sim-log-panel">
+          <div class="section-title"><h3>回合记录</h3><span id="sim-log-count">0 条</span></div>
+          <div id="sim-log" class="sim-log"><div class="empty">开局后显示双方战术动作</div></div>
+        </article>
+      </div>
+      <p class="sim-disclaimer">实验模型：堡垒控制由机器人位置驻留推断；跨赛区对阵不存在直接样本。结果用于客户端/操作手推演，不等同于裁判系统比分或真实赛果。</p>
+    </section>
     </div>
 
     <footer>
@@ -126,11 +184,13 @@
     <button class="active" type="button" data-scroll-target="battlefield"><b>⌖</b><span>战场</span></button>
     <button type="button" data-scroll-target="status"><b>▤</b><span>状态</span></button>
     <button type="button" data-scroll-target="events"><b>≋</b><span>事件</span></button>
+    <button type="button" data-scroll-target="simulator"><b>♟</b><span>模拟</span></button>
   </nav>
 
   <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
   <script src="./app.js?v=17"></script>
+  <script src="./match-simulator.js?v=1"></script>
 </body>
 </html>
