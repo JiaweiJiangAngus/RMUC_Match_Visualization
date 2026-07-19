@@ -134,6 +134,10 @@ class Evidence:
     official_games: set[int] = field(default_factory=set)
     trajectory_crossings: int = 0
     trajectory_games: set[int] = field(default_factory=set)
+    trajectory_direction_counts: Counter = field(default_factory=Counter)
+    trajectory_direction_games: dict[str, set[int]] = field(
+        default_factory=lambda: defaultdict(set)
+    )
     examples: list[dict] = field(default_factory=list)
 
     def add_manual(self, source: str, note: str) -> None:
@@ -157,6 +161,10 @@ class Evidence:
     ) -> None:
         self.trajectory_crossings += 1
         self.trajectory_games.add(game_id)
+        traversal = str((detail or {}).get("traversal", ""))
+        if traversal:
+            self.trajectory_direction_counts[traversal] += 1
+            self.trajectory_direction_games[traversal].add(game_id)
         if len(self.examples) < 4:
             example = {
                 "source": "trajectory",
@@ -539,12 +547,18 @@ def analyze_tracks(
 
         for gate in gates:
             for crossing in gate_crossings(valid, gate):
+                detail = {"direction": crossing["direction"]}
+                if gate.ability == "fly_ramp":
+                    forward = "+1->-1" if gate.side == "blue" else "-1->+1"
+                    detail["traversal"] = (
+                        "forward" if crossing["direction"] == forward else "reverse"
+                    )
                 ability_evidence = evidence[(current_school, current_role, gate.ability)]
                 ability_evidence.add_trajectory(
                     game_id,
                     crossing["second"],
                     gate.feature_id,
-                    {"direction": crossing["direction"]},
+                    detail,
                 )
                 track_crossings_by_robot[(game_id, robot_id, gate.ability)].append(crossing["second"])
                 detector_counts[gate.ability] += 1
@@ -642,6 +656,11 @@ def build_rows(
                 wide[f"{prefix}_official_games"] = len(item.official_games)
                 wide[f"{prefix}_trajectory_crossings"] = item.trajectory_crossings
                 wide[f"{prefix}_trajectory_games"] = len(item.trajectory_games)
+                if ability == "fly_ramp":
+                    wide[f"{prefix}_forward_crossings"] = item.trajectory_direction_counts["forward"]
+                    wide[f"{prefix}_forward_games"] = len(item.trajectory_direction_games["forward"])
+                    wide[f"{prefix}_reverse_crossings"] = item.trajectory_direction_counts["reverse"]
+                    wide[f"{prefix}_reverse_games"] = len(item.trajectory_direction_games["reverse"])
                 long_rows.append(
                     {
                         "stage": entry.stage,
@@ -662,6 +681,13 @@ def build_rows(
                         "official_games": len(item.official_games),
                         "trajectory_crossings": item.trajectory_crossings,
                         "trajectory_games": len(item.trajectory_games),
+                        "trajectory_directions": {
+                            direction: {
+                                "crossings": count,
+                                "games": len(item.trajectory_direction_games[direction]),
+                            }
+                            for direction, count in item.trajectory_direction_counts.items()
+                        },
                         "evidence_examples": item.examples,
                     }
                 )
@@ -716,6 +742,7 @@ def write_outputs(
     for row in long_rows:
         item = dict(row)
         item["manual_confirmations"] = json.dumps(item["manual_confirmations"], ensure_ascii=False)
+        item["trajectory_directions"] = json.dumps(item["trajectory_directions"], ensure_ascii=False)
         item["evidence_examples"] = json.dumps(item["evidence_examples"], ensure_ascii=False)
         long_serialized.append(item)
     with long_csv.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -846,6 +873,11 @@ def analyze(
             "lateral_margin_m": 0.28,
             "approach_margin_m": 0.65,
             "position_interval_expected_seconds": 1.0,
+            "fly_ramp_direction": {
+                "blue_forward": "+1->-1 (field right to left)",
+                "red_forward": "-1->+1 (field left to right)",
+                "reverse_capability_minimum": "at least 2 reverse crossings in at least 2 games",
+            },
         },
         "jump_400mm": {
             "direction": "outside_low_to_central_highland_inside_high",

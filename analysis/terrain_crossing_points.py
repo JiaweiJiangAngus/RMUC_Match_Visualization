@@ -96,10 +96,10 @@ class Feature:
     note: str = ""
 
 
-# Eight physical interfaces marked on the blue side. The arrows in the user's
-# image are callouts, not mandatory travel directions, so every gate is modelled
-# as physically bidirectional. Boxes are telemetry tolerance zones, not CAD
-# outlines of the obstacles.
+# Eight physical interfaces marked on the blue side.  Fly ramps have a normal
+# one-way traversal (blue right-to-left, red left-to-right after 180° rotation);
+# reverse traversal is a separate vehicle/team capability.  Boxes are telemetry
+# tolerance zones, not CAD outlines of the obstacles.
 BLUE_GATE_SPECS = (
     GateSpec(1, "fly_ramp", (1169, 84), 0, 190, 72, "fly_ramp_capable", "用户标注的飞坡通路。"),
     GateSpec(2, "road_tunnel", (1549, 213), 90, 120, 60, "road_tunnel_fit", "公路与中央高地之间的隧道通路。"),
@@ -211,7 +211,14 @@ def build_features() -> tuple[Feature, ...]:
                     default_traversability="vehicle_dependent",
                     capability_tag=spec.capability_tag,
                     gate_index=spec.index,
-                    note=spec.note + " 可物理双向通行；标注箭头不代表规则强制方向。",
+                    note=(
+                        spec.note
+                        + (
+                            " 常规为单向飞坡；反向飞坡仅对有明确证据的机器人开放。"
+                            if spec.category == "fly_ramp"
+                            else " 上行与下行分开建模，通行能力和代价可以不同。"
+                        )
+                    ),
                 )
             )
 
@@ -397,7 +404,12 @@ def feature_to_dict(feature: Feature) -> dict:
         "default_traversability": feature.default_traversability,
         "capability_tag": feature.capability_tag,
         "height_difference_m": feature.height_difference_m,
-        "physical_direction": "bidirectional" if feature.kind != "terrain_region" else None,
+        "physical_direction": (
+            "blue_right_to_left" if feature.category == "fly_ramp" and feature.side == "blue"
+            else "red_left_to_right" if feature.category == "fly_ramp" and feature.side == "red"
+            else "asymmetric_up_down" if feature.kind in {"crossing_gate", "conditional_ledge"}
+            else None
+        ),
         "center_map_px": [round(value, 3) for value in feature.center_map_px],
         "center_field_m": [round(value, 4) for value in center_field],
         "map_geometry_px": [[round(x, 3), round(y, 3)] for x, y in feature.map_geometry_px],
@@ -665,8 +677,8 @@ def write_outputs(features: Sequence[Feature], counts: dict[str, int]) -> tuple[
     b5_ys = [point[1] for point in blue_b5.map_geometry_px]
     b5_size = [round(max(b5_xs) - min(b5_xs)), round(max(b5_ys) - min(b5_ys))]
     payload = {
-        "schema_version": 3,
-        "status": "user_annotation_ground_truth_v4_small_trapezoid_highland",
+        "schema_version": 4,
+        "status": "user_annotation_ground_truth_v5_directional_traversal",
         "map_asset": str(MAP_PATH.relative_to(ROOT)),
         "annotation_asset": str(ANNOTATION_PATH.relative_to(ROOT)),
         "map_size_px": [MAP_WIDTH, MAP_HEIGHT],
@@ -695,7 +707,8 @@ def write_outputs(features: Sequence[Feature], counts: dict[str, int]) -> tuple[
             "centre_px": [(MAP_WIDTH - 1) / 2, (MAP_HEIGHT - 1) / 2],
         },
         "semantics": {
-            "annotation_arrows": "location callouts only; no mandatory travel direction inferred",
+            "fly_ramp_direction": "blue right-to-left and red left-to-right by default; reverse traversal requires robot/team evidence",
+            "step_direction": "ascending and descending are separate traversal modes with different capability requirements and costs",
             "central_highland_step": "only the most protruding point of the central highland edge",
             "other_central_highland_edge": "approximately 400 mm ledge, blocked by default",
             "jump_exception": "only robots/teams positively labelled jump_capable may use the 400 mm ledge as a candidate route",
@@ -712,7 +725,7 @@ def write_outputs(features: Sequence[Feature], counts: dict[str, int]) -> tuple[
     fieldnames = (
         "feature_id", "category", "category_zh", "side", "kind", "geometry_type",
         "gate_index", "source", "symmetry", "default_traversability", "capability_tag",
-        "height_difference_m", "center_x_m", "center_y_m", "center_x_px", "center_y_px",
+        "height_difference_m", "physical_direction", "center_x_m", "center_y_m", "center_x_px", "center_y_px",
         "field_geometry_m", "note",
     )
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:

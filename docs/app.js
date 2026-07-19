@@ -382,7 +382,7 @@ function ensurePredictionWorker() {
     setPredictionStatus("浏览器不支持后台预测","error");
     return false;
   }
-  const worker=new Worker("./prediction-worker.js?v=15");
+  const worker=new Worker("./prediction-worker.js?v=16");
   worker.onmessage=event=>{
     const message=event.data||{};
     if (message.type==="status") {
@@ -405,8 +405,8 @@ function ensurePredictionWorker() {
       state.predictions=message.predictions||[];
       state.predictionSecond=message.second;
       state.predictionLatency=Number(message.latencyMs||0);
-      const moving=state.predictions.filter(item=>item.moving).length;
-      setPredictionStatus(`${state.predictions.length} 台 · ${state.predictionLatency.toFixed(0)}ms · 运动 ${moving}`,"ready");
+      const adjusted=state.predictions.filter(item=>item.terrainAdjusted).length;
+      setPredictionStatus(`${state.predictions.length} 台 · ${state.predictionLatency.toFixed(0)}ms · 地形修正 ${adjusted}`,"ready");
       state.dirty=true;
     }
     const wanted=state.predictionWantedSecond;
@@ -443,6 +443,7 @@ function schedulePrediction(second) {
   state.predictionWorker.postMessage({
     type:"predict", requestId, generation:state.predictionGeneration, second,
     duration:state.game.info.duration, history,
+    schools:{"红":state.game.info.red,"蓝":state.game.info.blue},
   });
 }
 function togglePrediction() {
@@ -516,27 +517,29 @@ function drawPredictions(width,height,scale,second) {
   mapCtx.save();
   for (let predictionIndex=0;predictionIndex<state.predictions.length;predictionIndex++) {
     const prediction=state.predictions[predictionIndex];
-    const route=prediction.points.filter(point=>point.horizon<=10);
-    if (!route.length) continue;
+    const markers=prediction.points.filter(point=>point.horizon<=10);
+    const route=prediction.route?.length?prediction.route:markers;
+    if (!route.length||!markers.length) continue;
     const color=colorFor(prediction.side), [startX,startY]=mapPoint(prediction.current[0],prediction.current[1],width,height);
     mapCtx.beginPath(); mapCtx.moveTo(startX,startY);
     for (const point of route) mapCtx.lineTo(...mapPoint(point.x,point.y,width,height));
     mapCtx.setLineDash([6*scale,4*scale]);
     mapCtx.strokeStyle=color; mapCtx.globalAlpha=.84; mapCtx.lineWidth=2.2*scale; mapCtx.stroke();
     mapCtx.setLineDash([]); mapCtx.globalAlpha=1;
-    for (const point of route) {
+    for (const point of markers) {
       const [x,y]=mapPoint(point.x,point.y,width,height);
-      const radius=(point===route.at(-1)?5:3.2)*scale;
+      const radius=(point===markers.at(-1)?5:3.2)*scale;
       mapCtx.beginPath(); mapCtx.arc(x,y,radius,0,Math.PI*2);
       mapCtx.fillStyle="rgba(4,11,17,.82)"; mapCtx.fill();
       mapCtx.strokeStyle=color; mapCtx.lineWidth=1.8*scale; mapCtx.stroke();
     }
-    const primary=route.at(-1), [x,y]=mapPoint(primary.x,primary.y,width,height);
+    const primary=markers.at(-1), [x,y]=mapPoint(primary.x,primary.y,width,height);
     const confidence=Math.round(Number(prediction.confidence||0)*100);
     const compact=width<690;
+    const passage=prediction.passages?.[0]||"";
     const label=compact
-      ? `${prediction.role}→${prediction.destination}`
-      : `${prediction.role} → ${prediction.destination}  ≈${confidence}%`;
+      ? `${prediction.role}→${prediction.destination}${passage?"·"+passage:""}`
+      : `${prediction.role} → ${prediction.destination}  ≈${confidence}%${passage?" · "+passage:""}`;
     mapCtx.font=`800 ${Math.max(9,9.5*scale)}px sans-serif`;
     const padding=5*scale, boxHeight=18*scale, boxWidth=mapCtx.measureText(label).width+padding*2;
     const preferLeft=prediction.side==="蓝";

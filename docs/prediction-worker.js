@@ -8,7 +8,8 @@ const STRUCTURE_TYPES = ["基地", "前哨站"];
 const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
-const MODEL_URL = "./data/models/trajectory_mlp.json?v=15";
+const MODEL_URL = "./data/models/trajectory_mlp.json?v=16";
+const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=16";
 
 let modelPromise = null;
 
@@ -19,11 +20,17 @@ function emit(message) {
 async function loadModel() {
   if (modelPromise) return modelPromise;
   modelPromise = (async () => {
-    emit({type:"status", status:"loading", text:"模型加载中"});
+    emit({type:"status", status:"loading", text:"模型与地形图加载中"});
     const manifestUrl = new URL(MODEL_URL, self.location.href);
-    const manifestResponse = await fetch(manifestUrl, {cache:"force-cache"});
+    const navigationUrl = new URL(NAVIGATION_URL, self.location.href);
+    const [manifestResponse,navigationResponse] = await Promise.all([
+      fetch(manifestUrl, {cache:"force-cache"}),
+      fetch(navigationUrl, {cache:"force-cache"}),
+    ]);
     if (!manifestResponse.ok) throw new Error(`模型清单 HTTP ${manifestResponse.status}`);
+    if (!navigationResponse.ok) throw new Error(`地形拓扑 HTTP ${navigationResponse.status}`);
     const manifest = await manifestResponse.json();
+    const navigation = await navigationResponse.json();
     const weightsUrl = new URL(manifest.weights, manifestUrl);
     weightsUrl.search = manifestUrl.search;
     const weightsResponse = await fetch(weightsUrl, {cache:"force-cache"});
@@ -38,6 +45,7 @@ async function loadModel() {
     }
     const model = {
       manifest,
+      navigation,
       tensors,
       mean: Float32Array.from(manifest.feature_mean),
       std: Float32Array.from(manifest.feature_std),
@@ -199,6 +207,226 @@ function confidence(model,horizon,moving) {
   return Number.isFinite(metric)?metric:0;
 }
 
+function pointInPolygon(point,polygon) {
+  let inside=false;
+  for (let i=0,j=polygon.length-1;i<polygon.length;j=i++) {
+    const [xi,yi]=polygon[i], [xj,yj]=polygon[j];
+    if ((yi>point[1])!==(yj>point[1]) && point[0]<(xj-xi)*(point[1]-yi)/(yj-yi)+xi) inside=!inside;
+  }
+  return inside;
+}
+function orientation(a,b,c) { return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]); }
+function onSegment(a,b,p) {
+  return Math.abs(orientation(a,b,p))<1e-8&&p[0]>=Math.min(a[0],b[0])-1e-8&&p[0]<=Math.max(a[0],b[0])+1e-8&&p[1]>=Math.min(a[1],b[1])-1e-8&&p[1]<=Math.max(a[1],b[1])+1e-8;
+}
+function segmentsIntersect(a,b,c,d) {
+  const o1=orientation(a,b,c),o2=orientation(a,b,d),o3=orientation(c,d,a),o4=orientation(c,d,b);
+  if (Math.abs(o1)<1e-8&&onSegment(a,b,c)) return true;
+  if (Math.abs(o2)<1e-8&&onSegment(a,b,d)) return true;
+  if (Math.abs(o3)<1e-8&&onSegment(c,d,a)) return true;
+  if (Math.abs(o4)<1e-8&&onSegment(c,d,b)) return true;
+  return (o1>0)!==(o2>0)&&(o3>0)!==(o4>0);
+}
+function segmentHitsPolygon(start,end,polygon) {
+  if (pointInPolygon(start,polygon)||pointInPolygon(end,polygon)) return true;
+  for (let i=0;i<polygon.length;i++) if (segmentsIntersect(start,end,polygon[i],polygon[(i+1)%polygon.length])) return true;
+  return false;
+}
+function distance(a,b) { return Math.hypot(a[0]-b[0],a[1]-b[1]); }
+function pushPoint(route,point) {
+  const clean=[clamp(point[0],0,FIELD_WIDTH),clamp(point[1],0,FIELD_HEIGHT)];
+  if (!route.length||distance(route.at(-1),clean)>1e-4) route.push(clean);
+}
+function routeLength(route) {
+  let total=0;
+  for (let i=1;i<route.length;i++) total+=distance(route[i-1],route[i]);
+  return total;
+}
+function regionEntries(navigation) {
+  return [
+    {id:"central_highland",polygon:navigation.regions.central_highland},
+    {id:"blue_trapezoid_highland",polygon:navigation.regions.blue_trapezoid_highland},
+    {id:"red_trapezoid_highland",polygon:navigation.regions.red_trapezoid_highland},
+  ];
+}
+function regionAt(navigation,point) {
+  return regionEntries(navigation).find(region=>pointInPolygon(point,region.polygon))||null;
+}
+function roleCapabilities(navigation,school,role) {
+  const data=navigation.teams?.[school]?.[role];
+  return {abilities:new Set(data?.abilities||[]),reverseFly:Boolean(data?.reverse_fly_ramp?.allowed)};
+}
+function polygonCentroid(polygon) {
+  const sum=polygon.reduce((value,point)=>[value[0]+point[0],value[1]+point[1]],[0,0]);
+  return [sum[0]/polygon.length,sum[1]/polygon.length];
+}
+function directionVector(direction) {
+  return {negative_x:[-1,0],positive_x:[1,0],negative_y:[0,-1],positive_y:[0,1]}[direction]||null;
+}
+function gatePair(gate,region) {
+  const center=gate.center, centroid=polygonCentroid(region.polygon);
+  const vector=directionVector(gate.high_direction),length=Math.max(.001,distance(center,centroid));
+  const ux=vector?.[0]??(centroid[0]-center[0])/length,uy=vector?.[1]??(centroid[1]-center[1])/length;
+  let inside=center, outside=center;
+  for (let step=.15;step<=3;step+=.15) {
+    const candidate=[center[0]+ux*step,center[1]+uy*step];
+    if (pointInPolygon(candidate,region.polygon)) { inside=candidate; break; }
+  }
+  for (let step=.15;step<=3;step+=.15) {
+    const candidate=[center[0]-ux*step,center[1]-uy*step];
+    if (!pointInPolygon(candidate,region.polygon)) { outside=candidate; break; }
+  }
+  return {gate,inside,outside};
+}
+function gatesForRegion(navigation,region) {
+  if (region.id==="central_highland") {
+    return navigation.gates.filter(gate=>gate.category==="central_highland_step").map(gate=>gatePair(gate,region));
+  }
+  const side=region.id.startsWith("blue")?"blue":"red";
+  return navigation.gates.filter(gate=>gate.side===side&&["slope_43","trapezoid_highland_step"].includes(gate.category)).map(gate=>gatePair(gate,region));
+}
+function gateLabel(gate,direction) {
+  const prefix=gate.side==="blue"?"B":"R";
+  const name={central_highland_step:"中央高地台阶",slope_43:"43°坡",trapezoid_highland_step:"梯形高地台阶"}[gate.category]||gate.category;
+  return `${prefix}${gate.gate_index}${direction}${name}`;
+}
+function ascendingThroughGate(gate,start,end) {
+  const vector=directionVector(gate.high_direction);if(!vector)return null;
+  return (end[0]-start[0])*vector[0]+(end[1]-start[1])*vector[1]>0;
+}
+function binaryHeapPush(heap,item) {
+  heap.push(item); let index=heap.length-1;
+  while (index>0) { const parent=(index-1)>>1; if (heap[parent][0]<=item[0]) break; heap[index]=heap[parent]; index=parent; }
+  heap[index]=item;
+}
+function binaryHeapPop(heap) {
+  if (!heap.length) return null;
+  const root=heap[0], tail=heap.pop();
+  if (heap.length) {
+    let index=0;
+    while (true) {
+      let child=index*2+1;
+      if (child>=heap.length) break;
+      if (child+1<heap.length&&heap[child+1][0]<heap[child][0]) child+=1;
+      if (heap[child][0]>=tail[0]) break;
+      heap[index]=heap[child]; index=child;
+    }
+    heap[index]=tail;
+  }
+  return root;
+}
+function routeAvoiding(navigation,start,end,extraPolygons=[]) {
+  const obstacles=[...regionEntries(navigation).map(region=>region.polygon),...extraPolygons];
+  if (!obstacles.some(polygon=>segmentHitsPolygon(start,end,polygon))) return [start,end];
+  const step=Number(navigation.routing.grid_m||.35), columns=Math.round(FIELD_WIDTH/step)+1, rows=Math.round(FIELD_HEIGHT/step)+1, total=columns*rows;
+  const nodePoint=index=>{const x=index%columns,y=Math.floor(index/columns);return [Math.min(FIELD_WIDTH,x*step),Math.min(FIELD_HEIGHT,y*step)];};
+  const blocked=index=>obstacles.some(polygon=>pointInPolygon(nodePoint(index),polygon));
+  const nearestIndex=point=>{
+    const baseX=clamp(Math.round(point[0]/step),0,columns-1),baseY=clamp(Math.round(point[1]/step),0,rows-1);
+    for (let radius=0;radius<8;radius++) for (let dy=-radius;dy<=radius;dy++) for (let dx=-radius;dx<=radius;dx++) {
+      if (Math.max(Math.abs(dx),Math.abs(dy))!==radius) continue;
+      const x=baseX+dx,y=baseY+dy;if(x<0||x>=columns||y<0||y>=rows)continue;
+      const index=y*columns+x;if(!blocked(index))return index;
+    }
+    return -1;
+  };
+  const startIndex=nearestIndex(start),endIndex=nearestIndex(end);
+  if(startIndex<0||endIndex<0)return[start];
+  const scores=new Float64Array(total);scores.fill(Infinity);scores[startIndex]=0;
+  const previous=new Int32Array(total);previous.fill(-1);
+  const closed=new Uint8Array(total),heap=[];binaryHeapPush(heap,[distance(nodePoint(startIndex),end),startIndex]);
+  const moves=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+  while(heap.length){const item=binaryHeapPop(heap),index=item[1];if(closed[index])continue;if(index===endIndex)break;closed[index]=1;
+    const x=index%columns,y=Math.floor(index/columns),from=nodePoint(index);
+    for(const [dx,dy] of moves){const nx=x+dx,ny=y+dy;if(nx<0||nx>=columns||ny<0||ny>=rows)continue;const next=ny*columns+nx;if(closed[next]||blocked(next))continue;
+      const to=nodePoint(next),middle=[(from[0]+to[0])/2,(from[1]+to[1])/2];if(obstacles.some(polygon=>pointInPolygon(middle,polygon)))continue;
+      const score=scores[index]+Math.hypot(dx,dy)*step;if(score>=scores[next])continue;scores[next]=score;previous[next]=index;binaryHeapPush(heap,[score+distance(to,end),next]);
+    }
+  }
+  if(!Number.isFinite(scores[endIndex]))return[start];
+  const reversed=[];for(let at=endIndex;at>=0;at=previous[at]){reversed.push(nodePoint(at));if(at===startIndex)break;}
+  const raw=[start,...reversed.reverse(),end],simplified=[raw[0]];
+  let anchor=0;
+  while(anchor<raw.length-1){let next=anchor+1;for(let candidate=raw.length-1;candidate>anchor+1;candidate--){if(!obstacles.some(polygon=>segmentHitsPolygon(raw[anchor],raw[candidate],polygon))){next=candidate;break;}}pushPoint(simplified,raw[next]);anchor=next;}
+  return simplified;
+}
+function boundaryCrossing(start,end,polygon) {
+  const dx=end[0]-start[0],dy=end[1]-start[1],hits=[];
+  for(let i=0;i<polygon.length;i++){
+    const a=polygon[i],b=polygon[(i+1)%polygon.length],ex=b[0]-a[0],ey=b[1]-a[1],den=dx*ey-dy*ex;
+    if(Math.abs(den)<1e-9)continue;const t=((a[0]-start[0])*ey-(a[1]-start[1])*ex)/den,u=((a[0]-start[0])*dy-(a[1]-start[1])*dx)/den;
+    if(t>=0&&t<=1&&u>=0&&u<=1)hits.push({t,point:[start[0]+dx*t,start[1]+dy*t]});
+  }
+  hits.sort((a,b)=>a.t-b.t);return hits[0]?.point||null;
+}
+function crossingPair(start,end,polygon) {
+  const crossing=boundaryCrossing(start,end,polygon);if(!crossing)return null;
+  const length=Math.max(.001,distance(start,end)),ux=(end[0]-start[0])/length,uy=(end[1]-start[1])/length;
+  return {outside:[crossing[0]-ux*.24,crossing[1]-uy*.24],inside:[crossing[0]+ux*.24,crossing[1]+uy*.24]};
+}
+function bestGate(candidates,start,end,abilities,ascending) {
+  const allowed=candidates.filter(candidate=>!ascending||abilities.has(candidate.gate.category));
+  allowed.sort((a,b)=>distance(start,a.outside)+distance(a.inside,end)-distance(start,b.outside)-distance(b.inside,end));
+  return allowed[0]||null;
+}
+function applyDirectionalGates(navigation,route,capabilities,passages) {
+  const watched=navigation.gates.filter(gate=>["fly_ramp","road_step","rough_road"].includes(gate.category));
+  const output=[route[0]];
+  for(let i=1;i<route.length;i++){
+    const start=route[i-1],end=route[i],blockers=[];
+    for(const gate of watched){if(!segmentHitsPolygon(start,end,gate.polygon))continue;
+      if(gate.category==="fly_ramp"){
+        const forward=gate.side==="blue"?end[0]<start[0]:end[0]>start[0],hasBase=capabilities.abilities.has("fly_ramp"),allowed=hasBase&&(!forward?capabilities.reverseFly:true);
+        if(!allowed)blockers.push(gate.polygon);else passages.push(`${gate.side==="blue"?"B":"R"}1${forward?"飞坡":"反飞坡"}`);
+      }else if(gate.category==="road_step"){
+        const ascending=ascendingThroughGate(gate,start,end);
+        if(ascending!==false&&!capabilities.abilities.has("road_step"))blockers.push(gate.polygon);
+        else passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}${ascending===false?"下":"上"}公路台阶`);
+      }else if(!capabilities.abilities.has(gate.category))blockers.push(gate.polygon);
+      else passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}起伏路`);
+    }
+    const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):[start,end];
+    if(segment.length===1)pushPoint(output,end);else for(const point of segment.slice(1))pushPoint(output,point);
+  }
+  return output;
+}
+function terrainRoute(navigation,start,target,school,role) {
+  const capabilities=roleCapabilities(navigation,school,role),startRegion=regionAt(navigation,start),targetRegion=regionAt(navigation,target),route=[start],passages=[];
+  let current=start,adjustedTarget=target,corrected=false;
+  if(startRegion&&targetRegion&&startRegion.id===targetRegion.id){pushPoint(route,target);return{route,target,passages,corrected};}
+  if(startRegion){
+    const exit=bestGate(gatesForRegion(navigation,startRegion),start,target,capabilities.abilities,false);
+    if(exit){pushPoint(route,exit.inside);pushPoint(route,exit.outside);current=exit.outside;passages.push(gateLabel(exit.gate,"下"));}
+  }
+  if(targetRegion){
+    let entry=bestGate(gatesForRegion(navigation,targetRegion),current,target,capabilities.abilities,true);
+    const jumpPair=targetRegion.id==="central_highland"&&capabilities.abilities.has("central_highland_400mm_jump")
+      ?crossingPair(current,target,targetRegion.polygon):null;
+    const jumpCentre=jumpPair?[(jumpPair.outside[0]+jumpPair.inside[0])/2,(jumpPair.outside[1]+jumpPair.inside[1])/2]:null;
+    const crossesDesignedStep=jumpCentre&&navigation.gates.some(gate=>gate.category==="central_highland_step"&&pointInPolygon(jumpCentre,gate.polygon));
+    const entryScore=entry?distance(current,entry.outside)+distance(entry.inside,target)+.35:Infinity;
+    const jumpScore=jumpPair&&!crossesDesignedStep?distance(current,jumpPair.outside)+distance(jumpPair.inside,target)+.65:Infinity;
+    if(jumpScore<entryScore){for(const point of routeAvoiding(navigation,current,jumpPair.outside).slice(1))pushPoint(route,point);pushPoint(route,jumpPair.inside);pushPoint(route,target);passages.push("400mm跳跃上高地");}
+    else if(entry){for(const point of routeAvoiding(navigation,current,entry.outside).slice(1))pushPoint(route,point);pushPoint(route,entry.inside);pushPoint(route,target);passages.push(gateLabel(entry.gate,"上"));}
+    else if(jumpPair&&!crossesDesignedStep){
+      for(const point of routeAvoiding(navigation,current,jumpPair.outside).slice(1))pushPoint(route,point);pushPoint(route,jumpPair.inside);pushPoint(route,target);passages.push("400mm跳跃上高地");
+    }else{
+      const pair=crossingPair(current,target,targetRegion.polygon);
+      adjustedTarget=pair?.outside||current;for(const point of routeAvoiding(navigation,current,adjustedTarget).slice(1))pushPoint(route,point);corrected=true;passages.push("能力不足·停在地形外");
+    }
+  }else{
+    for(const point of routeAvoiding(navigation,current,target).slice(1))pushPoint(route,point);
+  }
+  const directional=applyDirectionalGates(navigation,route,capabilities,passages);
+  return{route:directional,target:directional.at(-1)||adjustedTarget,passages:[...new Set(passages)],corrected};
+}
+function pointAlongRoute(route,fraction) {
+  const total=routeLength(route);if(total<1e-6)return route.at(-1);
+  let remaining=clamp(fraction,0,1)*total;
+  for(let i=1;i<route.length;i++){const length=distance(route[i-1],route[i]);if(remaining<=length){const ratio=length?remaining/length:0;return[route[i-1][0]+(route[i][0]-route[i-1][0])*ratio,route[i-1][1]+(route[i][1]-route[i-1][1])*ratio];}remaining-=length;}
+  return route.at(-1);
+}
+
 async function predict(message) {
   const started=performance.now(), model=await loadModel(), predictions=[];
   const current=indexFrame(message.history["0"]||message.history[0]);
@@ -208,20 +436,29 @@ async function predict(message) {
       if (!validPosition(robot) || Number(robot[R.hp]||0)<=0) continue;
       const features=buildFeatures(message.history,message.second,side,role,message.duration);
       if (!features) continue;
-      const residuals=forward(model,features), points=[];
+      const residuals=forward(model,features), rawPoints=[];
       for (let i=0;i<model.manifest.horizons.length;i++) {
         const horizon=model.manifest.horizons[i];
         if (message.second+horizon>message.duration) continue;
         const [x,y]=worldPoint(features[model.targetX]+residuals[i*2],features[model.targetY]+residuals[i*2+1],side);
-        points.push({horizon,x,y});
+        rawPoints.push({horizon,x,y});
       }
-      if (!points.length) continue;
+      if (!rawPoints.length) continue;
       const vx=features[model.targetVx3]*FIELD_WIDTH, vy=features[model.targetVy3]*FIELD_HEIGHT;
       const moving=Math.hypot(vx,vy)>=0.15;
-      const primary=points.find(point=>point.horizon===10)||points.at(-1);
+      const primary=rawPoints.find(point=>point.horizon===10)||rawPoints.at(-1);
+      const start=[Number(robot[R.x]),Number(robot[R.y])];
+      const school=String(message.schools?.[side]||"");
+      const planned=terrainRoute(model.navigation,start,[primary.x,primary.y],school,role);
+      const points=rawPoints.filter(point=>point.horizon<=primary.horizon).map(point=>{
+        const [x,y]=pointAlongRoute(planned.route,point.horizon/primary.horizon);
+        return {horizon:point.horizon,x,y};
+      });
+      const terrainAdjusted=planned.corrected||planned.passages.length>0||routeLength(planned.route)>distance(start,planned.target)+.35;
       predictions.push({
-        side, role, robotId:robot[R.id], current:[Number(robot[R.x]),Number(robot[R.y])], points,
-        destination:destinationZone(primary.x,primary.y,side),
+        side, school, role, robotId:robot[R.id], current:start, points,
+        route:planned.route.map(point=>({x:point[0],y:point[1]})),
+        passages:planned.passages, terrainAdjusted, destination:destinationZone(planned.target[0],planned.target[1],side),
         confidence:confidence(model,primary.horizon,moving), moving,
       });
     }
@@ -242,4 +479,6 @@ if (typeof self !== "undefined") {
   };
 }
 
-if (typeof module !== "undefined") module.exports={buildFeatures,forward,linear,gelu,layerNorm};
+if (typeof module !== "undefined") module.exports={
+  buildFeatures,forward,linear,gelu,layerNorm,terrainRoute,routeLength,regionAt,
+};

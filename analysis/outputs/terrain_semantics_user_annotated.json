@@ -1,6 +1,6 @@
 {
-  "schema_version": 3,
-  "status": "user_annotation_ground_truth_v4_small_trapezoid_highland",
+  "schema_version": 4,
+  "status": "user_annotation_ground_truth_v5_directional_traversal",
   "map_asset": "web/assets/map.webp",
   "annotation_asset": "analysis/references/terrain_annotation_blue_user.png",
   "map_size_px": [
@@ -79,7 +79,8 @@
     ]
   },
   "semantics": {
-    "annotation_arrows": "location callouts only; no mandatory travel direction inferred",
+    "fly_ramp_direction": "blue right-to-left and red left-to-right by default; reverse traversal requires robot/team evidence",
+    "step_direction": "ascending and descending are separate traversal modes with different capability requirements and costs",
     "central_highland_step": "only the most protruding point of the central highland edge",
     "other_central_highland_edge": "approximately 400 mm ledge, blocked by default",
     "jump_exception": "only robots/teams positively labelled jump_capable may use the 400 mm ledge as a candidate route",
@@ -110,7 +111,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "fly_ramp_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "blue_right_to_left",
       "center_map_px": [
         1169,
         84
@@ -155,7 +156,7 @@
           14.41
         ]
       ],
-      "note": "用户标注的飞坡通路。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "用户标注的飞坡通路。 常规为单向飞坡；反向飞坡仅对有明确证据的机器人开放。"
     },
     {
       "feature_id": "red_fly_ramp",
@@ -170,7 +171,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "fly_ramp_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "red_left_to_right",
       "center_map_px": [
         1167,
         1198
@@ -215,7 +216,7 @@
           0.6033
         ]
       ],
-      "note": "用户标注的飞坡通路。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "用户标注的飞坡通路。 常规为单向飞坡；反向飞坡仅对有明确证据的机器人开放。"
     },
     {
       "feature_id": "blue_road_tunnel",
@@ -230,7 +231,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "road_tunnel_fit",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1549,
         213
@@ -275,7 +276,7 @@
           13.9727
         ]
       ],
-      "note": "公路与中央高地之间的隧道通路。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "公路与中央高地之间的隧道通路。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "red_road_tunnel",
@@ -290,7 +291,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "road_tunnel_fit",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         787,
         1069
@@ -335,7 +336,7 @@
           1.0405
         ]
       ],
-      "note": "公路与中央高地之间的隧道通路。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "公路与中央高地之间的隧道通路。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "blue_road_step",
@@ -350,7 +351,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "road_step_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1642,
         213
@@ -395,7 +396,7 @@
           13.9727
         ]
       ],
-      "note": "与公路隧道并列的公路台阶。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "与公路隧道并列的公路台阶。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "red_road_step",
@@ -410,7 +411,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "road_step_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         694,
         1069
@@ -455,7 +456,7 @@
           1.0405
         ]
       ],
-      "note": "与公路隧道并列的公路台阶。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "与公路隧道并列的公路台阶。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "blue_rough_road",
@@ -470,7 +471,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "rough_terrain_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1853,
         127
@@ -515,7 +516,7 @@
           13.721
         ]
       ],
-      "note": "起伏路段的轨迹检测区。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "起伏路段的轨迹检测区。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "red_rough_road",
@@ -530,7 +531,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "rough_terrain_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         483,
         1155
@@ -575,7 +576,7 @@
           1.2923
         ]
       ],
-      "note": "起伏路段的轨迹检测区。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "起伏路段的轨迹检测区。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "blue_central_highland_step",
@@ -590,7 +591,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "central_highland_step_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1532,
         645
@@ -635,7 +636,7 @@
           5.8636
         ]
       ],
-      "note": "中央高地边缘最凸出的常规台阶跨越点；纵向宽度取中央高地内部白色竖线的 OpenCV 检测长度。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "中央高地边缘最凸出的常规台阶跨越点；纵向宽度取中央高地内部白色竖线的 OpenCV 检测长度。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "red_central_highland_step",
@@ -650,7 +651,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "central_highland_step_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         804,
         637
@@ -695,7 +696,7 @@
           9.1496
         ]
       ],
-      "note": "中央高地边缘最凸出的常规台阶跨越点；纵向宽度取中央高地内部白色竖线的 OpenCV 检测长度。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "中央高地边缘最凸出的常规台阶跨越点；纵向宽度取中央高地内部白色竖线的 OpenCV 检测长度。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "blue_highland_tunnel",
@@ -710,7 +711,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "highland_tunnel_fit",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1178,
         1118
@@ -755,7 +756,7 @@
           0.749
         ]
       ],
-      "note": "中央高地下方隧道通路。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "中央高地下方隧道通路。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "red_highland_tunnel",
@@ -770,7 +771,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "highland_tunnel_fit",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1158,
         164
@@ -815,7 +816,7 @@
           14.2642
         ]
       ],
-      "note": "中央高地下方隧道通路。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "中央高地下方隧道通路。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "blue_slope_43",
@@ -830,7 +831,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "slope_43_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         2004,
         860
@@ -875,7 +876,7 @@
           5.698
         ]
       ],
-      "note": "通往梯形高地上层平台的 43° 坡。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "通往梯形高地上层平台的 43° 坡。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "red_slope_43",
@@ -890,7 +891,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "slope_43_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         332,
         422
@@ -935,7 +936,7 @@
           9.3153
         ]
       ],
-      "note": "通往梯形高地上层平台的 43° 坡。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "通往梯形高地上层平台的 43° 坡。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "blue_trapezoid_highland_step",
@@ -950,7 +951,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "trapezoid_step_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         2004,
         1017
@@ -995,7 +996,7 @@
           3.3527
         ]
       ],
-      "note": "梯形高地上层平台的台阶入口。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "梯形高地上层平台的台阶入口。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "red_trapezoid_highland_step",
@@ -1010,7 +1011,7 @@
       "default_traversability": "vehicle_dependent",
       "capability_tag": "trapezoid_step_capable",
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         332,
         265
@@ -1055,7 +1056,7 @@
           11.6606
         ]
       ],
-      "note": "梯形高地上层平台的台阶入口。 可物理双向通行；标注箭头不代表规则强制方向。"
+      "note": "梯形高地上层平台的台阶入口。 上行与下行分开建模，通行能力和代价可以不同。"
     },
     {
       "feature_id": "blue_trapezoid_highland_boundary",
@@ -1070,7 +1071,7 @@
       "default_traversability": "boundary_requires_crossing_capability",
       "capability_tag": null,
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": null,
       "center_map_px": [
         1970.239,
         946.81
@@ -6362,7 +6363,7 @@
       "default_traversability": "boundary_requires_crossing_capability",
       "capability_tag": null,
       "height_difference_m": null,
-      "physical_direction": "bidirectional",
+      "physical_direction": null,
       "center_map_px": [
         365.761,
         335.19
@@ -11654,7 +11655,7 @@
       "default_traversability": "blocked_by_default",
       "capability_tag": "jump_capable",
       "height_difference_m": 0.4,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1494.899,
         406.5
@@ -14786,7 +14787,7 @@
       "default_traversability": "blocked_by_default",
       "capability_tag": "jump_capable",
       "height_difference_m": 0.4,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         1425.404,
         900.0
@@ -18182,7 +18183,7 @@
       "default_traversability": "blocked_by_default",
       "capability_tag": "jump_capable",
       "height_difference_m": 0.4,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         841.101,
         875.5
@@ -21314,7 +21315,7 @@
       "default_traversability": "blocked_by_default",
       "capability_tag": "jump_capable",
       "height_difference_m": 0.4,
-      "physical_direction": "bidirectional",
+      "physical_direction": "asymmetric_up_down",
       "center_map_px": [
         910.596,
         382.0

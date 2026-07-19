@@ -37,6 +37,11 @@ class TerrainSemanticsTest(unittest.TestCase):
             matches = terrain.detect_features(x_m, y_m, self.features, padding_m=0)
             self.assertIn(feature.feature_id, {match["feature_id"] for match in matches})
 
+    def test_fly_ramps_have_symmetric_default_directions(self):
+        by_id = {feature.feature_id: terrain.feature_to_dict(feature) for feature in self.features}
+        self.assertEqual("blue_right_to_left", by_id["blue_fly_ramp"]["physical_direction"])
+        self.assertEqual("red_left_to_right", by_id["red_fly_ramp"]["physical_direction"])
+
     def test_400mm_ledge_requires_jump_capable(self):
         start = terrain.map_to_field(1450, 450)
         end = terrain.map_to_field(1560, 450)

@@ -75,6 +75,15 @@ class TerrainCapabilityDetectorTests(unittest.TestCase):
             evidence_status(item, sample_games=10),
         )
 
+    def test_directional_evidence_is_counted_separately(self):
+        item = Evidence()
+        item.add_trajectory(1, 10, "blue_fly_ramp", {"traversal": "forward"})
+        item.add_trajectory(2, 20, "blue_fly_ramp", {"traversal": "reverse"})
+        item.add_trajectory(3, 30, "red_fly_ramp", {"traversal": "reverse"})
+        self.assertEqual(1, item.trajectory_direction_counts["forward"])
+        self.assertEqual(2, item.trajectory_direction_counts["reverse"])
+        self.assertEqual({2, 3}, item.trajectory_direction_games["reverse"])
+
 
 if __name__ == "__main__":
     unittest.main()
