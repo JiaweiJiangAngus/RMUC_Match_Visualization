@@ -19,7 +19,8 @@ from analysis import terrain_crossing_points as terrain  # noqa: E402
 
 DEFAULT_CAPABILITIES = ROOT / "analysis" / "outputs" / "team_ground_terrain_capabilities.json"
 DEFAULT_OUTPUT = ROOT / "docs" / "data" / "models" / "terrain_navigation.json"
-POSITIVE_STATUS = {"人工确认", "已证实", "较强迹象"}
+POSITIVE_STATUS = {"人工确认", "已通过", "已证实", "较强迹象"}
+TUNNEL_ABILITIES = {"road_tunnel", "highland_tunnel"}
 HIGH_DIRECTIONS = {
     "central_highland_step": {"blue": "negative_x", "red": "positive_x"},
     "road_step": {"blue": "positive_y", "red": "negative_y"},
@@ -58,10 +59,18 @@ def main() -> None:
         roles = {}
         for robot in team["robots"]:
             abilities = []
+            tunnel_observations = {}
             reverse = {"crossings": 0, "games": 0, "allowed": False}
             for item in robot["capabilities"]:
                 if item["status"] in POSITIVE_STATUS:
                     abilities.append(item["ability"])
+                if item["ability"] in TUNNEL_ABILITIES:
+                    tunnel_observations[item["ability"]] = {
+                        "crossings": int(item.get("trajectory_crossings", 0)),
+                        "games": int(item.get("trajectory_games", 0)),
+                        "allowed": item["status"] in POSITIVE_STATUS,
+                        "training_label": item["training_label"],
+                    }
                 if item["ability"] == "fly_ramp":
                     evidence = item.get("trajectory_directions", {}).get("reverse", {})
                     reverse = {
@@ -72,7 +81,11 @@ def main() -> None:
                             and int(evidence.get("games", 0)) >= 2
                         ),
                     }
-            roles[robot["role"]] = {"abilities": sorted(abilities), "reverse_fly_ramp": reverse}
+            roles[robot["role"]] = {
+                "abilities": sorted(abilities),
+                "tunnel_observations": tunnel_observations,
+                "reverse_fly_ramp": reverse,
+            }
         teams[team["school"]] = roles
 
     gates = []
@@ -97,7 +110,7 @@ def main() -> None:
         )
 
     output = {
-        "schema_version": 2,
+        "schema_version": 4,
         "field_size_m": [terrain.FIELD_WIDTH_M, terrain.FIELD_HEIGHT_M],
         "routing": {
             "grid_m": 0.35,
@@ -105,6 +118,22 @@ def main() -> None:
             "reverse_fly_ramp_min_games": 2,
             "ascending_requires_positive_capability": True,
             "descending_uses_designed_entry_by_default": True,
+            "tunnel_capability_policy": "one_or_more_observed_complete_passages_else_blocked",
+            # Coarse one-second traversal priors.  They intentionally model
+            # setup/landing time as well as the obstacle itself; they can be
+            # replaced by team-role empirical distributions when national
+            # telemetry is available.
+            "terrain_speed_multipliers": {
+                "central_highland_step": {"up": 0.32, "down": 0.48},
+                "road_step": {"up": 0.45, "down": 0.62},
+                "trapezoid_highland_step": {"up": 0.34, "down": 0.5},
+                "slope_43": {"up": 0.5, "down": 0.65},
+                "central_highland_400mm_jump": {"up": 0.26, "down": 0.42},
+                "fly_ramp": {"forward": 1.12, "reverse": 0.62},
+                "rough_road": {"through": 0.58},
+                "road_tunnel": {"through": 0.72},
+                "highland_tunnel": {"through": 0.66},
+            },
         },
         "regions": {
             "central_highland": field_geometry(by_id["central_highland_region"]),

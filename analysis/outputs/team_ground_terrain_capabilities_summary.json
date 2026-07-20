@@ -6,6 +6,9 @@
   "status_counts": {
     "central_highland_step": {
       "人工确认": 0,
+      "人工排除": 0,
+      "已通过": 0,
+      "样本未通过": 0,
       "已证实": 80,
       "较强迹象": 19,
       "可能具备": 2,
@@ -15,6 +18,9 @@
     },
     "road_step": {
       "人工确认": 0,
+      "人工排除": 0,
+      "已通过": 0,
+      "样本未通过": 0,
       "已证实": 99,
       "较强迹象": 23,
       "可能具备": 5,
@@ -24,6 +30,9 @@
     },
     "fly_ramp": {
       "人工确认": 0,
+      "人工排除": 0,
+      "已通过": 0,
+      "样本未通过": 0,
       "已证实": 57,
       "较强迹象": 0,
       "可能具备": 0,
@@ -33,6 +42,9 @@
     },
     "rough_road": {
       "人工确认": 0,
+      "人工排除": 0,
+      "已通过": 0,
+      "样本未通过": 0,
       "已证实": 0,
       "较强迹象": 30,
       "可能具备": 10,
@@ -42,24 +54,33 @@
     },
     "road_tunnel": {
       "人工确认": 0,
+      "人工排除": 2,
+      "已通过": 43,
+      "样本未通过": 175,
       "已证实": 0,
-      "较强迹象": 35,
-      "可能具备": 1,
-      "弱迹象": 7,
-      "未观察到": 177,
+      "较强迹象": 0,
+      "可能具备": 0,
+      "弱迹象": 0,
+      "未观察到": 0,
       "无样本": 0
     },
     "highland_tunnel": {
       "人工确认": 0,
+      "人工排除": 2,
+      "已通过": 71,
+      "样本未通过": 147,
       "已证实": 0,
-      "较强迹象": 49,
-      "可能具备": 11,
-      "弱迹象": 11,
-      "未观察到": 149,
+      "较强迹象": 0,
+      "可能具备": 0,
+      "弱迹象": 0,
+      "未观察到": 0,
       "无样本": 0
     },
     "slope_43": {
       "人工确认": 0,
+      "人工排除": 0,
+      "已通过": 0,
+      "样本未通过": 0,
       "已证实": 0,
       "较强迹象": 5,
       "可能具备": 2,
@@ -69,6 +90,9 @@
     },
     "trapezoid_highland_step": {
       "人工确认": 0,
+      "人工排除": 0,
+      "已通过": 0,
+      "样本未通过": 0,
       "已证实": 0,
       "较强迹象": 9,
       "可能具备": 8,
@@ -78,6 +102,9 @@
     },
     "central_highland_400mm_jump": {
       "人工确认": 9,
+      "人工排除": 0,
+      "已通过": 0,
+      "样本未通过": 0,
       "已证实": 0,
       "较强迹象": 3,
       "可能具备": 2,
@@ -89,7 +116,7 @@
   "method": {
     "manual_confirmations": {
       "path": "/home/jwj/Desktop/RMUC2026数据可视化/analysis/manual_terrain_capabilities.csv",
-      "count": 9,
+      "count": 13,
       "priority": "higher_than_official_and_trajectory_evidence"
     },
     "official_event_mapping": {
@@ -168,6 +195,11 @@
         "tolerance_seconds": 15.0
       }
     },
-    "caveat": "trajectory-only evidence is probabilistic; not observed is not a negative capability label"
+    "tunnel_binary_policy": {
+      "scope": "school_x_ground_role_x_tunnel_type",
+      "positive": "at least one complete side-to-side passage",
+      "negative": "no complete passage in available samples, including no-sample roles"
+    },
+    "caveat": "non-tunnel trajectory-only evidence remains probabilistic"
   }
 }

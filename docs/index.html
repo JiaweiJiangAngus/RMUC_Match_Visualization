@@ -13,7 +13,7 @@
       document.documentElement.dataset.background = background === "simple" ? "simple" : "fancy";
     })();
   </script>
-  <link rel="stylesheet" href="./app.css?v=16">
+  <link rel="stylesheet" href="./app.css?v=20">
 </head>
 <body>
   <div class="animated-backdrop" aria-hidden="true">
@@ -126,6 +126,43 @@
         <span id="sim-model-status" class="sim-model-status">载入 44 队棋谱…</span>
       </div>
 
+      <section class="full-sim-panel" aria-labelledby="full-sim-title">
+        <div class="full-sim-heading">
+          <div><h3 id="full-sim-title">完整机器人沙盘</h3><p>每 1 秒完整结算 · 12 台机器人独立决策 · 地形约束寻路 · 交火、补给、科技核心、复活与建筑结算</p></div>
+          <span id="full-sim-status">载入逐车参数…</span>
+        </div>
+        <div class="full-sim-toolbar">
+          <label class="red"><span>红方</span><select id="full-red-team"></select><select id="full-red-hero-mode" class="full-hero-mode" aria-label="红方英雄整机类型"><option value="ranged" selected>英雄：远程优先（默认）</option><option value="melee">英雄：近战优先</option></select></label>
+          <strong>VS</strong>
+          <label class="blue"><span>蓝方</span><select id="full-blue-team"></select><select id="full-blue-hero-mode" class="full-hero-mode" aria-label="蓝方英雄整机类型"><option value="ranged" selected>英雄：远程优先（默认）</option><option value="melee">英雄：近战优先</option></select></label>
+          <button id="full-sim-new" class="primary" type="button">生成完整对局</button>
+          <button id="full-sim-play" type="button">▶ 播放</button>
+          <button id="full-sim-back" type="button">−1s</button>
+          <button id="full-sim-forward" type="button">+1s</button>
+          <select id="full-sim-speed" aria-label="沙盘播放速度"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+        </div>
+        <div class="full-sim-progress">
+          <b id="full-sim-clock">07:00</b>
+          <input id="full-sim-slider" type="range" min="0" max="420" step="1" value="0" aria-label="完整沙盘进度">
+          <span id="full-sim-result">等待生成</span>
+        </div>
+        <div class="full-sim-grid">
+          <aside id="full-red-roster" class="full-roster red"></aside>
+          <div class="full-map-wrap">
+            <canvas id="full-sim-canvas" aria-label="完整机器人对局沙盘"></canvas>
+            <div class="full-map-legend"><span><i class="red"></i>红方</span><span><i class="blue"></i>蓝方</span><span><i class="service"></i>补血+补弹</span><span><i class="ammo"></i>仅补弹</span><span><i class="core"></i>科技核心</span><span><i class="shot"></i>正在交火</span><b>点击机器人查看路线与状态</b></div>
+          </div>
+          <aside id="full-blue-roster" class="full-roster blue"></aside>
+        </div>
+        <div class="full-sim-bottom">
+          <article><div class="section-title"><h3>沙盘实时统计</h3><span id="full-sim-seed">seed --</span></div><div id="full-sim-stats"></div></article>
+          <article><div class="section-title"><h3>机器人详情</h3><span id="full-selected-label">未选择</span></div><div id="full-robot-detail" class="full-empty">点击地图或两侧兵种</div></article>
+          <article><div class="section-title"><h3>最近战况</h3><span id="full-event-count">0 条</span></div><div id="full-sim-events" class="full-event-list"></div></article>
+        </div>
+      </section>
+
+      <div class="quick-sim-title"><span>QUICK MODEL</span><h3>快速宏观推演</h3><p>用于迅速比较 44 队历史伤害节奏；完整逐车对局请使用上方沙盘。</p></div>
+
       <div class="simulator-toolbar" aria-label="模拟设置">
         <label class="sim-team-picker red"><span>红方学校</span><select id="sim-red-team"></select></label>
         <strong class="sim-versus">VS</strong>
@@ -190,7 +227,10 @@
   <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
-  <script src="./app.js?v=17"></script>
+  <script src="./app.js?v=18"></script>
+  <script src="./terrain-router.js?v=2"></script>
+  <script src="./full-match-engine.js?v=6"></script>
+  <script src="./full-match-ui.js?v=7"></script>
   <script src="./match-simulator.js?v=1"></script>
 </body>
 </html>

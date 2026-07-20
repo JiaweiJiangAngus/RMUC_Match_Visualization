@@ -8,3 +8,7 @@ school,role,ability,label,source,note
 中国石油大学（华东）,英雄,central_highland_400mm_jump,confirmed,user_2026-07-19,用户确认具备非B5/R5的400mm高地跳跃能力
 中国石油大学（华东）,步兵3,central_highland_400mm_jump,confirmed,user_2026-07-19,用户确认具备非B5/R5的400mm高地跳跃能力
 中国石油大学（华东）,步兵4,central_highland_400mm_jump,confirmed,user_2026-07-19,用户确认具备非B5/R5的400mm高地跳跃能力
+东北大学,步兵3,road_tunnel,rejected,user_2026-07-20,用户确认步兵无法通过公路隧道
+东北大学,步兵3,highland_tunnel,rejected,user_2026-07-20,用户确认步兵无法通过高地隧道
+东北大学,步兵4,road_tunnel,rejected,user_2026-07-20,用户确认步兵无法通过公路隧道
+东北大学,步兵4,highland_tunnel,rejected,user_2026-07-20,用户确认步兵无法通过高地隧道

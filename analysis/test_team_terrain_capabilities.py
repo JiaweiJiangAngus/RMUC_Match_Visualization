@@ -67,12 +67,17 @@ class TerrainCapabilityDetectorTests(unittest.TestCase):
 
     def test_manual_confirmations_load_and_override_trajectory_grade(self):
         evidence = defaultdict(Evidence)
-        self.assertEqual(9, load_manual_confirmations(DEFAULT_MANUAL_LABELS, evidence))
+        self.assertEqual(13, load_manual_confirmations(DEFAULT_MANUAL_LABELS, evidence))
         item = evidence[("上海交通大学", "英雄", "central_highland_400mm_jump")]
         item.trajectory_crossings = 0
         self.assertEqual(
             ("人工确认", 1.0, "positive_confirmed"),
             evidence_status(item, sample_games=10),
+        )
+        rejected = evidence[("东北大学", "步兵3", "road_tunnel")]
+        self.assertEqual(
+            ("人工排除", 1.0, "negative_confirmed"),
+            evidence_status(rejected, sample_games=18),
         )
 
     def test_directional_evidence_is_counted_separately(self):
@@ -83,6 +88,22 @@ class TerrainCapabilityDetectorTests(unittest.TestCase):
         self.assertEqual(1, item.trajectory_direction_counts["forward"])
         self.assertEqual(2, item.trajectory_direction_counts["reverse"])
         self.assertEqual({2, 3}, item.trajectory_direction_games["reverse"])
+
+    def test_unobserved_tunnel_is_a_negative_training_label(self):
+        self.assertEqual(
+            ("样本未通过", 1.0, "negative_unobserved"),
+            evidence_status(Evidence(), sample_games=12, ability="road_tunnel"),
+        )
+
+    def test_one_complete_tunnel_passage_is_enough_to_allow_it(self):
+        item = Evidence()
+        item.add_trajectory(7, 123, "blue_highland_tunnel")
+        status, confidence, label = evidence_status(
+            item, sample_games=12, ability="highland_tunnel",
+        )
+        self.assertEqual("已通过", status)
+        self.assertGreaterEqual(confidence, 0.9)
+        self.assertEqual("positive_observed", label)
 
 
 if __name__ == "__main__":

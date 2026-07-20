@@ -2,9 +2,10 @@
 """Infer terrain capabilities for every ground role of the 44 advancing teams.
 
 Official gain events are treated as direct observations. Terrain types without
-an event label use continuous trajectory crossings and therefore receive only
-probabilistic evidence levels. "Not observed" is explicitly not a negative
-capability label.
+an event label use continuous trajectory crossings. Tunnel capability follows
+the simulator's strict binary policy: at least one complete passage means the
+team-role can pass that tunnel type, while no passage in its samples is a
+negative training label. Other terrain types retain graded evidence.
 """
 
 from __future__ import annotations
@@ -94,7 +95,11 @@ MAX_CROSSING_SECONDS = {
     "slope_43": 12.0,
     "trapezoid_highland_step": 10.0,
 }
-STATUS_ORDER = ("人工确认", "已证实", "较强迹象", "可能具备", "弱迹象", "未观察到", "无样本")
+TUNNEL_ABILITIES = frozenset({"road_tunnel", "highland_tunnel"})
+STATUS_ORDER = (
+    "人工确认", "人工排除", "已通过", "样本未通过", "已证实",
+    "较强迹象", "可能具备", "弱迹象", "未观察到", "无样本",
+)
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,7 @@ class Gate:
 @dataclass
 class Evidence:
     manual_confirmations: list[dict] = field(default_factory=list)
+    manual_rejections: list[dict] = field(default_factory=list)
     official_events: int = 0
     official_games: set[int] = field(default_factory=set)
     trajectory_crossings: int = 0
@@ -145,6 +151,12 @@ class Evidence:
         self.manual_confirmations.append(item)
         if len(self.examples) < 4:
             self.examples.append({"source": "manual_confirmation", **item})
+
+    def add_manual_rejection(self, source: str, note: str) -> None:
+        item = {"source": source, "note": note}
+        self.manual_rejections.append(item)
+        if len(self.examples) < 4:
+            self.examples.append({"source": "manual_rejection", **item})
 
     def add_official(self, game_id: int, second: float) -> None:
         self.official_events += 1
@@ -423,7 +435,13 @@ def central_highland_jump_ascents(
     return result
 
 
-def evidence_status(evidence: Evidence, sample_games: int) -> tuple[str, float, str]:
+def evidence_status(
+    evidence: Evidence,
+    sample_games: int,
+    ability: str | None = None,
+) -> tuple[str, float, str]:
+    if evidence.manual_rejections:
+        return "人工排除", 1.0, "negative_confirmed"
     if evidence.manual_confirmations:
         return "人工确认", 1.0, "positive_confirmed"
     if evidence.official_events:
@@ -431,6 +449,13 @@ def evidence_status(evidence: Evidence, sample_games: int) -> tuple[str, float, 
         return "已证实", round(confidence, 3), "positive_observed"
     crossings = evidence.trajectory_crossings
     games = len(evidence.trajectory_games)
+    if ability in TUNNEL_ABILITIES:
+        if crossings:
+            confidence = min(0.99, 0.88 + 0.025 * min(games, 4))
+            return "已通过", round(confidence, 3), "positive_observed"
+        if sample_games:
+            return "样本未通过", 1.0, "negative_unobserved"
+        return "无样本", 1.0, "negative_no_sample"
     if crossings >= 3 and games >= 2:
         return "较强迹象", 0.80, "positive_probable"
     if crossings >= 2:
@@ -464,12 +489,17 @@ def load_manual_confirmations(
                 raise ValueError(f"unknown role in manual labels: {role}")
             if ability not in ABILITY_ORDER:
                 raise ValueError(f"unknown ability in manual labels: {ability}")
-            if label != "confirmed":
-                raise ValueError(f"unsupported manual label {label!r}; expected 'confirmed'")
+            if label not in {"confirmed", "rejected"}:
+                raise ValueError(
+                    f"unsupported manual label {label!r}; expected 'confirmed' or 'rejected'"
+                )
             if key in seen:
                 raise ValueError(f"duplicate manual label: {key}")
             seen.add(key)
-            evidence[key].add_manual(row.get("source", "user"), row.get("note", ""))
+            if label == "confirmed":
+                evidence[key].add_manual(row.get("source", "user"), row.get("note", ""))
+            else:
+                evidence[key].add_manual_rejection(row.get("source", "user"), row.get("note", ""))
             count += 1
     return count
 
@@ -646,12 +676,15 @@ def build_rows(
             }
             for ability in ABILITY_ORDER:
                 item = evidence[(entry.school, role, ability)]
-                status, confidence, training_label = evidence_status(item, len(sample.games))
+                status, confidence, training_label = evidence_status(
+                    item, len(sample.games), ability,
+                )
                 summary_counts[ability][status] += 1
                 prefix = ability
                 wide[f"{prefix}_status"] = status
                 wide[f"{prefix}_confidence"] = confidence
                 wide[f"{prefix}_manual_confirmed"] = bool(item.manual_confirmations)
+                wide[f"{prefix}_manual_rejected"] = bool(item.manual_rejections)
                 wide[f"{prefix}_official_events"] = item.official_events
                 wide[f"{prefix}_official_games"] = len(item.official_games)
                 wide[f"{prefix}_trajectory_crossings"] = item.trajectory_crossings
@@ -677,6 +710,8 @@ def build_rows(
                         "training_label": training_label,
                         "manual_confirmed": bool(item.manual_confirmations),
                         "manual_confirmations": item.manual_confirmations,
+                        "manual_rejected": bool(item.manual_rejections),
+                        "manual_rejections": item.manual_rejections,
                         "official_events": item.official_events,
                         "official_games": len(item.official_games),
                         "trajectory_crossings": item.trajectory_crossings,
@@ -709,6 +744,12 @@ def compact_status(row: dict) -> str:
     status = row["status"]
     if status == "人工确认":
         return "人工确认"
+    if status == "人工排除":
+        return "人工排除"
+    if status == "已通过":
+        return f"过{row['trajectory_crossings']}"
+    if status == "样本未通过":
+        return "不会"
     if status == "已证实":
         return f"证{row['official_events']}"
     if status == "较强迹象":
@@ -735,18 +776,19 @@ def write_outputs(
     md_path = OUTPUT_DIR / "team_ground_terrain_capabilities.md"
 
     with wide_csv.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=tuple(wide_rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=tuple(wide_rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(wide_rows)
     long_serialized = []
     for row in long_rows:
         item = dict(row)
         item["manual_confirmations"] = json.dumps(item["manual_confirmations"], ensure_ascii=False)
+        item["manual_rejections"] = json.dumps(item["manual_rejections"], ensure_ascii=False)
         item["trajectory_directions"] = json.dumps(item["trajectory_directions"], ensure_ascii=False)
         item["evidence_examples"] = json.dumps(item["evidence_examples"], ensure_ascii=False)
         long_serialized.append(item)
     with long_csv.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=tuple(long_serialized[0]))
+        writer = csv.DictWriter(handle, fieldnames=tuple(long_serialized[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(long_serialized)
 
@@ -774,8 +816,8 @@ def write_outputs(
             }
         )
     payload = {
-        "schema_version": 2,
-        "status": "evidence_graded_not_observed_is_not_negative",
+        "schema_version": 4,
+        "status": "strict_binary_tunnel_labels_with_graded_other_terrain_evidence",
         "method": summary["method"],
         "summary": {key: value for key, value in summary.items() if key != "method"},
         "teams": teams_payload,
@@ -787,18 +829,20 @@ def write_outputs(
     lines = [
         "# 44 支队伍×5 个地面兵种的地形能力证据",
         "",
-        "本报告中“未观察到”不等于“不具备”，不应直接当作训练负标签。",
+        "隧道使用严格二元标签：每个学校×具体兵种在样本中至少完整穿越 1 次才判定会过，一次都没穿越则作为训练负标签。其他地形的“未观察到”仍保留证据分级。",
         "",
         "- `证N`：有 N 次官方地形增益事件，记为已证实。",
         "- `人工确认`：用户提供的明确能力标签，优先级高于轨迹推断，但保留原始轨迹证据。",
+        "- `人工排除`：用户明确确认不具备该能力，作为训练负标签并覆盖轨迹噪声。",
+        "- `过N`：该学校×兵种有 N 次完整穿越该类隧道，判定会过。`不会`：有比赛样本但从未完整穿越，作为负标签。",
         "- `强N`：轨迹至少 3 次且横跨至少 2 局。",
         "- `可N`：轨迹至少 2 次，可能具备。",
         "- `弱1`：仅 1 次轨迹迹象；`—`：有样本但未观察到；`无样本`：数据中未出场。",
         "",
         "## 总体证据分布",
         "",
-        "| 能力 | 人工确认 | 已证实 | 较强迹象 | 可能具备 | 弱迹象 | 未观察到 | 无样本 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 能力 | 人工确认 | 人工排除 | 已通过 | 样本未通过 | 已证实 | 较强迹象 | 可能具备 | 弱迹象 | 未观察到 | 无样本 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for ability in ABILITY_ORDER:
         counts = summary["status_counts"][ability]
@@ -897,7 +941,12 @@ def analyze(
         },
         "detector_crossing_counts": dict(detector_counts),
         "official_event_detector_validation": validation,
-        "caveat": "trajectory-only evidence is probabilistic; not observed is not a negative capability label",
+        "tunnel_binary_policy": {
+            "scope": "school_x_ground_role_x_tunnel_type",
+            "positive": "at least one complete side-to-side passage",
+            "negative": "no complete passage in available samples, including no-sample roles",
+        },
+        "caveat": "non-tunnel trajectory-only evidence remains probabilistic",
     }
     return wide_rows, long_rows, summary
 

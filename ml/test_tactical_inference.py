@@ -25,6 +25,10 @@ class TacticalInferenceTests(unittest.TestCase):
                 "上海交通大学", "英雄", "central_highland_400mm_jump",
             ),
         )
+        self.assertEqual(
+            "人工排除",
+            self.engine.capability_status("东北大学", "步兵3", "road_tunnel"),
+        )
 
     def test_prediction_includes_team_prior_and_operator_fields(self):
         info, frames = load_game(DEFAULT_DATA_DIR / "1778680444314.json.gz")

@@ -9,7 +9,7 @@ const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
 const MODEL_URL = "./data/models/trajectory_mlp.json?v=16";
-const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=16";
+const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=18";
 
 let modelPromise = null;
 
@@ -323,10 +323,11 @@ function routeAvoiding(navigation,start,end,extraPolygons=[]) {
   const blocked=index=>obstacles.some(polygon=>pointInPolygon(nodePoint(index),polygon));
   const nearestIndex=point=>{
     const baseX=clamp(Math.round(point[0]/step),0,columns-1),baseY=clamp(Math.round(point[1]/step),0,rows-1);
+    const startsBlocked=obstacles.some(polygon=>pointInPolygon(point,polygon));
     for (let radius=0;radius<8;radius++) for (let dy=-radius;dy<=radius;dy++) for (let dx=-radius;dx<=radius;dx++) {
       if (Math.max(Math.abs(dx),Math.abs(dy))!==radius) continue;
       const x=baseX+dx,y=baseY+dy;if(x<0||x>=columns||y<0||y>=rows)continue;
-      const index=y*columns+x;if(!blocked(index))return index;
+      const index=y*columns+x;if(!blocked(index)&&(startsBlocked||!obstacles.some(polygon=>segmentHitsPolygon(point,nodePoint(index),polygon))))return index;
     }
     return -1;
   };
@@ -339,13 +340,14 @@ function routeAvoiding(navigation,start,end,extraPolygons=[]) {
   while(heap.length){const item=binaryHeapPop(heap),index=item[1];if(closed[index])continue;if(index===endIndex)break;closed[index]=1;
     const x=index%columns,y=Math.floor(index/columns),from=nodePoint(index);
     for(const [dx,dy] of moves){const nx=x+dx,ny=y+dy;if(nx<0||nx>=columns||ny<0||ny>=rows)continue;const next=ny*columns+nx;if(closed[next]||blocked(next))continue;
-      const to=nodePoint(next),middle=[(from[0]+to[0])/2,(from[1]+to[1])/2];if(obstacles.some(polygon=>pointInPolygon(middle,polygon)))continue;
+      const to=nodePoint(next);if(obstacles.some(polygon=>segmentHitsPolygon(from,to,polygon)))continue;
       const score=scores[index]+Math.hypot(dx,dy)*step;if(score>=scores[next])continue;scores[next]=score;previous[next]=index;binaryHeapPush(heap,[score+distance(to,end),next]);
     }
   }
   if(!Number.isFinite(scores[endIndex]))return[start];
   const reversed=[];for(let at=endIndex;at>=0;at=previous[at]){reversed.push(nodePoint(at));if(at===startIndex)break;}
-  const raw=[start,...reversed.reverse(),end],simplified=[raw[0]];
+  const safeEnd=obstacles.some(polygon=>pointInPolygon(end,polygon))?nodePoint(endIndex):end;
+  const raw=[start,...reversed.reverse(),safeEnd],simplified=[raw[0]];
   let anchor=0;
   while(anchor<raw.length-1){let next=anchor+1;for(let candidate=raw.length-1;candidate>anchor+1;candidate--){if(!obstacles.some(polygon=>segmentHitsPolygon(raw[anchor],raw[candidate],polygon))){next=candidate;break;}}pushPoint(simplified,raw[next]);anchor=next;}
   return simplified;
@@ -370,7 +372,7 @@ function bestGate(candidates,start,end,abilities,ascending) {
   return allowed[0]||null;
 }
 function applyDirectionalGates(navigation,route,capabilities,passages) {
-  const watched=navigation.gates.filter(gate=>["fly_ramp","road_step","rough_road"].includes(gate.category));
+  const watched=navigation.gates.filter(gate=>["fly_ramp","road_step","rough_road","road_tunnel","highland_tunnel"].includes(gate.category));
   const output=[route[0]];
   for(let i=1;i<route.length;i++){
     const start=route[i-1],end=route[i],blockers=[];
@@ -383,7 +385,10 @@ function applyDirectionalGates(navigation,route,capabilities,passages) {
         if(ascending!==false&&!capabilities.abilities.has("road_step"))blockers.push(gate.polygon);
         else passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}${ascending===false?"下":"上"}公路台阶`);
       }else if(!capabilities.abilities.has(gate.category))blockers.push(gate.polygon);
-      else passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}起伏路`);
+      else {
+        const name={rough_road:"起伏路",road_tunnel:"公路隧道",highland_tunnel:"高地隧道"}[gate.category]||gate.category;
+        passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}${name}`);
+      }
     }
     const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):[start,end];
     if(segment.length===1)pushPoint(output,end);else for(const point of segment.slice(1))pushPoint(output,point);
@@ -392,6 +397,8 @@ function applyDirectionalGates(navigation,route,capabilities,passages) {
 }
 function terrainRoute(navigation,start,target,school,role) {
   const capabilities=roleCapabilities(navigation,school,role),startRegion=regionAt(navigation,start),targetRegion=regionAt(navigation,target),route=[start],passages=[];
+  const symmetricBlockers=navigation.gates.filter(gate=>["rough_road","road_tunnel","highland_tunnel"].includes(gate.category)&&!capabilities.abilities.has(gate.category)).map(gate=>gate.polygon);
+  const avoid=(from,to)=>routeAvoiding(navigation,from,to,symmetricBlockers);
   let current=start,adjustedTarget=target,corrected=false;
   if(startRegion&&targetRegion&&startRegion.id===targetRegion.id){pushPoint(route,target);return{route,target,passages,corrected};}
   if(startRegion){
@@ -406,16 +413,16 @@ function terrainRoute(navigation,start,target,school,role) {
     const crossesDesignedStep=jumpCentre&&navigation.gates.some(gate=>gate.category==="central_highland_step"&&pointInPolygon(jumpCentre,gate.polygon));
     const entryScore=entry?distance(current,entry.outside)+distance(entry.inside,target)+.35:Infinity;
     const jumpScore=jumpPair&&!crossesDesignedStep?distance(current,jumpPair.outside)+distance(jumpPair.inside,target)+.65:Infinity;
-    if(jumpScore<entryScore){for(const point of routeAvoiding(navigation,current,jumpPair.outside).slice(1))pushPoint(route,point);pushPoint(route,jumpPair.inside);pushPoint(route,target);passages.push("400mm跳跃上高地");}
-    else if(entry){for(const point of routeAvoiding(navigation,current,entry.outside).slice(1))pushPoint(route,point);pushPoint(route,entry.inside);pushPoint(route,target);passages.push(gateLabel(entry.gate,"上"));}
+    if(jumpScore<entryScore){for(const point of avoid(current,jumpPair.outside).slice(1))pushPoint(route,point);pushPoint(route,jumpPair.inside);pushPoint(route,target);passages.push("400mm跳跃上高地");}
+    else if(entry){for(const point of avoid(current,entry.outside).slice(1))pushPoint(route,point);pushPoint(route,entry.inside);pushPoint(route,target);passages.push(gateLabel(entry.gate,"上"));}
     else if(jumpPair&&!crossesDesignedStep){
-      for(const point of routeAvoiding(navigation,current,jumpPair.outside).slice(1))pushPoint(route,point);pushPoint(route,jumpPair.inside);pushPoint(route,target);passages.push("400mm跳跃上高地");
+      for(const point of avoid(current,jumpPair.outside).slice(1))pushPoint(route,point);pushPoint(route,jumpPair.inside);pushPoint(route,target);passages.push("400mm跳跃上高地");
     }else{
       const pair=crossingPair(current,target,targetRegion.polygon);
-      adjustedTarget=pair?.outside||current;for(const point of routeAvoiding(navigation,current,adjustedTarget).slice(1))pushPoint(route,point);corrected=true;passages.push("能力不足·停在地形外");
+      adjustedTarget=pair?.outside||current;for(const point of avoid(current,adjustedTarget).slice(1))pushPoint(route,point);corrected=true;passages.push("能力不足·停在地形外");
     }
   }else{
-    for(const point of routeAvoiding(navigation,current,target).slice(1))pushPoint(route,point);
+    for(const point of avoid(current,target).slice(1))pushPoint(route,point);
   }
   const directional=applyDirectionalGates(navigation,route,capabilities,passages);
   return{route:directional,target:directional.at(-1)||adjustedTarget,passages:[...new Set(passages)],corrected};
