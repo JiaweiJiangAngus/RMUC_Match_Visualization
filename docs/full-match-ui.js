@@ -50,6 +50,7 @@
     let simulation = null;
     let playhead = 0;
     let playing = false;
+    let playRequested = false;
     let playbackSpeed = Number(elements.speed.value) || 1;
     let selectedKey = "red:英雄";
     let seed = Date.now() >>> 0;
@@ -406,6 +407,16 @@
       elements.play.textContent = "▶ 播放";
     }
 
+    function startPlayback() {
+      if (!simulation) return false;
+      if (simulationComplete && playhead >= simulation.frames.length - 1) playhead = 0;
+      playRequested = false;
+      playing = true;
+      elements.play.textContent = "Ⅱ 暂停";
+      lastAnimation = performance.now();
+      return true;
+    }
+
     function acceptSimulation(result, latencyMs) {
       simulation = result;
       simulationComplete = true;
@@ -420,6 +431,7 @@
       elements.create.disabled = false;
       renderUi(true);
       drawMap();
+      if (playRequested) startPlayback();
     }
 
     function startStreamingSimulation(message) {
@@ -436,6 +448,7 @@
       elements.create.disabled = false;
       renderUi(true);
       drawMap();
+      if (playRequested) startPlayback();
     }
 
     function appendSimulationChunk(message) {
@@ -453,6 +466,7 @@
     }
 
     function simulationError(message) {
+      playRequested = false;
       elements.status.textContent = `推演失败：${message}`;
       elements.status.className = "error";
       elements.create.disabled = false;
@@ -547,14 +561,15 @@
       window.requestAnimationFrame(animation);
     }
 
-    elements.create.addEventListener("click", generate);
+    elements.create.addEventListener("click", () => { playRequested = false; generate(); });
     elements.play.addEventListener("click", () => {
-      if (!simulation) return;
-      if (playing) { stop(); return; }
-      if (simulationComplete && playhead >= simulation.frames.length - 1) playhead = 0;
-      playing = true;
-      elements.play.textContent = "Ⅱ 暂停";
-      lastAnimation = performance.now();
+      if (playing) { playRequested = false; stop(); return; }
+      if (startPlayback()) return;
+      playRequested = true;
+      elements.play.textContent = "… 准备中";
+      elements.status.textContent = "正在载入参数并生成对局，完成后自动播放";
+      if (model && navigation) generate();
+      else loadSimulationData();
     });
     elements.back.addEventListener("click", () => { playhead = Math.max(0, Math.floor(playhead) - 1); renderUi(true); drawMap(); });
     elements.forward.addEventListener("click", () => { if (!simulation) return; playhead = Math.min(simulation.frames.length - 1, Math.floor(playhead) + 1); renderUi(true); drawMap(); });

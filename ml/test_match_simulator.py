@@ -374,10 +374,44 @@ function probeHardRules() {
     lineOfSight:{ground:engine.lineOfSight(state,hero,[19,7.5]),uav:engine.lineOfSight(state,uav,[19,7.5])},
   };
 }
+function wallCrossingSegment(wall) {
+  const xs=wall.polygon.map(point=>point[0]), ys=wall.polygon.map(point=>point[1]);
+  const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
+  const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  return maxX-minX >= maxY-minY
+    ? [[cx,minY-0.25],[cx,maxY+0.25]]
+    : [[minX-0.25,cy],[maxX+0.25,cy]];
+}
+function probeWallLayers() {
+  const wall=nav.static_obstacles.find(item=>item.blocks_movement!==false);
+  const [start,end]=wallCrossingSegment(wall);
+  const ground={key:'ground',role:'步兵3',hp:100,position:[...end],route:[[...end]],nextDecisionAt:99,terrainAction:'x',terrainSpeedMultiplier:.5,status:''};
+  const uav={key:'uav',role:'空中',hp:100,position:[...end],route:[[...end]],nextDecisionAt:99,terrainAction:null,terrainSpeedMultiplier:1,status:''};
+  const state={navigation:nav,router,second:10,robots:[ground,uav]};
+  engine.enforceFrameWallClearance(state,new Map([['ground',start],['uav',start]]));
+  return {start,end,ground:ground.position,uav:uav.position,crosses:engine.crossesStaticWall(state,start,end)};
+}
+function probeWallSeeds() {
+  const names=Object.keys(model.teams), seeds=[20260721,20260723,20260724,20260725];
+  let segments=0, violations=0;
+  for(const seed of seeds){
+    const run=seed-20260720;
+    const result=engine.runMatch(model,nav,names[run*2%names.length],names[(run*2+1)%names.length],seed,router);
+    for(let index=1;index<result.frames.length;index+=1){
+      for(const robot of result.frames[index].robots.filter(item=>item.role!=='空中')){
+        const previous=result.frames[index-1].robots.find(item=>item.key===robot.key);
+        segments+=1;
+        if(nav.static_obstacles.some(wall=>wall.blocks_movement!==false
+          &&router.segmentHitsPolygon([previous.x,previous.y],[robot.x,robot.y],wall.polygon))) violations+=1;
+      }
+    }
+  }
+  return {matches:seeds.length,segments,violations};
+}
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -391,6 +425,8 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.uav_rules = payload["uavRules"]
         cls.technology_core = payload["technologyCore"]
         cls.hard_rules = payload["hardRules"]
+        cls.wall_layers = payload["wallLayers"]
+        cls.wall_seeds = payload["wallSeeds"]
 
     def test_complete_match_has_421_frames_and_12_agents(self):
         self.assertEqual(421, self.result["frames"])
@@ -422,6 +458,17 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         actions = self.result["terrainDirections"]
         self.assertTrue(any("上公路台阶" in action for action in actions))
         self.assertTrue(any("下公路台阶" in action for action in actions))
+
+    def test_frame_finalizer_blocks_ground_wall_crossing_but_not_uav(self):
+        probe = self.wall_layers
+        self.assertTrue(probe["crosses"])
+        self.assertEqual(probe["start"], probe["ground"])
+        self.assertEqual(probe["end"], probe["uav"])
+
+    def test_previous_wall_collision_seeds_are_clear(self):
+        self.assertEqual(4, self.wall_seeds["matches"])
+        self.assertGreaterEqual(self.wall_seeds["segments"], 16000)
+        self.assertEqual(0, self.wall_seeds["violations"])
 
     def test_simulation_contains_combat_supply_and_terrain_actions(self):
         event_types = set(self.result["eventTypes"])

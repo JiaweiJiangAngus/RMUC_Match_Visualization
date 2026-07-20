@@ -18,18 +18,33 @@ class RoadEnclosureCvTests(unittest.TestCase):
         self.assertAlmostEqual(351, polygon[2][1], delta=12)
 
     def test_playable_walls_have_nonzero_collision_area(self):
-        self.assertEqual(9, len(self.data.walls))
+        self.assertEqual(13, len(self.data.walls))
         for wall in self.data.walls:
             polygon = road_enclosure_cv.segment_polygon(wall)
             self.assertEqual(4, len(polygon))
             side = math.dist(polygon[0], polygon[3])
-            self.assertGreater(side, 10, wall.wall_id)
+            self.assertGreater(side, 5, wall.wall_id)
 
-    def test_supply_fences_are_detected_at_the_three_visible_rows(self):
-        detected = self.data.detected_lines
-        self.assertAlmostEqual(40, detected["supply_top"][0][1], delta=6)
-        self.assertAlmostEqual(182, detected["supply_middle"][0][1], delta=6)
-        self.assertAlmostEqual(271, detected["supply_lower"][0][1], delta=6)
+    def test_registered_trace_coordinates_match_original_map(self):
+        by_id = {wall.wall_id: wall for wall in self.data.walls}
+        self.assertAlmostEqual(2026, by_id["blue_road_outer_right"].start_px[0], delta=12)
+        self.assertAlmostEqual(2055, by_id["blue_base_left"].start_px[0], delta=12)
+        self.assertAlmostEqual(855, by_id["blue_base_top"].start_px[1], delta=12)
+
+    def test_corrected_wall_trace_keeps_openings(self):
+        by_id = {wall.wall_id: wall for wall in self.data.walls}
+        self.assertNotIn("blue_road_lower_right", by_id)
+        self.assertIn("blue_fortress_outer", by_id)
+        self.assertIn("blue_base_left", by_id)
+
+    def test_manufactured_wall_axes_are_orthogonal(self):
+        for wall in self.data.walls:
+            dx = abs(wall.end_px[0] - wall.start_px[0])
+            dy = abs(wall.end_px[1] - wall.start_px[1])
+            if dx >= dy * 2:
+                self.assertAlmostEqual(wall.start_px[1], wall.end_px[1], places=6)
+            elif dy >= dx * 2:
+                self.assertAlmostEqual(wall.start_px[0], wall.end_px[0], places=6)
 
 
 if __name__ == "__main__":

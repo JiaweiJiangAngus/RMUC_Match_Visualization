@@ -687,10 +687,29 @@
       && state.router.segmentHitsPolygon(start, end, gate.polygon)
     ));
     if (forbiddenGate) return true;
+    return crossesStaticWall(state, start, end);
+  }
+
+  function crossesStaticWall(state, start, end) {
     return (state.navigation.static_obstacles || []).some((obstacle) => (
       obstacle.blocks_movement !== false
       && state.router.segmentHitsPolygon(start, end, obstacle.polygon)
     ));
+  }
+
+  function enforceFrameWallClearance(state, frameStarts) {
+    state.robots.forEach((robot) => {
+      // UAVs fly above the wall layer and are intentionally unrestricted.
+      if (robot.role === "空中" || robot.hp <= 0) return;
+      const start = frameStarts.get(robot.key);
+      if (!start || !crossesStaticWall(state, start, robot.position)) return;
+      robot.position = [...start];
+      robot.route = [[...start]];
+      robot.nextDecisionAt = state.second;
+      robot.terrainAction = null;
+      robot.terrainSpeedMultiplier = 1;
+      robot.status = "墙体连续碰撞阻止 · 重新规划";
+    });
   }
 
   function moveRobots(state) {
@@ -1133,9 +1152,18 @@
     state.second += 1;
     updateEconomy(state);
     respawnRobots(state);
+    const groundFrameStarts = new Map(
+      state.robots
+        .filter((robot) => robot.role !== "空中" && robot.hp > 0)
+        .map((robot) => [robot.key, [...robot.position]]),
+    );
     updateUavSupport(state);
     moveRobots(state);
     separateRobots(state);
+    // The UI interpolates between per-second snapshots.  Although each route
+    // leg and separation push is legal on its own, their combined start/end
+    // chord can cut through a wall corner.  Validate the final visible chord.
+    enforceFrameWallClearance(state, groundFrameStarts);
     resupplyRobots(state);
     updateTechnologyCores(state);
     updateAssemblyProtection(state);
@@ -1242,5 +1270,6 @@
     canShelterInAssembly, serviceRequiredForDecision,
     applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,
     updateAssemblyProtection, lineOfSight, snapshot, runMatch,
+    crossesStaticWall, enforceFrameWallClearance,
   };
 });

@@ -476,7 +476,13 @@ function seek(second) {
   rememberPlayhead();
 }
 function stopPlayback(){state.playing=false;$("#play-button").textContent="▶ 播放";}
-function togglePlayback(){if(!state.game)return;if(state.playhead>=state.game.info.duration)seek(0);state.playing=!state.playing;$("#play-button").textContent=state.playing?"Ⅱ 暂停":"▶ 播放";state.lastAnimation=performance.now();}
+function togglePlayback(){
+  if(!state.game){showToast("比赛数据尚未载入，请稍候再播放");return;}
+  if(state.playhead>=state.game.info.duration)seek(0);
+  state.playing=!state.playing;
+  $("#play-button").textContent=state.playing?"Ⅱ 暂停":"▶ 播放";
+  state.lastAnimation=performance.now();
+}
 function animation(now){
   const dt=Math.min(.2,(now-state.lastAnimation)/1000);state.lastAnimation=now;
   if(state.playing&&state.game){state.playhead+=dt*state.speed;if(state.playhead>=state.game.info.duration){state.playhead=state.game.info.duration;stopPlayback();}const second=Math.floor(state.playhead);if(second!==state.lastSecond){renderState(second);rememberPlayhead();}state.dirty=true;}
