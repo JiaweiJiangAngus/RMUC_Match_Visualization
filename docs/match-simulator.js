@@ -19,6 +19,8 @@
   const OUTPOST_HP = 1500;
   const AUTO_INTERVAL_MS = 360;
   const DAMAGE_KEYS = ["base", "outpost", "mobile", "mm17", "mm42", "dart"];
+  const BASE_DART_VALUES = [200, 300, 625, 1000];
+  const OUTPOST_DART_VALUE = 750;
 
   function clamp(value, low, high) {
     return Math.max(low, Math.min(high, value));
@@ -93,6 +95,30 @@
     };
   }
 
+  function updateBaseArmor(state, fortresses, signals, indexes) {
+    const elapsed = state.turn * state.binSeconds;
+    ["red", "blue"].forEach((defender) => {
+      if (state.baseArmor[defender].open) return;
+      const attacker = defender === "red" ? "blue" : "red";
+      if (elapsed < 180 || state.structures[defender].outpost > 0) {
+        state.baseArmor[defender].fortressSeconds = 0;
+        return;
+      }
+      if (fortresses[defender] === attacker) {
+        state.baseArmor[defender].fortressSeconds += clamp(
+          Number(signals[attacker][indexes.enemy_fortress_seconds] || 0), 0, state.binSeconds,
+        );
+      } else {
+        state.baseArmor[defender].fortressSeconds = 0;
+      }
+      if (state.baseArmor[defender].fortressSeconds >= 20) {
+        state.baseArmor[defender].open = true;
+        state.baseArmor[defender].openedBy = "敌方堡垒占领20秒";
+        state.logs.unshift({ time: Math.max(0, state.maxTurns * state.binSeconds - elapsed), side: attacker, code: state.codes[attacker], text: `展开${defender === "red" ? "红方" : "蓝方"}基地护甲` });
+      }
+    });
+  }
+
   function defenseModifier(model, defender) {
     const globalMean = Number(model.global.mean_received_damage_per_game) || 1;
     const received = Number(defender.aggregate.received_per_game) || globalMean;
@@ -116,24 +142,69 @@
     return values.map((value) => value / Math.max(total, 1));
   }
 
+  function nearestBaseDartValue(value) {
+    return BASE_DART_VALUES.reduce((best, candidate) => (
+      Math.abs(candidate - value) < Math.abs(best - value) ? candidate : best
+    ), BASE_DART_VALUES[0]);
+  }
+
   function applyAttack(state, side, signal, fortresses, model, indexes) {
     const opponent = side === "red" ? "blue" : "red";
     const attacker = model.teams[state.teams[side]];
     const defender = model.teams[state.teams[opponent]];
     const opponentStructures = state.structures[opponent];
     const defense = defenseModifier(model, defender);
-    const holdsEnemyFortress = fortresses[opponent] === side;
     const buffWindows = signal[indexes.buff_windows] || 0;
     const boost = defense
-      * (1 + (holdsEnemyFortress ? 0.06 : 0))
       * (1 + Math.min(buffWindows * 0.02, 0.08))
       * (opponentStructures.outpost <= 0 ? 1.08 : 1);
 
+    const rawBase = Math.max(0, Number(signal[indexes.base_damage] || 0));
+    const rawOutpost = Math.max(0, Number(signal[indexes.outpost_damage] || 0));
+    const rawDart = Math.max(0, Number(signal[indexes.damage_dart] || 0));
+    const sampledDartHits = Math.max(0, Number(signal[indexes.dart_hits] || 0));
+    const dartHitCount = rawDart >= 80 && sampledDartHits >= 0.1
+      ? clamp(Math.max(1, Math.round(sampledDartHits)), 1, 4)
+      : 0;
+    let rawBaseBallistic = rawBase;
+    let rawOutpostBallistic = rawOutpost;
+    let baseDartHitValues = [];
+    let outpostDartHits = 0;
+    if (dartHitCount && rawBase + rawOutpost > 0) {
+      // A regional 15-second bin normally contains one dart target. Preserve
+      // that target while converting blended historical damage back to legal
+      // per-hit rule values.
+      const dartTargetsBase = rawBase >= rawOutpost || opponentStructures.outpost <= 0;
+      if (dartTargetsBase && rawBase > 0) {
+        const perHit = Math.min(rawBase, rawDart) / dartHitCount;
+        const legalValue = nearestBaseDartValue(perHit);
+        baseDartHitValues = new Array(dartHitCount).fill(legalValue);
+        rawBaseBallistic = Math.max(0, rawBase - Math.min(rawBase, rawDart));
+      } else if (rawOutpost > 0) {
+        outpostDartHits = dartHitCount;
+        rawOutpostBallistic = Math.max(0, rawOutpost - Math.min(rawOutpost, rawDart));
+      }
+    }
+    const baseDartDamage = baseDartHitValues.reduce((sum, value) => sum + value, 0);
+    const outpostDartDamage = outpostDartHits * OUTPOST_DART_VALUE;
     const proposed = {
-      base: Math.max(0, (signal[indexes.base_damage] || 0) * boost),
-      outpost: Math.max(0, (signal[indexes.outpost_damage] || 0) * boost),
+      base: rawBaseBallistic * boost + baseDartDamage,
+      outpost: rawOutpostBallistic * boost + outpostDartDamage,
       mobile: Math.max(0, (signal[indexes.mobile_damage] || 0) * boost),
     };
+    const shares = categoryShares(signal, attacker.aggregate, indexes);
+    // Closed armour exposes the upper-front module: 17 mm is 5 instead of 20.
+    // 42 mm and legal dart damage remain unchanged, so closed-base loss is
+    // possible but no longer inherits the full historical mixed-fire amount.
+    let closedBallistic = 0;
+    if (!state.baseArmor[opponent].open) {
+      const ballistic = Math.max(0, proposed.base - baseDartDamage);
+      const ballisticTotal = shares[0] + shares[1] || 1;
+      const armourAdjusted = ballistic * (shares[0] * 0.25 + shares[1]) / ballisticTotal;
+      const remainingClosedBudget = Math.max(0, 1000 - state.baseArmor[opponent].closedBallisticDamage);
+      closedBallistic = Math.min(armourAdjusted, 205, remainingClosedBudget);
+      proposed.base = baseDartDamage + closedBallistic;
+    }
     const actual = {
       base: Math.min(opponentStructures.base, proposed.base),
       outpost: Math.min(opponentStructures.outpost, proposed.outpost),
@@ -141,9 +212,12 @@
     };
     opponentStructures.base = Math.max(0, opponentStructures.base - actual.base);
     opponentStructures.outpost = Math.max(0, opponentStructures.outpost - actual.outpost);
+    if (!state.baseArmor[opponent].open) {
+      const actualBaseDart = Math.min(baseDartDamage, actual.base);
+      state.baseArmor[opponent].closedBallisticDamage += Math.min(closedBallistic, actual.base - actualBaseDart);
+    }
 
     const total = actual.base + actual.outpost + actual.mobile;
-    const shares = categoryShares(signal, attacker.aggregate, indexes);
     const damage = state.damage[side];
     damage.base += actual.base;
     damage.outpost += actual.outpost;
@@ -154,6 +228,8 @@
 
     const utility = state.utility[side];
     utility.dartHits += signal[indexes.dart_hits] || 0;
+    utility.dartBaseHitValues.push(...baseDartHitValues);
+    utility.dartOutpostHits += outpostDartHits;
     utility.dartGates += signal[indexes.dart_gate_opens] || 0;
     utility.buffs += buffWindows;
     utility.terrain += signal[indexes.terrain_actions] || 0;
@@ -161,6 +237,8 @@
     utility.enemyFortressSeconds += signal[indexes.enemy_fortress_seconds] || 0;
     if (fortresses[opponent] === side) utility.enemyFortressTurns += 1;
     if (fortresses[side] === side) utility.ownFortressTurns += 1;
+    actual.baseDartHitValues = baseDartHitValues;
+    actual.outpostDartHits = outpostDartHits;
     return actual;
   }
 
@@ -238,10 +316,14 @@
         red: { base: BASE_HP, outpost: OUTPOST_HP },
         blue: { base: BASE_HP, outpost: OUTPOST_HP },
       },
+      baseArmor: {
+        red: { open: false, openedBy: null, fortressSeconds: 0, fixedDartHits: 0, closedBallisticDamage: 0 },
+        blue: { open: false, openedBy: null, fortressSeconds: 0, fixedDartHits: 0, closedBallisticDamage: 0 },
+      },
       damage: { red: emptyDamage(), blue: emptyDamage() },
       utility: {
-        red: { dartHits: 0, dartGates: 0, buffs: 0, terrain: 0, ownFortressSeconds: 0, enemyFortressSeconds: 0, ownFortressTurns: 0, enemyFortressTurns: 0 },
-        blue: { dartHits: 0, dartGates: 0, buffs: 0, terrain: 0, ownFortressSeconds: 0, enemyFortressSeconds: 0, ownFortressTurns: 0, enemyFortressTurns: 0 },
+        red: { dartHits: 0, dartBaseHitValues: [], dartOutpostHits: 0, dartGates: 0, buffs: 0, terrain: 0, ownFortressSeconds: 0, enemyFortressSeconds: 0, ownFortressTurns: 0, enemyFortressTurns: 0 },
+        blue: { dartHits: 0, dartBaseHitValues: [], dartOutpostHits: 0, dartGates: 0, buffs: 0, terrain: 0, ownFortressSeconds: 0, enemyFortressSeconds: 0, ownFortressTurns: 0, enemyFortressTurns: 0 },
       },
       fortresses: { red: "neutral", blue: "neutral" },
       actions: { red: "部署", blue: "部署" },
@@ -257,12 +339,30 @@
     const redSignal = phaseSignal(model.teams[state.teams.red], state.turn, state.random, indexes);
     const blueSignal = phaseSignal(model.teams[state.teams.blue], state.turn, state.random, indexes);
     const fortresses = resolveFortresses(redSignal, blueSignal, indexes);
+    if (state.structures.red.outpost > 0) fortresses.red = "neutral";
+    if (state.structures.blue.outpost > 0) fortresses.blue = "neutral";
+    updateBaseArmor(state, fortresses, { red: redSignal, blue: blueSignal }, indexes);
     const redOutpostBefore = state.structures.blue.outpost;
     const blueOutpostBefore = state.structures.red.outpost;
     const redBaseBefore = state.structures.blue.base;
     const blueBaseBefore = state.structures.red.base;
     const redActual = applyAttack(state, "red", redSignal, fortresses, model, indexes);
     const blueActual = applyAttack(state, "blue", blueSignal, fortresses, model, indexes);
+    [["red", redSignal, redActual], ["blue", blueSignal, blueActual]].forEach(([side, signal, actual]) => {
+      const defender = side === "red" ? "blue" : "red";
+      if (state.baseArmor[defender].open || actual.base <= 0 || Number(signal[indexes.dart_hits] || 0) <= 0) return;
+      const baseDartHits = actual.baseDartHitValues || [];
+      if (baseDartHits.some((value) => value === 625 || value === 1000)) {
+        state.baseArmor[defender].open = true;
+        state.baseArmor[defender].openedBy = "移动类飞镖目标命中";
+      } else if (baseDartHits.length) {
+        state.baseArmor[defender].fixedDartHits += baseDartHits.length;
+        if (state.baseArmor[defender].fixedDartHits >= 4) {
+          state.baseArmor[defender].open = true;
+          state.baseArmor[defender].openedBy = "固定类飞镖4发命中";
+        }
+      }
+    });
     state.fortresses = fortresses;
     state.actions.red = chooseAction(redSignal, redActual, indexes);
     state.actions.blue = chooseAction(blueSignal, blueActual, indexes);
@@ -274,7 +374,9 @@
       if (actual.base >= 1) pieces.push(`基地 ${Math.round(actual.base)}`);
       if (actual.outpost >= 1) pieces.push(`前哨 ${Math.round(actual.outpost)}`);
       if (actual.mobile >= 1) pieces.push(`机器人 ${Math.round(actual.mobile)}`);
-      if ((signal[indexes.dart_hits] || 0) >= 0.35) pieces.push("飞镖命中窗口");
+      if (actual.baseDartHitValues?.length) pieces.push(`飞镖基地 ${actual.baseDartHitValues.join("+")}`);
+      else if (actual.outpostDartHits) pieces.push(`飞镖前哨 ${OUTPOST_DART_VALUE}${actual.outpostDartHits > 1 ? `×${actual.outpostDartHits}` : ""}`);
+      else if ((signal[indexes.dart_hits] || 0) >= 0.35) pieces.push("飞镖命中窗口");
       state.logs.unshift({
         time: remaining,
         side,
@@ -388,6 +490,12 @@
     let nextSeed = Date.now() >>> 0;
     let modelLoading = false;
 
+    function publishMatchup() {
+      const detail = { red: elements.redSelect.value, blue: elements.blueSelect.value, source: "quick" };
+      window.RMUC_SIMULATOR_MATCHUP = { red: detail.red, blue: detail.blue };
+      window.dispatchEvent(new CustomEvent("rmuc:simulator-matchup", { detail }));
+    }
+
     function stopAuto() {
       if (autoTimer) window.clearInterval(autoTimer);
       autoTimer = null;
@@ -465,8 +573,8 @@
         elements.state.className = "";
       }
       elements.scoreboard.innerHTML = `
-        <div class="sim-side-structures red"><div class="sim-side-title"><span>红方</span><b>${escapeHtml(match.codes.red)}</b></div>${structureHtml("red", "基地", match.structures.red.base, BASE_HP)}${structureHtml("red", "前哨", match.structures.red.outpost, OUTPOST_HP)}</div>
-        <div class="sim-side-structures blue"><div class="sim-side-title"><span>蓝方</span><b>${escapeHtml(match.codes.blue)}</b></div>${structureHtml("blue", "基地", match.structures.blue.base, BASE_HP)}${structureHtml("blue", "前哨", match.structures.blue.outpost, OUTPOST_HP)}</div>`;
+        <div class="sim-side-structures red"><div class="sim-side-title"><span>红方</span><b>${escapeHtml(match.codes.red)}</b></div>${structureHtml("red", `基地 · 护甲${match.baseArmor.red.open ? `展开（${match.baseArmor.red.openedBy}）` : "闭合"}`, match.structures.red.base, BASE_HP)}${structureHtml("red", "前哨", match.structures.red.outpost, OUTPOST_HP)}</div>
+        <div class="sim-side-structures blue"><div class="sim-side-title"><span>蓝方</span><b>${escapeHtml(match.codes.blue)}</b></div>${structureHtml("blue", `基地 · 护甲${match.baseArmor.blue.open ? `展开（${match.baseArmor.blue.openedBy}）` : "闭合"}`, match.structures.blue.base, BASE_HP)}${structureHtml("blue", "前哨", match.structures.blue.outpost, OUTPOST_HP)}</div>`;
       elements.fortresses.innerHTML = `
         <div class="sim-fortress ${match.fortresses.red === "red" ? "red-held" : match.fortresses.red === "blue" ? "blue-held" : ""}"><span>红方堡垒</span><b>${fortressLabel(match.fortresses.red)}</b></div>
         <div class="sim-fortress ${match.fortresses.blue === "red" ? "red-held" : match.fortresses.blue === "blue" ? "blue-held" : ""}"><span>蓝方堡垒</span><b>${fortressLabel(match.fortresses.blue)}</b></div>`;
@@ -538,8 +646,9 @@
       const options = teams.map((team) => `<option value="${escapeHtml(team.school)}">${escapeHtml(team.team)} · ${escapeHtml(team.school)}</option>`).join("");
       elements.redSelect.innerHTML = options;
       elements.blueSelect.innerHTML = options;
-      elements.redSelect.value = model.teams[DEFAULT_RED] ? DEFAULT_RED : teams[0].school;
-      elements.blueSelect.value = model.teams[DEFAULT_BLUE] ? DEFAULT_BLUE : teams[Math.min(1, teams.length - 1)].school;
+      const shared = window.RMUC_SIMULATOR_MATCHUP || {};
+      elements.redSelect.value = model.teams[shared.red] ? shared.red : model.teams[DEFAULT_RED] ? DEFAULT_RED : teams[0].school;
+      elements.blueSelect.value = model.teams[shared.blue] ? shared.blue : model.teams[DEFAULT_BLUE] ? DEFAULT_BLUE : teams[Math.min(1, teams.length - 1)].school;
       elements.status.textContent = `${teams.length} 队 · ${model.bin_seconds}s / 手 · 数据就绪`;
       elements.status.classList.add("ready");
       elements.reset.disabled = false;
@@ -553,14 +662,22 @@
     elements.step.addEventListener("click", stepOnce);
     elements.auto.addEventListener("click", toggleAuto);
     elements.monteButton.addEventListener("click", simulateMany);
-    elements.redSelect.addEventListener("change", () => resetMatch());
-    elements.blueSelect.addEventListener("change", () => resetMatch());
+    elements.redSelect.addEventListener("change", () => { publishMatchup(); resetMatch(); });
+    elements.blueSelect.addEventListener("change", () => { publishMatchup(); resetMatch(); });
+    window.addEventListener("rmuc:simulator-matchup", (event) => {
+      const detail = event.detail || {};
+      if (detail.source === "quick" || !model || !model.teams[detail.red] || !model.teams[detail.blue]) return;
+      const changed = elements.redSelect.value !== detail.red || elements.blueSelect.value !== detail.blue;
+      elements.redSelect.value = detail.red;
+      elements.blueSelect.value = detail.blue;
+      if (changed) resetMatch(hashSeed(`${detail.red}|${detail.blue}|synced`));
+    });
 
     function loadModel() {
       if (modelLoading || model) return;
       modelLoading = true;
       elements.status.textContent = "正在后台载入快速棋谱…";
-      fetch("./data/models/match_simulation.json?v=1")
+      fetch("./data/models/match_simulation.json?v=2")
         .then((response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           return response.json();

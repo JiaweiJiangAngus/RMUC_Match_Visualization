@@ -67,7 +67,7 @@ class TerrainCapabilityDetectorTests(unittest.TestCase):
 
     def test_manual_confirmations_load_and_override_trajectory_grade(self):
         evidence = defaultdict(Evidence)
-        self.assertEqual(15, load_manual_confirmations(DEFAULT_MANUAL_LABELS, evidence))
+        self.assertEqual(19, load_manual_confirmations(DEFAULT_MANUAL_LABELS, evidence))
         item = evidence[("上海交通大学", "英雄", "central_highland_400mm_jump")]
         item.trajectory_crossings = 0
         self.assertEqual(
@@ -87,6 +87,13 @@ class TerrainCapabilityDetectorTests(unittest.TestCase):
                 ("人工排除", 1.0, "negative_confirmed"),
                 evidence_status(tdt_hero, sample_games=18),
             )
+            for role in ("步兵3", "步兵4"):
+                jiaolong_infantry = evidence[("上海交通大学", role, ability)]
+                jiaolong_infantry.trajectory_crossings = 20
+                self.assertEqual(
+                    ("人工排除", 1.0, "negative_confirmed"),
+                    evidence_status(jiaolong_infantry, sample_games=11),
+                )
 
     def test_directional_evidence_is_counted_separately(self):
         item = Evidence()

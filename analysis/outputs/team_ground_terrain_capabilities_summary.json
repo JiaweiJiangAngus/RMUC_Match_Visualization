@@ -46,17 +46,17 @@
       "已通过": 0,
       "样本未通过": 0,
       "已证实": 0,
-      "较强迹象": 30,
-      "可能具备": 10,
-      "弱迹象": 13,
-      "未观察到": 167,
+      "较强迹象": 1,
+      "可能具备": 1,
+      "弱迹象": 4,
+      "未观察到": 214,
       "无样本": 0
     },
     "road_tunnel": {
       "人工确认": 0,
-      "人工排除": 3,
+      "人工排除": 5,
       "已通过": 43,
-      "样本未通过": 174,
+      "样本未通过": 172,
       "已证实": 0,
       "较强迹象": 0,
       "可能具备": 0,
@@ -66,8 +66,8 @@
     },
     "highland_tunnel": {
       "人工确认": 0,
-      "人工排除": 3,
-      "已通过": 70,
+      "人工排除": 5,
+      "已通过": 68,
       "样本未通过": 147,
       "已证实": 0,
       "较强迹象": 0,
@@ -116,7 +116,7 @@
   "method": {
     "manual_confirmations": {
       "path": "/home/jwj/Desktop/RMUC2026数据可视化/analysis/manual_terrain_capabilities.csv",
-      "count": 15,
+      "count": 19,
       "priority": "higher_than_official_and_trajectory_evidence"
     },
     "official_event_mapping": {
@@ -165,7 +165,6 @@
       }
     },
     "detector_crossing_counts": {
-      "rough_road": 541,
       "road_tunnel": 687,
       "highland_tunnel": 1178,
       "road_step": 1892,
@@ -173,7 +172,8 @@
       "trapezoid_highland_step": 87,
       "fly_ramp": 262,
       "slope_43": 59,
-      "central_highland_400mm_jump": 102
+      "central_highland_400mm_jump": 102,
+      "rough_road": 9
     },
     "official_event_detector_validation": {
       "fly_ramp": {

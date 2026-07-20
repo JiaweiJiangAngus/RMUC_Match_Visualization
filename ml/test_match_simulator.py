@@ -43,7 +43,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(8, self.model["schema_version"])
+        self.assertEqual(9, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -72,12 +72,26 @@ class FullSimulationDataTests(unittest.TestCase):
         tdt_opening = self.model["teams"]["东北大学"]["target_prior_by_30s"][0]["outpost_alive"]
         self.assertGreater(tdt_opening["outpost"], 0.75)
         self.assertLessEqual(sorted(self.model["teams"]["东北大学"]["outpost_destroy_seconds"])[8], 40)
+        roles = self.model["teams"]["东北大学"]["outpost_attack_roles"]["roles"]
+        self.assertTrue(roles["英雄"]["primary_assault_role"])
+        self.assertTrue(roles["哨兵"]["primary_assault_role"])
+        self.assertFalse(roles["步兵3"]["primary_assault_role"])
+        self.assertFalse(roles["步兵4"]["primary_assault_role"])
+        self.assertLess(roles["步兵3"]["share"], 0.04)
+        self.assertLess(roles["步兵4"]["share"], 0.08)
 
     def test_rule_parameters_cover_agent_state_transitions(self):
         rules = self.model["rules"]
         self.assertEqual("V2.1.0", self.model["ruleset"]["version"])
         self.assertEqual(20, rules["damage"]["17mm"])
         self.assertEqual(200, rules["damage"]["42mm"])
+        self.assertEqual(5, rules["damage"]["base_top_17mm"])
+        self.assertEqual(750, rules["damage"]["outpost_dart"])
+        self.assertEqual(
+            {"fixed": 200, "random_fixed": 300, "random_moving": 625, "terminal_moving": 1000},
+            rules["dart_base_damage_modes"],
+        )
+        self.assertEqual(20, rules["base_armor"]["capture_seconds"])
         self.assertEqual(0.1, rules["heal_ratio_per_second"])
         self.assertEqual(0.25, rules["late_heal_ratio_per_second"])
         self.assertEqual(30, rules["respawn"]["timed_invulnerable_seconds"])
@@ -103,9 +117,14 @@ class FullSimulationDataTests(unittest.TestCase):
         )
         for team in self.model["teams"].values():
             hero = team["roles"]["英雄"]
-            self.assertEqual("ranged", hero["hero_archetype_default"])
+            self.assertIn(hero["hero_archetype_default"], {"ranged", "melee"})
+            self.assertGreater(hero["hero_archetype_evidence"]["firing_seconds"], 0)
             self.assertEqual(7, len(hero["level_by_minute"]))
             self.assertGreaterEqual(team["radar_counters_per_game"], 0)
+            self.assertTrue(team["dart_base_modes"])
+            self.assertTrue(all(item["damage"] in {200, 300, 625, 1000} for item in team["dart_base_modes"]))
+        for school in ("东北大学", "上海交通大学", "中国石油大学（华东）"):
+            self.assertEqual("melee", self.model["teams"][school]["roles"]["英雄"]["hero_archetype_default"])
 
     def test_service_zones_separate_ammo_and_healing(self):
         for side in ("red", "blue"):
@@ -170,6 +189,8 @@ function summary(state) {
     winner:state.outcome.winner,
     turn:state.turn,
     structures:state.structures,
+    baseArmor:state.baseArmor,
+    dartBaseHitValues:[...state.utility.red.dartBaseHitValues,...state.utility.blue.dartBaseHitValues],
     damage:state.damage,
     scores:[state.outcome.redScore,state.outcome.blueScore]
   };
@@ -177,7 +198,12 @@ function summary(state) {
 const first=sim.runFullMatch(model,'东北大学','中国石油大学（华东）',20260719);
 const repeat=sim.runFullMatch(model,'东北大学','中国石油大学（华东）',20260719);
 const monte=sim.runMonteCarlo(model,'东北大学','中国石油大学（华东）',100,20260719);
-console.log(JSON.stringify({first:summary(first),repeat:summary(repeat),monte}));
+const dartProbe=[];
+for(let seed=1;seed<=100;seed+=1){
+  const state=sim.runFullMatch(model,'东北大学','中国石油大学（华东）',seed);
+  dartProbe.push(...state.utility.red.dartBaseHitValues,...state.utility.blue.dartBaseHitValues);
+}
+console.log(JSON.stringify({first:summary(first),repeat:summary(repeat),monte,dartProbe}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -198,6 +224,7 @@ console.log(JSON.stringify({first:summary(first),repeat:summary(repeat),monte}))
             self.assertGreaterEqual(match["structures"][side]["outpost"], 0)
             self.assertLessEqual(match["structures"][side]["outpost"], 1500)
             self.assertTrue(all(value >= 0 for value in match["damage"][side].values()))
+            self.assertLessEqual(match["baseArmor"][side]["closedBallisticDamage"], 1000)
 
     def test_monte_carlo_accounts_for_every_game(self):
         result = self.result["monte"]
@@ -207,6 +234,10 @@ console.log(JSON.stringify({first:summary(first),repeat:summary(repeat),monte}))
         )
         self.assertGreaterEqual(result["redBaseHp"], 0)
         self.assertGreaterEqual(result["blueBaseHp"], 0)
+
+    def test_quick_simulator_uses_only_legal_base_dart_hit_values(self):
+        self.assertTrue(self.result["dartProbe"])
+        self.assertTrue(all(value in {200, 300, 625, 1000} for value in self.result["dartProbe"]))
 
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for full simulator tests")
@@ -265,6 +296,7 @@ function run() {
     outpostDestroyedSecond:result.frames.find(frame=>frame.structures.blue.outpost<=0)?.second ?? null,
     maxVisibleOutpostAssignees:Math.max(...result.frames.slice(0,61).map(frame=>frame.robots.filter(robot=>robot.side==='red'&&robot.role!=='空中'&&robot.objectiveKey==='blue:outpost').length)),
     visibleOutpostTargetSeconds:result.frames.slice(0,61).reduce((sum,frame)=>sum+frame.robots.filter(robot=>robot.side==='red'&&robot.targetKey==='blue:outpost').length,0),
+    committedOutpostRoles:result.state.robots.filter(robot=>robot.side==='red'&&robot.outpostAssaultCommitted).map(robot=>robot.role).sort(),
     signature:JSON.stringify({final,events:result.events})
   };
 }
@@ -426,6 +458,88 @@ function probeServiceExit() {
   const noCoins={pending:waiting.serviceExitPending,cooldown:waiting.ammoServiceCooldownUntil,status:waiting.status};
   return {passiveStatus,purchased,departed,noCoins};
 }
+function probeBaseRules() {
+  const damageState=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',11,router);
+  const infantry=damageState.robots.find(item=>item.key==='red:步兵3');
+  const hero=damageState.robots.find(item=>item.key==='red:英雄');
+  const base=damageState.structures.blue.base;
+  const start=base.hp;
+  engine.applyDamage(damageState,[{attacker:infantry,target:base,hits:1,weapon:'17mm',damage:20}]);
+  const closed17=start-base.hp;
+  const after17=base.hp;
+  engine.applyDamage(damageState,[{attacker:hero,target:base,hits:1,weapon:'42mm',damage:200}]);
+  const closed42=after17-base.hp;
+  engine.openBaseArmor(damageState,'blue','test');
+  const beforeOpen17=base.hp;
+  engine.applyDamage(damageState,[{attacker:infantry,target:base,hits:1,weapon:'17mm',damage:20}]);
+  const open17=beforeOpen17-base.hp;
+
+  const closeState=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',12,router);
+  const closeHero=closeState.robots.find(item=>item.key==='red:英雄');
+  closeHero.position=[closeState.structures.blue.base.position[0]-0.8,closeState.structures.blue.base.position[1]];
+  const pointBlankFirst=engine.targetCandidates(closeState,closeHero)[0]?.type;
+
+  const fortress=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',13,router);
+  fortress.robots.forEach(robot=>{robot.hp=0;});
+  const occupier=fortress.robots.find(item=>item.key==='red:英雄');
+  const engineer=fortress.robots.find(item=>item.key==='red:工程');
+  occupier.hp=occupier.maxHp;
+  occupier.position=[...model.structures.blue.fortress];
+  fortress.second=180;
+  engine.resolveFortresses(fortress);
+  const beforeOutpostDown=fortress.teamState.blue.fortress;
+  occupier.hp=0;
+  engineer.hp=engineer.maxHp;
+  engineer.position=[...model.structures.blue.fortress];
+  fortress.structures.blue.outpost.hp=0;
+  engine.resolveFortresses(fortress);
+  const engineerCannotOccupy=fortress.teamState.blue.fortress;
+  engineer.hp=0;
+  occupier.hp=occupier.maxHp;
+  fortress.second=179;
+  engine.resolveFortresses(fortress);
+  const beforeUnlock=fortress.structures.blue.base.fortressCaptureSeconds;
+  for(let second=180;second<200;second+=1){fortress.second=second;engine.resolveFortresses(fortress);}
+  return {
+    closed17,closed42,open17,pointBlankFirst,beforeOutpostDown,engineerCannotOccupy,beforeUnlock,
+    fortressSeconds:fortress.structures.blue.base.fortressCaptureSeconds,
+    armorOpen:fortress.structures.blue.base.armorOpen,
+  };
+}
+function probeDartRules() {
+  const schools=['东北大学','中国石油大学（华东）'];
+  const saved=schools.map(school=>({
+    school,
+    hits:model.teams[school].dart_hits_per_game,
+    modes:model.teams[school].dart_base_modes,
+  }));
+  const modeNames={200:'fixed',300:'random_fixed',625:'random_moving',1000:'terminal_moving'};
+  const base={};
+  for(const damage of [200,300,625,1000]){
+    schools.forEach(school=>{
+      model.teams[school].dart_hits_per_game=4;
+      model.teams[school].dart_base_modes=[{mode:modeNames[damage],damage,weight:1}];
+    });
+    const state=engine.createMatch(model,nav,schools[0],schools[1],damage,router);
+    state.structures.red.outpost.hp=0;
+    state.structures.blue.outpost.hp=0;
+    state.second=90;
+    state.random=()=>0.1;
+    const before=state.structures.blue.base.hp;
+    engine.dartStrike(state);
+    base[damage]={damage:before-state.structures.blue.base.hp,armorOpen:state.structures.blue.base.armorOpen};
+  }
+  const outpost=engine.createMatch(model,nav,schools[0],schools[1],750,router);
+  outpost.second=90;
+  outpost.random=()=>0.1;
+  const beforeOutpost=outpost.structures.blue.outpost.hp;
+  engine.dartStrike(outpost);
+  saved.forEach(entry=>{
+    model.teams[entry.school].dart_hits_per_game=entry.hits;
+    model.teams[entry.school].dart_base_modes=entry.modes;
+  });
+  return {base,outpostDamage:beforeOutpost-outpost.structures.blue.outpost.hp};
+}
 function wallCrossingSegment(wall) {
   const xs=wall.polygon.map(point=>point[0]), ys=wall.polygon.map(point=>point[1]);
   const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
@@ -463,7 +577,7 @@ function probeWallSeeds() {
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),baseRules:probeBaseRules(),dartRules:probeDartRules(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -478,6 +592,8 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.technology_core = payload["technologyCore"]
         cls.hard_rules = payload["hardRules"]
         cls.service_exit = payload["serviceExit"]
+        cls.base_rules = payload["baseRules"]
+        cls.dart_rules = payload["dartRules"]
         cls.wall_layers = payload["wallLayers"]
         cls.wall_seeds = payload["wallSeeds"]
 
@@ -490,8 +606,28 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
     def test_tdt_opening_converts_observed_outpost_pressure(self):
         self.assertLessEqual(self.result["firstOutpostDamageSecond"], 15)
         self.assertLessEqual(self.result["outpostDestroyedSecond"], 100)
-        self.assertGreaterEqual(self.result["maxVisibleOutpostAssignees"], 3)
+        self.assertEqual(["哨兵", "英雄"], self.result["committedOutpostRoles"])
+        self.assertEqual(2, self.result["maxVisibleOutpostAssignees"])
         self.assertGreaterEqual(self.result["visibleOutpostTargetSeconds"], 5)
+
+    def test_base_armor_damage_point_blank_targeting_and_fortress_unlock_follow_v210(self):
+        probe = self.base_rules
+        self.assertEqual(5, probe["closed17"])
+        self.assertEqual(200, probe["closed42"])
+        self.assertEqual(20, probe["open17"])
+        self.assertEqual("base", probe["pointBlankFirst"])
+        self.assertEqual("neutral", probe["beforeOutpostDown"])
+        self.assertEqual("neutral", probe["engineerCannotOccupy"])
+        self.assertEqual(0, probe["beforeUnlock"])
+        self.assertEqual(20, probe["fortressSeconds"])
+        self.assertTrue(probe["armorOpen"])
+
+    def test_full_simulator_uses_exact_v210_dart_damage(self):
+        for damage in (200, 300, 625, 1000):
+            probe = self.dart_rules["base"][str(damage)]
+            self.assertEqual(damage, probe["damage"])
+            self.assertEqual(damage >= 625, probe["armorOpen"])
+        self.assertEqual(750, self.dart_rules["outpostDamage"])
 
     def test_supply_status_and_exit_match_actual_ammunition_state(self):
         probe = self.service_exit

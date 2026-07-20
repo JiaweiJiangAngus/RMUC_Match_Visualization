@@ -7,7 +7,7 @@
 | 1 | `blue_fly_ramp` | `red_fly_ramp` | 飞坡 | (14.006, 14.887) | `fly_ramp_capable` |
 | 2 | `blue_road_tunnel` | `red_road_tunnel` | 公路隧道 | (18.559, 13.178) | `road_tunnel_fit` |
 | 3 | `blue_road_step` | `red_road_step` | 公路台阶 | (19.673, 13.178) | `road_step_capable` |
-| 4 | `blue_rough_road` | `red_rough_road` | 起伏路段 | (22.201, 14.317) | `rough_terrain_capable` |
+| 4 | `blue_rough_road` | `red_rough_road` | 起伏路段 | (23.160, 14.317) | `rough_terrain_capable` |
 | 5 | `blue_central_highland_step` | `red_central_highland_step` | 中央高地台阶 | (18.355, 7.454) | `central_highland_step_capable` |
 | 6 | `blue_highland_tunnel` | `red_highland_tunnel` | 高地隧道 | (14.114, 1.186) | `highland_tunnel_fit` |
 | 7 | `blue_slope_43` | `red_slope_43` | 43°坡 | (24.010, 4.605) | `slope_43_capable` |

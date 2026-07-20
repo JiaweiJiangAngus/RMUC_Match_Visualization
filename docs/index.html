@@ -132,9 +132,9 @@
           <span id="full-sim-status">载入逐车参数…</span>
         </div>
         <div class="full-sim-toolbar">
-          <label class="red"><span>红方</span><select id="full-red-team"></select><select id="full-red-hero-mode" class="full-hero-mode" aria-label="红方英雄整机类型"><option value="ranged" selected>英雄：远程优先（默认）</option><option value="melee">英雄：近战优先</option></select></label>
+          <label class="red"><span>红方</span><select id="full-red-team"></select><select id="full-red-hero-mode" class="full-hero-mode" aria-label="红方英雄整机类型"><option value="auto" selected>英雄：自动（队伍画像）</option><option value="ranged">英雄：远程优先</option><option value="melee">英雄：近战优先</option></select></label>
           <strong>VS</strong>
-          <label class="blue"><span>蓝方</span><select id="full-blue-team"></select><select id="full-blue-hero-mode" class="full-hero-mode" aria-label="蓝方英雄整机类型"><option value="ranged" selected>英雄：远程优先（默认）</option><option value="melee">英雄：近战优先</option></select></label>
+          <label class="blue"><span>蓝方</span><select id="full-blue-team"></select><select id="full-blue-hero-mode" class="full-hero-mode" aria-label="蓝方英雄整机类型"><option value="auto" selected>英雄：自动（队伍画像）</option><option value="ranged">英雄：远程优先</option><option value="melee">英雄：近战优先</option></select></label>
           <button id="full-sim-new" class="primary" type="button">生成完整对局</button>
           <button id="full-sim-play" type="button">▶ 播放</button>
           <button id="full-sim-back" type="button">−1s</button>
@@ -227,10 +227,10 @@
   <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
-  <script src="./app.js?v=20"></script>
+  <script src="./app.js?v=21"></script>
   <script src="./terrain-router.js?v=5"></script>
-  <script src="./full-match-engine.js?v=14"></script>
-  <script src="./full-match-ui.js?v=17"></script>
-  <script src="./match-simulator.js?v=2"></script>
+  <script src="./full-match-engine.js?v=15"></script>
+  <script src="./full-match-ui.js?v=18"></script>
+  <script src="./match-simulator.js?v=3"></script>
 </body>
 </html>

@@ -36,7 +36,8 @@ HIGH_DIRECTIONS = {
 ROUTING_BLOCKER_DIMENSIONS_PX = {
     "road_tunnel": (150, 96),
     "road_step": (150, 96),
-    "rough_road": (200, 180),
+    # 起伏路横跨整条道路，不能在两侧留下可绕过的“平地缝隙”。
+    "rough_road": (380, 180),
     "central_highland_step": (220, 280),
     "slope_43": (185, 100),
     "trapezoid_highland_step": (145, 100),

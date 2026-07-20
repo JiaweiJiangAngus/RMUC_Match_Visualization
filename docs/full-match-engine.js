@@ -131,13 +131,26 @@
   }
 
   function teamTargetPrior(state, robot) {
-    const priors = state.model.teams[robot.school].target_prior_by_30s || [];
+    const teamProfile = state.model.teams[robot.school];
+    const priors = teamProfile.target_prior_by_30s || [];
     const phase = Math.min(priors.length - 1, Math.floor(state.second / 30));
     const entry = priors[Math.max(0, phase)] || {};
     const outpostAlive = state.structures[otherSide(robot.side)].outpost.hp > 0;
-    return (outpostAlive ? entry.outpost_alive : entry.outpost_down)
+    const basePrior = (outpostAlive ? entry.outpost_alive : entry.outpost_down)
       || entry
       || (outpostAlive ? { robot: 0.45, outpost: 0.55, base: 0 } : { robot: 0.75, outpost: 0, base: 0.25 });
+    if (!outpostAlive) return basePrior;
+    const roleEvidence = teamProfile.outpost_attack_roles?.roles?.[robot.role];
+    if (!roleEvidence) return basePrior;
+    // Keep rare observed attacks possible, but do not turn a team-level
+    // outpost style into an equal scripted assignment for every infantry.
+    const preference = clamp(Number(roleEvidence.outpost_preference || 0.02), 0.02, 1);
+    const adjustedOutpost = Number(basePrior.outpost || 0) * preference * preference;
+    return {
+      robot: Number(basePrior.robot || 0) + Number(basePrior.outpost || 0) - adjustedOutpost,
+      outpost: adjustedOutpost,
+      base: Number(basePrior.base || 0),
+    };
   }
 
   function outpostAssaultActive(state, robot) {
@@ -524,11 +537,11 @@
       codes: { red: model.teams[redSchool].team, blue: model.teams[blueSchool].team },
       structures: {
         red: {
-          base: { key: "red:base", side: "red", kind: "base", hp: model.rules.base_hp, maxHp: model.rules.base_hp, position: model.structures.red.base },
+          base: { key: "red:base", side: "red", kind: "base", hp: model.rules.base_hp, maxHp: model.rules.base_hp, position: model.structures.red.base, armorOpen: false, armorOpenedBy: null, fortressCaptureSeconds: 0, fortressLastOccupiedAt: -999, fixedDartHits: 0 },
           outpost: { key: "red:outpost", side: "red", kind: "outpost", hp: model.rules.outpost_hp, maxHp: model.rules.outpost_hp, position: model.structures.red.outpost },
         },
         blue: {
-          base: { key: "blue:base", side: "blue", kind: "base", hp: model.rules.base_hp, maxHp: model.rules.base_hp, position: model.structures.blue.base },
+          base: { key: "blue:base", side: "blue", kind: "base", hp: model.rules.base_hp, maxHp: model.rules.base_hp, position: model.structures.blue.base, armorOpen: false, armorOpenedBy: null, fortressCaptureSeconds: 0, fortressLastOccupiedAt: -999, fixedDartHits: 0 },
           outpost: { key: "blue:outpost", side: "blue", kind: "outpost", hp: model.rules.outpost_hp, maxHp: model.rules.outpost_hp, position: model.structures.blue.outpost },
         },
       },
@@ -580,7 +593,11 @@
         },
       };
       ROLE_ORDER.forEach((role) => {
-        const heroArchetype = state.options.heroArchetypes?.[side] || model.rules.hero_default_archetype || "ranged";
+        const requestedArchetype = state.options.heroArchetypes?.[side];
+        const teamDefault = teamProfile.roles?.["英雄"]?.hero_archetype_default;
+        const heroArchetype = ["melee", "ranged"].includes(requestedArchetype)
+          ? requestedArchetype
+          : (["melee", "ranged"].includes(teamDefault) ? teamDefault : "ranged");
         const robot = makeRobot(model, school, side, role, heroArchetype);
         robot.shotBudget = Math.max(0, Number(robot.profile.shots_per_game || 0) * (0.82 + state.random() * 0.36));
         if (role === "空中") {
@@ -595,9 +612,23 @@
       allocateInitialAmmo(state, side);
       const openingPrior = Number(teamProfile.target_prior_by_30s?.[0]?.outpost_alive?.outpost || 0);
       const armedGround = state.robots.filter((robot) => robot.side === side && robot.role !== "空中" && robot.profile.weapon);
-      const committedCount = clamp(Math.round(armedGround.length * openingPrior), openingPrior > 0.2 ? 1 : 0, armedGround.length);
-      const ranked = armedGround.map((robot) => ({ robot, draw: state.random() })).sort((left, right) => left.draw - right.draw);
-      ranked.slice(0, committedCount).forEach(({ robot }) => { robot.outpostAssaultCommitted = true; });
+      const roleEvidence = teamProfile.outpost_attack_roles?.roles || {};
+      const eligible = armedGround.map((robot) => ({
+        robot,
+        evidence: roleEvidence[robot.role] || {},
+      })).filter((item) => item.evidence.primary_assault_role);
+      eligible.forEach(({ robot, evidence }) => {
+        const probability = clamp(0.2 + Number(evidence.game_rate || 0) * 0.75, 0.2, 0.92);
+        if (state.random() < probability) robot.outpostAssaultCommitted = true;
+      });
+      if (openingPrior > 0.2 && eligible.length && !eligible.some(({ robot }) => robot.outpostAssaultCommitted)) {
+        eligible.sort((left, right) => (
+          Number(right.evidence.opening_share || right.evidence.share || 0)
+          - Number(left.evidence.opening_share || left.evidence.share || 0)
+        ));
+        eligible[0].robot.outpostAssaultCommitted = true;
+      }
+      const committedCount = armedGround.filter((robot) => robot.outpostAssaultCommitted).length;
       state.teamState[side].outpostAssaultCount = committedCount;
     });
     event(state, "system", "start", `${state.codes.red} vs ${state.codes.blue} 完整沙盘开局`);
@@ -636,14 +667,26 @@
     if (robot.hp > 0) robot.hp += gain;
   }
 
+  function openBaseArmor(state, side, source) {
+    const base = state.structures[side].base;
+    if (base.armorOpen) return false;
+    base.armorOpen = true;
+    base.armorOpenedBy = source;
+    event(state, otherSide(side), "base_armor", `${side === "red" ? "红方" : "蓝方"}基地护甲展开（${source}）`);
+    return true;
+  }
+
   function resolveFortresses(state) {
     SIDES.forEach((fortSide) => {
       const centre = state.model.structures[fortSide].fortress;
       const present = { red: 0, blue: 0 };
-      state.robots.forEach((robot) => {
-        if (robot.hp <= 0 || robot.weak || robot.role === "空中") return;
-        if (state.router.distance(robot.position, centre) <= 1.3) present[robot.side] += 1;
-      });
+      const active = state.structures[fortSide].outpost.hp <= 0;
+      if (active) {
+        state.robots.forEach((robot) => {
+          if (robot.hp <= 0 || robot.weak || !["英雄", "步兵3", "步兵4", "哨兵"].includes(robot.role)) return;
+          if (state.router.distance(robot.position, centre) <= 1.3) present[robot.side] += 1;
+        });
+      }
       let owner = "neutral";
       if (present.red && present.blue) owner = "contested";
       else if (present.red) owner = "red";
@@ -651,6 +694,26 @@
       if (state.teamState[fortSide].fortress !== owner) {
         state.teamState[fortSide].fortress = owner;
         if (owner !== "neutral") event(state, owner === "contested" ? "system" : owner, "fortress", `${fortSide === "red" ? "红方" : "蓝方"}堡垒：${owner === "contested" ? "双方争夺" : `${state.codes[owner]} 控制`}`);
+      }
+      const base = state.structures[fortSide].base;
+      if (base.armorOpen) return;
+      const rules = state.model.rules.base_armor || {};
+      const attacker = otherSide(fortSide);
+      const eligible = state.second >= Number(rules.enemy_fortress_unlock_second || 180)
+        && (!rules.enemy_outpost_must_be_down || state.structures[fortSide].outpost.hp <= 0);
+      if (!eligible) {
+        base.fortressCaptureSeconds = 0;
+        base.fortressLastOccupiedAt = -999;
+        return;
+      }
+      if (owner === attacker) {
+        base.fortressCaptureSeconds += 1;
+        base.fortressLastOccupiedAt = state.second;
+      } else if (state.second - base.fortressLastOccupiedAt > Number(rules.capture_grace_seconds || 3)) {
+        base.fortressCaptureSeconds = 0;
+      }
+      if (base.fortressCaptureSeconds >= Number(rules.capture_seconds || 20)) {
+        openBaseArmor(state, fortSide, "敌方堡垒连续占领20秒");
       }
     });
   }
@@ -1022,6 +1085,12 @@
     groups.outpost.sort((left, right) => left.distance - right.distance);
     groups.base.sort((left, right) => left.distance - right.distance);
 
+    // A hero already beside the base must actually take the available top/front
+    // armour shot instead of randomly ignoring the structure for a distant robot.
+    if (robot.role === "英雄" && groups.base[0]?.distance <= 3.5) {
+      return [...groups.base, ...groups.robot, ...groups.outpost];
+    }
+
     if (robot.objectiveKey === structures.outpost.key && groups.outpost.length) {
       return [...groups.outpost, ...groups.robot, ...groups.base];
     }
@@ -1059,12 +1128,11 @@
       const teamProfile = state.model.teams[robot.school];
       const baseAccuracy = Number(teamProfile.accuracy[weapon] || 0.1);
       const distanceFactor = 1.12 - 0.47 * target.distance / Math.max(1, Number(robot.profile.range_m));
-      const fortressBuff = state.teamState[target.entity.side]?.fortress === robot.side ? 1.08 : 1;
       const outpostDeadline = Math.max(20, Number(state.teamState[robot.side].outpostObjectiveSecond || 150));
       const structureAccuracy = target.type === "robot" ? 1
         : target.type === "outpost" ? 1.35 + 0.75 * clamp((state.second + 20) / outpostDeadline, 0, 1)
-          : 1.35;
-      const accuracy = clamp(baseAccuracy * ROLE_ACCURACY[robot.role] * distanceFactor * fortressBuff * structureAccuracy, 0.018, target.type === "robot" ? 0.78 : 0.9);
+          : target.entity.armorOpen ? 1.35 : weapon === "42mm" ? 1.15 : 0.42;
+      const accuracy = clamp(baseAccuracy * ROLE_ACCURACY[robot.role] * distanceFactor * structureAccuracy, 0.018, target.type === "robot" ? 0.78 : 0.9);
       let hits = 0;
       for (let index = 0; index < shots; index += 1) if (state.random() < accuracy) hits += 1;
       robot.ammo -= shots;
@@ -1086,7 +1154,11 @@
       if (hit.target.role === "空中") return;
       if (hit.target.invulnerableUntil > state.second || hit.target.assemblyProtected) return;
       let damage = hit.damage;
-      if (hit.target.kind === "base" && state.structures[hit.target.side].outpost.hp > 0) damage *= 0.35;
+      if (hit.target.kind === "base" && !hit.target.armorOpen && hit.weapon === "17mm") {
+        const ordinary = Number(state.model.rules.damage["17mm"] || 20);
+        const topArmor = Number(state.model.rules.damage.base_top_17mm || 5);
+        damage *= topArmor / Math.max(1, ordinary);
+      }
       const groundOrStructure = hit.target.kind || (hit.target.role && hit.target.role !== "空中");
       if (groundOrStructure) {
         damage *= 1 - Number(state.teamState[hit.target.side]?.technologyCore?.defenseRatio || 0);
@@ -1286,12 +1358,32 @@
       event(state, side, "dart", "飞镖闸门开启");
       if (state.random() >= perWindow) return;
       const target = state.structures[enemy].outpost.hp > 0 ? state.structures[enemy].outpost : state.structures[enemy].base;
-      const actual = Math.min(target.hp, Number(state.model.rules.damage.dart || 400));
+      let nominal;
+      let dartMode = null;
+      if (target.kind === "outpost") {
+        nominal = Number(state.model.rules.damage.outpost_dart || 750);
+      } else {
+        const modes = teamProfile.dart_base_modes || Object.entries(state.model.rules.dart_base_damage_modes || {})
+          .map(([mode, damage]) => ({ mode, damage, weight: 1 }));
+        dartMode = weightedItem(modes.map((mode) => [mode, Number(mode.weight || 1)]), 1, state.random)?.[0]
+          || { mode: "fixed", damage: 200 };
+        nominal = Number(dartMode.damage);
+      }
+      const actual = Math.min(target.hp, nominal);
       target.hp -= actual;
       state.teamState[side].dartHits += 1;
       state.stats[side].damage += actual;
       state.stats[side][target.kind === "base" ? "baseDamage" : "outpostDamage"] += actual;
-      event(state, side, "dart", `飞镖命中${target.kind === "base" ? "基地" : "前哨站"}，伤害 ${actual}`);
+      if (target.kind === "base") {
+        if (["random_moving", "terminal_moving"].includes(dartMode.mode)) {
+          openBaseArmor(state, enemy, `飞镖${dartMode.mode === "terminal_moving" ? "末端移动目标" : "随机移动目标"}命中`);
+        } else {
+          target.fixedDartHits += 1;
+          if (target.fixedDartHits >= 4) openBaseArmor(state, enemy, "固定类目标4发全部命中");
+        }
+      }
+      const residual = actual === nominal ? "" : `（实际扣除 ${actual}）`;
+      event(state, side, "dart", `飞镖命中${target.kind === "base" ? "基地" : "前哨站"}，规则伤害 ${nominal}${residual}`);
       if (target.hp <= 0) event(state, side, "destroy", `飞镖击毁${target.kind === "base" ? "基地" : "前哨站"}`);
     });
   }
@@ -1376,12 +1468,18 @@
         red: {
           base: state.structures.red.base.hp,
           baseMax: state.structures.red.base.maxHp,
+          baseArmorOpen: state.structures.red.base.armorOpen,
+          baseArmorOpenedBy: state.structures.red.base.armorOpenedBy,
+          fortressCaptureSeconds: state.structures.red.base.fortressCaptureSeconds,
           outpost: state.structures.red.outpost.hp,
           outpostMax: state.structures.red.outpost.maxHp,
         },
         blue: {
           base: state.structures.blue.base.hp,
           baseMax: state.structures.blue.base.maxHp,
+          baseArmorOpen: state.structures.blue.base.armorOpen,
+          baseArmorOpenedBy: state.structures.blue.base.armorOpenedBy,
+          fortressCaptureSeconds: state.structures.blue.base.fortressCaptureSeconds,
           outpost: state.structures.blue.outpost.hp,
           outpostMax: state.structures.blue.outpost.maxHp,
         },
@@ -1465,6 +1563,7 @@
     canShelterInAssembly, serviceRequiredForDecision,
     applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,
     updateAssemblyProtection, lineOfSight, snapshot, runMatch,
+    openBaseArmor, resolveFortresses, dartStrike, applyDamage,
     crossesStaticWall, crossesForbiddenTerrainGate, enforceFrameWallClearance,
   };
 });

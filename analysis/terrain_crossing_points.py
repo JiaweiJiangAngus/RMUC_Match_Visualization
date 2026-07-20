@@ -104,7 +104,7 @@ BLUE_GATE_SPECS = (
     GateSpec(1, "fly_ramp", (1169, 84), 0, 190, 72, "fly_ramp_capable", "用户标注的飞坡通路。"),
     GateSpec(2, "road_tunnel", (1549, 213), 90, 120, 60, "road_tunnel_fit", "公路与中央高地之间的隧道通路。"),
     GateSpec(3, "road_step", (1642, 213), 90, 120, 60, "road_step_capable", "与公路隧道并列的公路台阶。"),
-    GateSpec(4, "rough_road", (1853, 127), 0, 170, 90, "rough_terrain_capable", "起伏路段的轨迹检测区。"),
+    GateSpec(4, "rough_road", (1933, 127), 0, 360, 90, "rough_terrain_capable", "从原内侧边界向场地外侧延伸，覆盖道路完整宽度且不侵入相邻公路台阶。"),
     GateSpec(5, "central_highland_step", (1532, 645), 0, 190, 240, "central_highland_step_capable", "中央高地边缘最凸出的常规台阶跨越点；纵向宽度取中央高地内部白色竖线的 OpenCV 检测长度。"),
     GateSpec(6, "highland_tunnel", (1178, 1118), 0, 180, 66, "highland_tunnel_fit", "中央高地下方隧道通路。"),
     GateSpec(7, "slope_43", (2004, 860), 90, 165, 64, "slope_43_capable", "通往梯形高地上层平台的 43° 坡。"),
@@ -729,7 +729,7 @@ def write_outputs(features: Sequence[Feature], counts: dict[str, int]) -> tuple[
         "field_geometry_m", "note",
     )
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         for feature in features:
             data = feature_to_dict(feature)

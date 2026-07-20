@@ -301,16 +301,39 @@ def build_ground_navigation(
 def build_target_priors(
     db: sqlite3.Connection,
     schools: tuple[str, ...],
-) -> tuple[dict[str, list[dict]], dict[str, list[int]], dict[str, list[dict]]]:
-    """Learn 30-second target preference conditional on outpost state."""
+) -> tuple[dict[str, list[dict]], dict[str, list[int]], dict[str, list[dict]], dict[str, dict]]:
+    """Learn target preference and attribute structure hits to firing roles.
+
+    Hit events identify the victim but not the attacker.  Shot events do carry
+    the attacking robot id and role, so structure damage is distributed across
+    the roles that fired the matching calibre in the same referee second.  The
+    result is deliberately labelled as an attribution instead of ground truth.
+    """
     allowed = set(schools)
+    shot_roles: dict[tuple[int, int, str, str], Counter] = defaultdict(Counter)
+    for row in db.execute(
+        """
+        SELECT game_id,CAST(时刻秒 AS INT) second,学校名,类别,机器人类型,COUNT(*) shots
+        FROM events
+        WHERE 事件类型='发弹' AND 类别 IN ('17mm','42mm')
+          AND 机器人类型 IN ('英雄','步兵3','步兵4','哨兵','空中')
+        GROUP BY game_id,second,学校名,类别,机器人类型
+        """
+    ):
+        if row["学校名"] in allowed:
+            shot_roles[(int(row["game_id"]), int(row["second"]), row["学校名"], row["类别"])][row["机器人类型"]] = int(row["shots"])
+
     records = []
     outpost_damage: Counter = Counter()
+    outpost_role_damage: Counter = Counter()
+    outpost_role_opening_damage: Counter = Counter()
+    outpost_role_games: dict[tuple[str, str], set[int]] = defaultdict(set)
+    outpost_attack_games: dict[str, set[int]] = defaultdict(set)
     outpost_first_hit_at: dict[tuple[str, int], float] = {}
     outpost_destroyed_at: dict[tuple[str, int], float] = {}
     for row in db.execute(
         """
-        SELECT e.game_id,e.时刻秒,e.机器人类型 victim_type,ABS(e.数值) damage,
+        SELECT e.game_id,e.时刻秒,e.机器人类型 victim_type,e.类别,ABS(e.数值) damage,
                CASE WHEN e.学校名=m.红方学校 THEN m.蓝方学校 ELSE m.红方学校 END attacker
         FROM events e JOIN matches m USING(game_id)
         WHERE e.事件类型='受击' AND e.类别 IN ('17mm','42mm')
@@ -329,6 +352,16 @@ def build_target_priors(
             key = (attacker, game_id)
             outpost_first_hit_at.setdefault(key, second)
             outpost_damage[key] += damage
+            outpost_attack_games[attacker].add(game_id)
+            firing = shot_roles.get((game_id, int(second), attacker, row["类别"]), Counter())
+            fired = sum(firing.values())
+            if fired:
+                for role, count in firing.items():
+                    attributed = damage * count / fired
+                    outpost_role_damage[(attacker, role)] += attributed
+                    if second < 60:
+                        outpost_role_opening_damage[(attacker, role)] += attributed
+                    outpost_role_games[(attacker, role)].add(game_id)
             if outpost_damage[key] >= 1500 and key not in outpost_destroyed_at:
                 outpost_destroyed_at[key] = second
 
@@ -390,7 +423,126 @@ def build_target_priors(
         })
     for values in attack_windows.values():
         values.sort(key=lambda item: (item["first_hit_second"], item["destroy_second"] or 999))
-    return payload, destroy_seconds, attack_windows
+
+    role_evidence: dict[str, dict] = {}
+    for school in schools:
+        total = sum(outpost_role_damage[(school, role)] for role in ROLES) or 1
+        opening_total = sum(outpost_role_opening_damage[(school, role)] for role in ROLES) or 1
+        maximum_share = max((outpost_role_damage[(school, role)] / total for role in GROUND_ROLES), default=0) or 1
+        attacked_games = max(1, len(outpost_attack_games[school]))
+        roles = {}
+        for role in ROLES:
+            damage = outpost_role_damage[(school, role)]
+            share = damage / total
+            opening_share = outpost_role_opening_damage[(school, role)] / opening_total
+            role_games = len(outpost_role_games[(school, role)])
+            # A visible, pre-planned ground assault is reserved for roles with
+            # meaningful repeated evidence. Incidental same-second fire remains
+            # in the preference weight but cannot create a scripted assignment.
+            primary = role in GROUND_ROLES and role != "工程" and role_games >= 2 and (
+                share >= 0.10 or opening_share >= 0.10
+            )
+            roles[role] = {
+                "attributed_damage": rounded(damage),
+                "share": rounded(share, 4),
+                "opening_share": rounded(opening_share, 4),
+                "games": role_games,
+                "game_rate": rounded(role_games / attacked_games, 4),
+                "outpost_preference": rounded(clamp(share / maximum_share, 0.02, 1), 4),
+                "primary_assault_role": primary,
+            }
+        role_evidence[school] = {
+            "method": "同局同秒同口径发弹角色按发弹数分摊前哨受击伤害",
+            "matched_damage": rounded(total),
+            "attack_games": len(outpost_attack_games[school]),
+            "roles": roles,
+        }
+    return payload, destroy_seconds, attack_windows, role_evidence
+
+
+def infer_hero_archetype_priors(db: sqlite3.Connection, schools: tuple[str, ...]) -> dict[str, dict]:
+    """Infer an automatic national archetype prior from regional hero posture.
+
+    The new V2.1 archetype choice did not exist in regional telemetry.  We do
+    not claim to observe that choice; instead, close structure firing and deep
+    forward firing positions produce a transparent melee-priority default.
+    """
+    allowed = set(schools)
+    structure_distances: dict[str, list[float]] = defaultdict(list)
+    forward_positions: dict[str, list[float]] = defaultdict(list)
+    for row in db.execute(
+        """
+        SELECT DISTINCT e.学校名,e.阵营,e.game_id,CAST(e.时刻秒 AS INT) second,t.x,t.y
+        FROM events e JOIN timeseries t
+          ON t.game_id=e.game_id AND t.robot_id=e.robot_id
+         AND CAST(t.时刻秒 AS INT)=CAST(e.时刻秒 AS INT) AND t.学校名=e.学校名
+        WHERE e.事件类型='发弹' AND e.机器人类型='英雄' AND e.类别='42mm'
+          AND t.x BETWEEN 0.05 AND 27.95 AND t.y BETWEEN 0.05 AND 14.95
+        """
+    ):
+        school = row["学校名"]
+        if school not in allowed:
+            continue
+        x, y = float(row["x"]), float(row["y"])
+        if row["阵营"] == "红":
+            enemy_outpost, enemy_base, forward = (17.0, 11.75), (25.34, 7.5), x
+        else:
+            enemy_outpost, enemy_base, forward = (11.0, 3.25), (2.66, 7.5), 28.0 - x
+        structure_distances[school].append(min(
+            ((x - enemy_outpost[0]) ** 2 + (y - enemy_outpost[1]) ** 2) ** 0.5,
+            ((x - enemy_base[0]) ** 2 + (y - enemy_base[1]) ** 2) ** 0.5,
+        ))
+        forward_positions[school].append(forward)
+
+    result = {}
+    for school in schools:
+        distances = structure_distances.get(school, [])
+        positions = forward_positions.get(school, [])
+        median_distance = median(distances) if distances else 8.0
+        median_forward = median(positions) if positions else 10.0
+        archetype = "melee" if median_distance <= 6.0 or median_forward >= 14.0 else "ranged"
+        result[school] = {
+            "archetype": archetype,
+            "source": "区域赛英雄42mm发弹位置的近结构距离与前压深度画像推断；非国赛实选标签",
+            "firing_seconds": len(distances),
+            "median_enemy_structure_distance_m": rounded(median_distance),
+            "median_canonical_forward_x_m": rounded(median_forward),
+        }
+    return result
+
+
+def build_dart_mode_priors(db: sqlite3.Connection, schools: tuple[str, ...]) -> dict[str, list[dict]]:
+    """Return V2.1 legal base-dart modes weighted by observed team hits."""
+    allowed_damage = {200: "fixed", 300: "random_fixed", 625: "random_moving", 1000: "terminal_moving"}
+    counts: dict[str, Counter] = defaultdict(Counter)
+    global_counts = Counter()
+    for row in db.execute(
+        """
+        SELECT 学校名,CAST(数值 AS INT) damage,COUNT(*) hits
+        FROM events
+        WHERE 事件类型='飞镖命中' AND 目标类型='基地'
+        GROUP BY 学校名,damage
+        """
+    ):
+        damage = int(row["damage"] or 0)
+        if damage not in allowed_damage:
+            continue
+        hits = int(row["hits"] or 0)
+        global_counts[damage] += hits
+        if row["学校名"] in schools:
+            counts[row["学校名"]][damage] += hits
+    # Regional data predates the 1000-point terminal target. Keep a small legal
+    # fallback mass so teams without a base hit are not locked to an old mode.
+    fallback = Counter(global_counts)
+    fallback[1000] += 1
+    result = {}
+    for school in schools:
+        values = counts[school] or fallback
+        result[school] = [
+            {"damage": damage, "mode": allowed_damage[damage], "weight": int(weight)}
+            for damage, weight in sorted(values.items()) if weight > 0
+        ]
+    return result
 
 
 def is_uav_home(point: tuple[float, float] | list[float]) -> bool:
@@ -556,6 +708,8 @@ def main() -> None:
     db.row_factory = sqlite3.Row
     economy_priors = infer_regional_economy(db, schools)
     uav_navigation = build_uav_navigation(db, schools)
+    hero_archetype_priors = infer_hero_archetype_priors(db, schools)
+    dart_mode_priors = build_dart_mode_priors(db, schools)
 
     games = defaultdict(int)
     for row in db.execute("SELECT 红方学校,蓝方学校 FROM matches"):
@@ -618,7 +772,7 @@ def main() -> None:
     # independently teleporting their intent between minute-level dwell modes.
     # Each game has equal total weight and stationary service dwell is reduced.
     goals, ground_transitions = build_ground_navigation(options.games_dir, schools)
-    target_priors, outpost_destroy_seconds, outpost_attack_windows = build_target_priors(db, schools)
+    target_priors, outpost_destroy_seconds, outpost_attack_windows, outpost_attack_roles = build_target_priors(db, schools)
 
     spawns: dict[tuple[str, str], list[float]] = {}
     for row in db.execute(
@@ -750,7 +904,8 @@ def main() -> None:
                 ]
             if role == "英雄":
                 role_payload[role].update({
-                    "hero_archetype_default": "ranged",
+                    "hero_archetype_default": hero_archetype_priors[school]["archetype"],
+                    "hero_archetype_evidence": hero_archetype_priors[school],
                     "level_by_minute": level_by_minute,
                 })
             elif role == "空中":
@@ -764,19 +919,21 @@ def main() -> None:
             "accuracy": {key: rounded(value, 4) for key, value in accuracy.items()},
             "dart_hits_per_game": aggregate.get("dart_hits_per_game", 0),
             "dart_gates_per_game": aggregate.get("dart_gates_per_game", 0),
+            "dart_base_modes": dart_mode_priors[school],
             "radar_counters_per_game": rounded(radar_counters[school] / max(1, games[school]), 3),
             "uav_counters_received_per_game": rounded(uav_counters_received[school] / max(1, games[school]), 3),
             "economy_prior": economy_priors[school],
             "target_prior_by_30s": target_priors[school],
             "outpost_destroy_seconds": outpost_destroy_seconds[school],
             "outpost_attack_windows": outpost_attack_windows[school],
+            "outpost_attack_roles": outpost_attack_roles[school],
             "style": aggregate.get("style", "常规阵地运营"),
             "roles": role_payload,
         }
     db.close()
 
     payload = {
-        "schema_version": 8,
+        "schema_version": 9,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -790,7 +947,7 @@ def main() -> None:
         "roles": list(ROLES),
         "training_feature_schema": {
             "static": {
-                "hero_archetype": {"type": "categorical", "values": ["ranged", "melee"], "default": "ranged"},
+                "hero_archetype": {"type": "categorical", "values": ["ranged", "melee"], "default": "team_profile"},
                 "ruleset_version": {"type": "categorical", "value": "V2.1.0"},
             },
             "per_second": {
@@ -852,10 +1009,22 @@ def main() -> None:
             "automatic_income": [[61, 50], [121, 50], [181, 50], [241, 50], [301, 50], [361, 150]],
             "base_hp": 5000,
             "outpost_hp": 1500,
-            "damage": {"17mm": 20, "42mm": 200, "dart": 400},
+            "damage": {"17mm": 20, "42mm": 200, "base_top_17mm": 5, "outpost_dart": 750},
+            "base_armor": {
+                "enemy_fortress_unlock_second": 180,
+                "enemy_outpost_must_be_down": True,
+                "capture_seconds": 20,
+                "capture_grace_seconds": 3,
+            },
+            "dart_base_damage_modes": {
+                "fixed": 200,
+                "random_fixed": 300,
+                "random_moving": 625,
+                "terminal_moving": 1000,
+            },
             "heat_per_shot": {"17mm": 10, "42mm": 100},
             "hero_archetypes": HERO_ARCHETYPES,
-            "hero_default_archetype": "ranged",
+            "hero_default_archetype": "team_profile",
             "heal_ratio_per_second": 0.1,
             "late_heal_ratio_per_second": 0.25,
             "late_heal_start_second": 240,
@@ -909,15 +1078,15 @@ def main() -> None:
         },
         "limitations": [
             "remaining ammunition and explicit supply completion are not present in the referee export",
-            "17mm attacker identity is estimated because hit events only identify the victim",
+            "structure-hit attacker roles are attributed from same-game, same-second, same-calibre shot events; simultaneous shooters share damage in proportion to shots",
             "ground goals are per-game-balanced 0.5 m position modes with stationary service dwell down-weighted; five-second transitions preserve local tactical continuity",
-            "team target priorities are learned in 30-second phases from damage dealt to robots, outposts and bases; hit telemetry does not identify the attacking robot role",
+            "team target priorities are learned in 30-second phases; visible outpost assignments additionally require repeated role-level shot attribution evidence",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
             "terrain traversal changes speed for both ascent and descent using configurable coarse priors; these priors model alignment and landing time and should be replaced by team-role distributions when enough national telemetry is available",
             "navigation hard-blocks the user-annotated elevated regions and 16 terrain gates, but a full CAD-derived occupancy mask for every static wall and structure is not yet available",
             "national matches always start at 400 coins; regional initial-coin ratings are retained only as descriptive telemetry and are not used by the simulator",
             "technology-core completion priors are inferred from persistent ten-second increases in regional total-coins telemetry because the export has no explicit assembly event",
-            "V2.1.0 hero archetype and buyback choices were not present in regional telemetry; those features are rule-conditioned simulation inputs until national-match samples are ingested",
+            "V2.1.0 hero archetype was not present in regional telemetry; automatic defaults are explicitly marked inferences from hero firing posture and remain user-overridable",
         ],
         "teams": teams,
     }

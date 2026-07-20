@@ -63,6 +63,28 @@
     let simulationComplete = false;
     let expectedSimulationFrames = 421;
 
+    function updateHeroAutoLabel(side) {
+      if (!model) return;
+      const teamSelect = side === "red" ? elements.redSelect : elements.blueSelect;
+      const heroSelect = side === "red" ? elements.redHeroMode : elements.blueHeroMode;
+      const archetype = model.teams[teamSelect.value]?.roles?.["英雄"]?.hero_archetype_default || "ranged";
+      const auto = heroSelect.querySelector('option[value="auto"]');
+      if (auto) auto.textContent = `英雄：自动（${HERO_ARCHETYPE_LABEL[archetype]}）`;
+    }
+
+    function publishMatchup() {
+      const detail = { red: elements.redSelect.value, blue: elements.blueSelect.value, source: "full" };
+      window.RMUC_SIMULATOR_MATCHUP = { red: detail.red, blue: detail.blue };
+      window.dispatchEvent(new CustomEvent("rmuc:simulator-matchup", { detail }));
+    }
+
+    function teamSelectionChanged() {
+      updateHeroAutoLabel("red");
+      updateHeroAutoLabel("blue");
+      publishMatchup();
+      generate();
+    }
+
     function formatClock(second) {
       const remaining = Math.max(0, 420 - Math.round(second));
       return `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
@@ -122,6 +144,7 @@
 
     function drawStructure(frame, side, kind, position, width, height, scale) {
       const hp = frame.structures[side][kind];
+      const armorOpen = kind === "base" && frame.structures[side].baseArmorOpen;
       const max = kind === "base"
         ? Number(frame.structures[side].baseMax || model.rules.base_hp)
         : Number(frame.structures[side].outpostMax || model.rules.outpost_hp);
@@ -131,14 +154,14 @@
       context.arc(x, y, radius, 0, Math.PI * 2);
       context.fillStyle = hp > 0 ? "rgba(5,12,18,.92)" : "rgba(35,36,38,.88)";
       context.fill();
-      context.strokeStyle = hp > 0 ? COLORS[side] : "#687581";
+      context.strokeStyle = hp > 0 ? (armorOpen ? COLORS.gold : COLORS[side]) : "#687581";
       context.lineWidth = 2.4 * scale;
       context.stroke();
       context.fillStyle = "#fff";
       context.font = `900 ${Math.max(9, 10 * scale)}px sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "middle";
-      context.fillText(kind === "base" ? "基" : "前", x, y);
+      context.fillText(kind === "base" ? (armorOpen ? "基开" : "基闭") : "前", x, y);
       const barWidth = 42 * scale;
       const barY = y + radius + 4 * scale;
       context.fillStyle = "rgba(2,6,10,.9)";
@@ -339,6 +362,7 @@
           <div class="full-stat-row"><span>累计伤害</span><b>${formatNumber(red.damage)}</b><b>${formatNumber(blue.damage)}</b></div>
           <div class="full-stat-row"><span>机器人伤害</span><b>${formatNumber(red.robotDamage)}</b><b>${formatNumber(blue.robotDamage)}</b></div>
           <div class="full-stat-row"><span>前哨 / 基地</span><b>${formatNumber(red.outpostDamage)} / ${formatNumber(red.baseDamage)}</b><b>${formatNumber(blue.outpostDamage)} / ${formatNumber(blue.baseDamage)}</b></div>
+          <div class="full-stat-row"><span>基地护甲 / 堡垒开甲进度</span><b>${frame.structures.red.baseArmorOpen ? `展开 · ${escapeHtml(frame.structures.red.baseArmorOpenedBy || "已开甲")}` : `闭合 · ${formatNumber(frame.structures.red.fortressCaptureSeconds)}s`}</b><b>${frame.structures.blue.baseArmorOpen ? `展开 · ${escapeHtml(frame.structures.blue.baseArmorOpenedBy || "已开甲")}` : `闭合 · ${formatNumber(frame.structures.blue.fortressCaptureSeconds)}s`}</b></div>
           <div class="full-stat-row"><span>17 / 42mm 发弹</span><b>${red.shots17} / ${red.shots42}</b><b>${blue.shots17} / ${blue.shots42}</b></div>
           <div class="full-stat-row"><span>击毁 / 补给</span><b>${red.kills} / ${red.supplies}</b><b>${blue.kills} / ${blue.supplies}</b></div>
           <div class="full-stat-row"><span>买活 / 雷达反制</span><b>${red.buybacks} / ${red.radarCounters}</b><b>${blue.buybacks} / ${blue.radarCounters}</b></div>
@@ -486,7 +510,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=8");
+      const worker = new Worker("./full-match-worker.js?v=9");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -548,8 +572,12 @@
       const options = teams.map(([school, team]) => `<option value="${escapeHtml(school)}">${escapeHtml(team.team)} · ${escapeHtml(school)}</option>`).join("");
       elements.redSelect.innerHTML = options;
       elements.blueSelect.innerHTML = options;
-      elements.redSelect.value = model.teams[DEFAULT_RED] ? DEFAULT_RED : teams[0][0];
-      elements.blueSelect.value = model.teams[DEFAULT_BLUE] ? DEFAULT_BLUE : teams[1][0];
+      const shared = window.RMUC_SIMULATOR_MATCHUP || {};
+      elements.redSelect.value = model.teams[shared.red] ? shared.red : model.teams[DEFAULT_RED] ? DEFAULT_RED : teams[0][0];
+      elements.blueSelect.value = model.teams[shared.blue] ? shared.blue : model.teams[DEFAULT_BLUE] ? DEFAULT_BLUE : teams[1][0];
+      updateHeroAutoLabel("red");
+      updateHeroAutoLabel("blue");
+      publishMatchup();
       elements.status.textContent = `${teams.length} 队 · ${model.ruleset?.version || "规则参数"} 就绪 · 进入沙盘后后台生成`;
       elements.status.className = "ready";
       // The model is loaded only after the simulator panel enters the loader
@@ -589,10 +617,20 @@
     elements.forward.addEventListener("click", () => { if (!simulation) return; playhead = Math.min(simulation.frames.length - 1, Math.floor(playhead) + 1); renderUi(true); drawMap(); });
     elements.speed.addEventListener("change", () => { playbackSpeed = Number(elements.speed.value) || 1; });
     elements.slider.addEventListener("input", () => { if (!simulation) return; playhead = Number(elements.slider.value); renderUi(true); drawMap(); });
-    elements.redSelect.addEventListener("change", generate);
-    elements.blueSelect.addEventListener("change", generate);
+    elements.redSelect.addEventListener("change", teamSelectionChanged);
+    elements.blueSelect.addEventListener("change", teamSelectionChanged);
     elements.redHeroMode.addEventListener("change", generate);
     elements.blueHeroMode.addEventListener("change", generate);
+    window.addEventListener("rmuc:simulator-matchup", (event) => {
+      const detail = event.detail || {};
+      if (detail.source === "full" || !model || !model.teams[detail.red] || !model.teams[detail.blue]) return;
+      const changed = elements.redSelect.value !== detail.red || elements.blueSelect.value !== detail.blue;
+      elements.redSelect.value = detail.red;
+      elements.blueSelect.value = detail.blue;
+      updateHeroAutoLabel("red");
+      updateHeroAutoLabel("blue");
+      if (changed) generate();
+    });
     canvas.addEventListener("click", (event) => {
       if (!simulation) return;
       const point = worldPoint(event.clientX, event.clientY);
@@ -608,8 +646,8 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=9").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=21").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=10").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=22").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;

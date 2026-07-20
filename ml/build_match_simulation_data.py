@@ -30,8 +30,6 @@ BIN_SECONDS = 15
 BIN_COUNT = 28
 COMBAT_CATEGORIES = {"17mm", "42mm", "飞镖"}
 MOBILE_TYPES = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
-GROUND_TYPES = ("英雄", "工程", "步兵3", "步兵4", "哨兵")
-
 # Per-bin compact layout.
 BASE, OUTPOST, MOBILE, D17, D42, DART, DART_HITS, DART_GATES, FORT_OWN, FORT_ENEMY, BUFF, TERRAIN = range(12)
 
@@ -163,7 +161,7 @@ def main() -> None:
                  CASE WHEN 阵营='蓝' THEN 15.0-y ELSE y END AS cy
           FROM timeseries
           WHERE 学校名 IN ({placeholders})
-            AND 机器人类型 IN ('英雄','工程','步兵3','步兵4','哨兵')
+            AND 机器人类型 IN ('英雄','步兵3','步兵4','哨兵')
             AND 当前血量>0 AND x IS NOT NULL AND y IS NOT NULL
         )
         SELECT game_id,学校名,bin,

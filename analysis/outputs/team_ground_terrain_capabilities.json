@@ -4,7 +4,7 @@
   "method": {
     "manual_confirmations": {
       "path": "/home/jwj/Desktop/RMUC2026数据可视化/analysis/manual_terrain_capabilities.csv",
-      "count": 15,
+      "count": 19,
       "priority": "higher_than_official_and_trajectory_evidence"
     },
     "official_event_mapping": {
@@ -53,7 +53,6 @@
       }
     },
     "detector_crossing_counts": {
-      "rough_road": 541,
       "road_tunnel": 687,
       "highland_tunnel": 1178,
       "road_step": 1892,
@@ -61,7 +60,8 @@
       "trapezoid_highland_step": 87,
       "fly_ramp": 262,
       "slope_43": 59,
-      "central_highland_400mm_jump": 102
+      "central_highland_400mm_jump": 102,
+      "rough_road": 9
     },
     "official_event_detector_validation": {
       "fly_ramp": {
@@ -138,17 +138,17 @@
         "已通过": 0,
         "样本未通过": 0,
         "已证实": 0,
-        "较强迹象": 30,
-        "可能具备": 10,
-        "弱迹象": 13,
-        "未观察到": 167,
+        "较强迹象": 1,
+        "可能具备": 1,
+        "弱迹象": 4,
+        "未观察到": 214,
         "无样本": 0
       },
       "road_tunnel": {
         "人工确认": 0,
-        "人工排除": 3,
+        "人工排除": 5,
         "已通过": 43,
-        "样本未通过": 174,
+        "样本未通过": 172,
         "已证实": 0,
         "较强迹象": 0,
         "可能具备": 0,
@@ -158,8 +158,8 @@
       },
       "highland_tunnel": {
         "人工确认": 0,
-        "人工排除": 3,
-        "已通过": 70,
+        "人工排除": 5,
+        "已通过": 68,
         "样本未通过": 147,
         "已证实": 0,
         "较强迹象": 0,
@@ -575,48 +575,19 @@
               "alive_seconds": 7725,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 39,
-              "trajectory_games": 18,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778631047459,
-                  "second": 74.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778631047459,
-                  "second": 294.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778631047459,
-                  "second": 376.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778631715625,
-                  "second": 317.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -1684,48 +1655,19 @@
               "alive_seconds": 5625,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 7,
-              "trajectory_games": 6,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778809035146,
-                  "second": 371.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778934392734,
-                  "second": 399.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778935110465,
-                  "second": 346.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778987430277,
-                  "second": 260.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -3438,34 +3380,19 @@
               "alive_seconds": 7799,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778736603265,
-                  "second": 142.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778736603265,
-                  "second": 295.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -5864,48 +5791,19 @@
               "alive_seconds": 4860,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 12,
-              "trajectory_games": 6,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778676183890,
-                  "second": 254.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778676183890,
-                  "second": 324.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778676183890,
-                  "second": 348.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778677005970,
-                  "second": 250.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -6427,48 +6325,19 @@
               "alive_seconds": 4858,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 12,
-              "trajectory_games": 8,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778642821611,
-                  "second": 110.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778676183890,
-                  "second": 18.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778676183890,
-                  "second": 86.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778676183890,
-                  "second": 252.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -6721,27 +6590,19 @@
               "alive_seconds": 4920,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778749713778,
-                  "second": 306.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -6952,27 +6813,19 @@
               "alive_seconds": 4756,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778829037274,
-                  "second": 272.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -7506,27 +7359,19 @@
               "alive_seconds": 6616,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778754834040,
-                  "second": 99.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -8386,34 +8231,19 @@
               "alive_seconds": 6571,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 2,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778637960624,
-                  "second": 14.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778754834040,
-                  "second": 13.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -8954,48 +8784,19 @@
               "alive_seconds": 4600,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 15,
-              "trajectory_games": 6,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778649272036,
-                  "second": 63.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778649272036,
-                  "second": 181.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778680444314,
-                  "second": 67.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778680444314,
-                  "second": 202.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -9306,19 +9107,29 @@
               "alive_seconds": 4113,
               "ability": "road_tunnel",
               "ability_zh": "公路隧道",
-              "status": "样本未通过",
+              "status": "人工排除",
               "confidence": 1.0,
-              "training_label": "negative_unobserved",
+              "training_label": "negative_confirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
-              "manual_rejected": false,
-              "manual_rejections": [],
+              "manual_rejected": true,
+              "manual_rejections": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过公路隧道"
+                }
+              ],
               "official_events": 0,
               "official_games": 0,
               "trajectory_crossings": 0,
               "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": []
+              "evidence_examples": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过公路隧道"
+                }
+              ]
             },
             {
               "stage": "全国赛直通",
@@ -9330,19 +9141,28 @@
               "alive_seconds": 4113,
               "ability": "highland_tunnel",
               "ability_zh": "高地隧道",
-              "status": "已通过",
-              "confidence": 0.93,
-              "training_label": "positive_observed",
+              "status": "人工排除",
+              "confidence": 1.0,
+              "training_label": "negative_confirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
-              "manual_rejected": false,
-              "manual_rejections": [],
+              "manual_rejected": true,
+              "manual_rejections": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过高地隧道，覆盖轨迹误判"
+                }
+              ],
               "official_events": 0,
               "official_games": 0,
               "trajectory_crossings": 2,
               "trajectory_games": 2,
               "trajectory_directions": {},
               "evidence_examples": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过高地隧道，覆盖轨迹误判"
+                },
                 {
                   "source": "trajectory",
                   "game_id": 1778649272036,
@@ -9661,19 +9481,29 @@
               "alive_seconds": 3848,
               "ability": "road_tunnel",
               "ability_zh": "公路隧道",
-              "status": "样本未通过",
+              "status": "人工排除",
               "confidence": 1.0,
-              "training_label": "negative_unobserved",
+              "training_label": "negative_confirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
-              "manual_rejected": false,
-              "manual_rejections": [],
+              "manual_rejected": true,
+              "manual_rejections": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过公路隧道"
+                }
+              ],
               "official_events": 0,
               "official_games": 0,
               "trajectory_crossings": 0,
               "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": []
+              "evidence_examples": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过公路隧道"
+                }
+              ]
             },
             {
               "stage": "全国赛直通",
@@ -9685,19 +9515,28 @@
               "alive_seconds": 3848,
               "ability": "highland_tunnel",
               "ability_zh": "高地隧道",
-              "status": "已通过",
-              "confidence": 0.955,
-              "training_label": "positive_observed",
+              "status": "人工排除",
+              "confidence": 1.0,
+              "training_label": "negative_confirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
-              "manual_rejected": false,
-              "manual_rejections": [],
+              "manual_rejected": true,
+              "manual_rejections": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过高地隧道，覆盖轨迹误判"
+                }
+              ],
               "official_events": 0,
               "official_games": 0,
               "trajectory_crossings": 7,
               "trajectory_games": 3,
               "trajectory_directions": {},
               "evidence_examples": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认交龙步兵无法通过高地隧道，覆盖轨迹误判"
+                },
                 {
                   "source": "trajectory",
                   "game_id": 1778749713778,
@@ -9716,13 +9555,6 @@
                   "source": "trajectory",
                   "game_id": 1778749713778,
                   "second": 160.0,
-                  "feature_id": "blue_highland_tunnel",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778925424226,
-                  "second": 243.0,
                   "feature_id": "blue_highland_tunnel",
                   "direction": "+1->-1"
                 }
@@ -10455,48 +10287,19 @@
               "alive_seconds": 4919,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 27,
-              "trajectory_games": 12,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778637960624,
-                  "second": 90.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778637960624,
-                  "second": 311.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778638792994,
-                  "second": 161.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778638792994,
-                  "second": 230.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -14614,48 +14417,19 @@
               "alive_seconds": 5640,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 20,
-              "trajectory_games": 12,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779327563018,
-                  "second": 90.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779327563018,
-                  "second": 257.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779327563018,
-                  "second": 315.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779328263836,
-                  "second": 60.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -15592,48 +15366,19 @@
               "alive_seconds": 6499,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 31,
-              "trajectory_games": 10,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779328263836,
-                  "second": 28.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779438419394,
-                  "second": 107.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779439123147,
-                  "second": 108.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779439123147,
-                  "second": 211.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -15852,27 +15597,19 @@
               "alive_seconds": 6545,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779348827572,
-                  "second": 353.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -16128,48 +15865,19 @@
               "alive_seconds": 6539,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 15,
-              "trajectory_games": 13,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779348015580,
-                  "second": 70.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779348827572,
-                  "second": 383.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779348827572,
-                  "second": 72.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779420519460,
-                  "second": 78.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -20188,41 +19896,19 @@
               "alive_seconds": 4308,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 3,
-              "trajectory_games": 3,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779358859920,
-                  "second": 110.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779623589761,
-                  "second": 122.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779624263540,
-                  "second": 136.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -21433,48 +21119,19 @@
               "alive_seconds": 5780,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 20,
-              "trajectory_games": 7,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779346363354,
-                  "second": 99.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779346363354,
-                  "second": 338.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779346363354,
-                  "second": 381.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779460446142,
-                  "second": 77.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -22257,34 +21914,19 @@
               "alive_seconds": 5956,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 2,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779506943259,
-                  "second": 378.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779507734217,
-                  "second": 379.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -22854,19 +22496,34 @@
               "alive_seconds": 4746,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "未观察到",
-              "confidence": 0.1,
-              "training_label": "unlabeled_not_negative",
+              "status": "可能具备",
+              "confidence": 0.65,
+              "training_label": "positive_probable",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 0,
-              "trajectory_games": 0,
+              "trajectory_crossings": 2,
+              "trajectory_games": 2,
               "trajectory_directions": {},
-              "evidence_examples": []
+              "evidence_examples": [
+                {
+                  "source": "trajectory",
+                  "game_id": 1779441911876,
+                  "second": 407.0,
+                  "feature_id": "blue_rough_road",
+                  "direction": "+1->-1"
+                },
+                {
+                  "source": "trajectory",
+                  "game_id": 1779609177426,
+                  "second": 115.0,
+                  "feature_id": "red_rough_road",
+                  "direction": "-1->+1"
+                }
+              ]
             },
             {
               "stage": "全国赛直通",
@@ -23800,48 +23457,19 @@
               "alive_seconds": 4745,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 15,
-              "trajectory_games": 8,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779340406572,
-                  "second": 32.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779366053174,
-                  "second": 15.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779441911876,
-                  "second": 16.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779441911876,
-                  "second": 189.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -24645,34 +24273,19 @@
               "alive_seconds": 3791,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 2,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779440758671,
-                  "second": 78.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779614125704,
-                  "second": 301.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -27406,48 +27019,19 @@
               "alive_seconds": 8347,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 59,
-              "trajectory_games": 20,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780019883494,
-                  "second": 51.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780019883494,
-                  "second": 206.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780019883494,
-                  "second": 268.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780020695727,
-                  "second": 57.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -28270,48 +27854,19 @@
               "alive_seconds": 7981,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 23,
-              "trajectory_games": 10,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780020695727,
-                  "second": 146.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780020695727,
-                  "second": 189.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780020695727,
-                  "second": 221.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780020695727,
-                  "second": 396.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -28788,48 +28343,19 @@
               "alive_seconds": 7741,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 25,
-              "trajectory_games": 16,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780057880180,
-                  "second": 242.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780133442573,
-                  "second": 301.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780134135333,
-                  "second": 95.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780208217034,
-                  "second": 247.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -29108,27 +28634,19 @@
               "alive_seconds": 7487,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780058695874,
-                  "second": 237.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -29391,48 +28909,19 @@
               "alive_seconds": 7485,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 20,
-              "trajectory_games": 9,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780014334382,
-                  "second": 290.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780208217034,
-                  "second": 343.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780208217034,
-                  "second": 362.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780209002875,
-                  "second": 291.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -31293,27 +30782,19 @@
               "alive_seconds": 4504,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780298013412,
-                  "second": 194.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -32858,41 +32339,19 @@
               "alive_seconds": 6641,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 3,
-              "trajectory_games": 3,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780309411927,
-                  "second": 352.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780323038454,
-                  "second": 319.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780323852230,
-                  "second": 230.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -35141,27 +34600,19 @@
               "alive_seconds": 3102,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780190225624,
-                  "second": 376.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -35380,34 +34831,19 @@
               "alive_seconds": 4187,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780112285247,
-                  "second": 218.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780112285247,
-                  "second": 307.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -38714,48 +38150,19 @@
               "alive_seconds": 6570,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 24,
-              "trajectory_games": 16,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780103530314,
-                  "second": 99.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780103530314,
-                  "second": 241.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780104340372,
-                  "second": 80.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780135186817,
-                  "second": 91.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -38974,41 +38381,19 @@
               "alive_seconds": 7213,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 3,
-              "trajectory_games": 3,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780033932148,
-                  "second": 168.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780104340372,
-                  "second": 410.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780363506641,
-                  "second": 290.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "全国赛直通",
@@ -40166,48 +39551,19 @@
               "alive_seconds": 7575,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 4,
-              "trajectory_games": 3,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778665388943,
-                  "second": 385.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778666087339,
-                  "second": 182.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778666087339,
-                  "second": 295.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778847533513,
-                  "second": 351.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -40713,34 +40069,19 @@
               "alive_seconds": 7640,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 2,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778665388943,
-                  "second": 89.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778901161007,
-                  "second": 25.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -40981,48 +40322,19 @@
               "alive_seconds": 6481,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 7,
-              "trajectory_games": 5,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778650983893,
-                  "second": 136.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778650983893,
-                  "second": 344.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778678763428,
-                  "second": 367.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778753436230,
-                  "second": 135.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -41814,27 +41126,19 @@
               "alive_seconds": 5463,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778677945404,
-                  "second": 90.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -42364,48 +41668,19 @@
               "alive_seconds": 5455,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 7,
-              "trajectory_games": 5,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778744354009,
-                  "second": 266.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778744354009,
-                  "second": 323.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778745201010,
-                  "second": 286.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778815599251,
-                  "second": 271.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -43174,34 +42449,19 @@
               "alive_seconds": 4890,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 2,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778847533513,
-                  "second": 271.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778914365365,
-                  "second": 331.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -43937,34 +43197,19 @@
               "alive_seconds": 7530,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778841533345,
-                  "second": 400.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778841533345,
-                  "second": 115.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -45221,48 +44466,19 @@
               "alive_seconds": 4971,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 26,
-              "trajectory_games": 12,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778633483984,
-                  "second": 307.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778634274546,
-                  "second": 380.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778677945404,
-                  "second": 303.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778678763428,
-                  "second": 126.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -46296,27 +45512,19 @@
               "alive_seconds": 4608,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778657588607,
-                  "second": 23.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -47432,34 +46640,19 @@
               "alive_seconds": 5713,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1778656835227,
-                  "second": 26.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1778656835227,
-                  "second": 307.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -47678,48 +46871,19 @@
               "alive_seconds": 8321,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 16,
-              "trajectory_games": 11,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779350538729,
-                  "second": 217.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779350538729,
-                  "second": 352.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779351236362,
-                  "second": 252.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779419646097,
-                  "second": 229.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -49351,17 +48515,17 @@
               "alive_seconds": 7160,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "较强迹象",
+              "confidence": 0.8,
+              "training_label": "positive_probable",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 3,
+              "trajectory_games": 3,
               "trajectory_directions": {},
               "evidence_examples": [
                 {
@@ -49370,6 +48534,20 @@
                   "second": 224.0,
                   "feature_id": "red_rough_road",
                   "direction": "-1->+1"
+                },
+                {
+                  "source": "trajectory",
+                  "game_id": 1779538958021,
+                  "second": 200.0,
+                  "feature_id": "blue_rough_road",
+                  "direction": "+1->-1"
+                },
+                {
+                  "source": "trajectory",
+                  "game_id": 1779613180708,
+                  "second": 195.0,
+                  "feature_id": "blue_rough_road",
+                  "direction": "+1->-1"
                 }
               ]
             },
@@ -49904,48 +49082,19 @@
               "alive_seconds": 6025,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 5,
-              "trajectory_games": 5,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779500598660,
-                  "second": 35.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779501289868,
-                  "second": 38.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779502152405,
-                  "second": 24.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779593471644,
-                  "second": 24.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -50780,41 +49929,19 @@
               "alive_seconds": 4763,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 3,
-              "trajectory_games": 2,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779453031879,
-                  "second": 154.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779521217232,
-                  "second": 64.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779521217232,
-                  "second": 362.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -51088,27 +50215,19 @@
               "alive_seconds": 5642,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "弱迹象",
-              "confidence": 0.4,
-              "training_label": "weak_unconfirmed",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 1,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779325142656,
-                  "second": 27.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -52959,34 +52078,19 @@
               "alive_seconds": 7112,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "可能具备",
-              "confidence": 0.65,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 2,
-              "trajectory_games": 1,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1779334282221,
-                  "second": 17.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1779334282221,
-                  "second": 118.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -54536,19 +53640,27 @@
               "alive_seconds": 6124,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "未观察到",
-              "confidence": 0.1,
-              "training_label": "unlabeled_not_negative",
+              "status": "弱迹象",
+              "confidence": 0.4,
+              "training_label": "weak_unconfirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 0,
-              "trajectory_games": 0,
+              "trajectory_crossings": 1,
+              "trajectory_games": 1,
               "trajectory_directions": {},
-              "evidence_examples": []
+              "evidence_examples": [
+                {
+                  "source": "trajectory",
+                  "game_id": 1779339732301,
+                  "second": 369.0,
+                  "feature_id": "blue_rough_road",
+                  "direction": "+1->-1"
+                }
+              ]
             },
             {
               "stage": "复活赛",
@@ -55355,19 +54467,27 @@
               "alive_seconds": 5379,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "未观察到",
-              "confidence": 0.1,
-              "training_label": "unlabeled_not_negative",
+              "status": "弱迹象",
+              "confidence": 0.4,
+              "training_label": "weak_unconfirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 0,
-              "trajectory_games": 0,
+              "trajectory_crossings": 1,
+              "trajectory_games": 1,
               "trajectory_directions": {},
-              "evidence_examples": []
+              "evidence_examples": [
+                {
+                  "source": "trajectory",
+                  "game_id": 1779339732301,
+                  "second": 220.0,
+                  "feature_id": "blue_rough_road",
+                  "direction": "+1->-1"
+                }
+              ]
             },
             {
               "stage": "复活赛",
@@ -57201,48 +56321,19 @@
               "alive_seconds": 4981,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 15,
-              "trajectory_games": 10,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039913860,
-                  "second": 293.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039913860,
-                  "second": 388.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780191090914,
-                  "second": 19.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780191869991,
-                  "second": 13.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -57453,48 +56544,19 @@
               "alive_seconds": 5265,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 39,
-              "trajectory_games": 12,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039222177,
-                  "second": 74.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039222177,
-                  "second": 260.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039913860,
-                  "second": 74.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039913860,
-                  "second": 118.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -58028,41 +57090,19 @@
               "alive_seconds": 6175,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 3,
-              "trajectory_games": 2,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039222177,
-                  "second": 167.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039222177,
-                  "second": 342.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780039913860,
-                  "second": 367.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
@@ -59411,48 +58451,19 @@
               "alive_seconds": 4759,
               "ability": "rough_road",
               "ability_zh": "起伏路段",
-              "status": "较强迹象",
-              "confidence": 0.8,
-              "training_label": "positive_probable",
+              "status": "未观察到",
+              "confidence": 0.1,
+              "training_label": "unlabeled_not_negative",
               "manual_confirmed": false,
               "manual_confirmations": [],
               "manual_rejected": false,
               "manual_rejections": [],
               "official_events": 0,
               "official_games": 0,
-              "trajectory_crossings": 10,
-              "trajectory_games": 3,
+              "trajectory_crossings": 0,
+              "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": [
-                {
-                  "source": "trajectory",
-                  "game_id": 1780062146160,
-                  "second": 409.0,
-                  "feature_id": "blue_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780062146160,
-                  "second": 84.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780062146160,
-                  "second": 118.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "+1->-1"
-                },
-                {
-                  "source": "trajectory",
-                  "game_id": 1780062146160,
-                  "second": 150.0,
-                  "feature_id": "red_rough_road",
-                  "direction": "-1->+1"
-                }
-              ]
+              "evidence_examples": []
             },
             {
               "stage": "复活赛",
