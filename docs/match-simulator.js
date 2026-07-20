@@ -386,6 +386,7 @@
     let match = null;
     let autoTimer = null;
     let nextSeed = Date.now() >>> 0;
+    let modelLoading = false;
 
     function stopAuto() {
       if (autoTimer) window.clearInterval(autoTimer);
@@ -541,6 +542,10 @@
       elements.blueSelect.value = model.teams[DEFAULT_BLUE] ? DEFAULT_BLUE : teams[Math.min(1, teams.length - 1)].school;
       elements.status.textContent = `${teams.length} 队 · ${model.bin_seconds}s / 手 · 数据就绪`;
       elements.status.classList.add("ready");
+      elements.reset.disabled = false;
+      elements.step.disabled = false;
+      elements.auto.disabled = false;
+      elements.monteButton.disabled = false;
       resetMatch(hashSeed(`${elements.redSelect.value}|${elements.blueSelect.value}|first`));
     }
 
@@ -551,19 +556,37 @@
     elements.redSelect.addEventListener("change", () => resetMatch());
     elements.blueSelect.addEventListener("change", () => resetMatch());
 
-    fetch("./data/models/match_simulation.json?v=1")
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then(populate)
-      .catch((error) => {
-        elements.status.textContent = `棋谱载入失败：${error.message}`;
-        elements.status.classList.add("error");
-        elements.step.disabled = true;
-        elements.auto.disabled = true;
-        elements.monteButton.disabled = true;
-      });
+    function loadModel() {
+      if (modelLoading || model) return;
+      modelLoading = true;
+      elements.status.textContent = "正在后台载入快速棋谱…";
+      fetch("./data/models/match_simulation.json?v=1")
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then(populate)
+        .catch((error) => {
+          elements.status.textContent = `棋谱载入失败：${error.message}`;
+          elements.status.classList.add("error");
+        });
+    }
+
+    elements.reset.disabled = true;
+    elements.step.disabled = true;
+    elements.auto.disabled = true;
+    elements.monteButton.disabled = true;
+    elements.status.textContent = "快速棋谱已延迟加载 · 进入模拟区后启动";
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        loadModel();
+      }, { rootMargin: "240px" });
+      observer.observe(panel);
+    } else {
+      window.setTimeout(loadModel, 100);
+    }
   }
 
   return {

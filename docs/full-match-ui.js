@@ -55,6 +55,12 @@
     let seed = Date.now() >>> 0;
     let lastAnimation = performance.now();
     let lastUiSecond = -1;
+    let simulationWorker = null;
+    let simulationRequestId = 0;
+    let activeSimulationRequest = 0;
+    let simulationDataLoading = false;
+    let simulationComplete = false;
+    let expectedSimulationFrames = 421;
 
     function formatClock(second) {
       const remaining = Math.max(0, 420 - Math.round(second));
@@ -398,33 +404,114 @@
       elements.play.textContent = "▶ 播放";
     }
 
+    function acceptSimulation(result, latencyMs) {
+      simulation = result;
+      simulationComplete = true;
+      playhead = 0;
+      lastUiSecond = -1;
+      selectedKey = "red:英雄";
+      elements.slider.max = String(simulation.frames.length - 1);
+      elements.seed.textContent = `seed ${seed}`;
+      const latency = Number.isFinite(Number(latencyMs)) ? ` · 后台 ${Math.round(latencyMs)}ms` : "";
+      elements.status.textContent = `${simulation.frames.length} 帧 · ${simulation.events.length} 事件${latency} · 已生成`;
+      elements.status.className = "ready";
+      elements.create.disabled = false;
+      renderUi(true);
+      drawMap();
+    }
+
+    function startStreamingSimulation(message) {
+      simulation = { state: message.state, frames: [message.frame], events: [] };
+      simulationComplete = false;
+      expectedSimulationFrames = Number(message.expectedFrames || 421);
+      playhead = 0;
+      lastUiSecond = -1;
+      selectedKey = "red:英雄";
+      elements.slider.max = "0";
+      elements.seed.textContent = `seed ${seed}`;
+      elements.status.textContent = `实时推演已启动 · 1/${expectedSimulationFrames} 帧`;
+      elements.status.className = "ready";
+      elements.create.disabled = false;
+      renderUi(true);
+      drawMap();
+    }
+
+    function appendSimulationChunk(message) {
+      if (!simulation) return;
+      if (message.frames?.length) simulation.frames.push(...message.frames);
+      if (message.events?.length) simulation.events.push(...message.events);
+      simulationComplete = Boolean(message.complete);
+      elements.slider.max = String(simulation.frames.length - 1);
+      if (simulationComplete) {
+        elements.status.textContent = `${simulation.frames.length} 帧 · ${simulation.events.length} 事件 · 后台 ${Math.round(Number(message.latencyMs) || 0)}ms · 已生成`;
+      } else {
+        elements.status.textContent = `实时推演中 · ${simulation.frames.length}/${expectedSimulationFrames} 帧 · 页面可操作`;
+      }
+      elements.status.className = "ready";
+    }
+
+    function simulationError(message) {
+      elements.status.textContent = `推演失败：${message}`;
+      elements.status.className = "error";
+      elements.create.disabled = false;
+    }
+
+    function ensureSimulationWorker() {
+      if (simulationWorker) return simulationWorker;
+      if (!("Worker" in window)) return null;
+      const worker = new Worker("./full-match-worker.js?v=2");
+      worker.onmessage = (event) => {
+        const message = event.data || {};
+        if (message.type === "ready") return;
+        if (message.requestId !== activeSimulationRequest) return;
+        if (message.type === "started") startStreamingSimulation(message);
+        else if (message.type === "chunk") appendSimulationChunk(message);
+        else if (message.type === "result") acceptSimulation(message.result, message.latencyMs);
+        else if (message.type === "error") simulationError(message.message || "未知错误");
+      };
+      worker.onerror = (event) => {
+        simulationWorker = null;
+        simulationError(`后台线程错误：${event.message || "未知错误"}`);
+      };
+      worker.postMessage({ type: "initialize", model, navigation });
+      simulationWorker = worker;
+      return worker;
+    }
+
     function generate() {
       if (!model || !navigation) return;
       stop();
       seed = (seed + 1) >>> 0;
+      const requestId = ++simulationRequestId;
+      activeSimulationRequest = requestId;
       elements.create.disabled = true;
-      elements.status.textContent = "正在推演 420 秒…";
-      elements.result.textContent = "生成逐车轨迹、交火与补给事件";
+      elements.status.textContent = "后台推演 420 秒…页面可继续操作";
+      elements.status.className = "";
+      elements.result.textContent = "子线程生成逐车轨迹、交火与补给事件";
+      const worker = ensureSimulationWorker();
+      if (worker) {
+        worker.postMessage({
+          type: "run",
+          requestId,
+          redSchool: elements.redSelect.value,
+          blueSchool: elements.blueSelect.value,
+          seed,
+          matchOptions: { heroArchetypes: { red: elements.redHeroMode.value, blue: elements.blueHeroMode.value } },
+        });
+        return;
+      }
+      // Very old browsers without Worker support retain a functional fallback.
       window.setTimeout(() => {
+        if (requestId !== activeSimulationRequest) return;
         try {
-          simulation = window.RMUCFullMatchEngine.runMatch(
+          const started = performance.now();
+          const result = window.RMUCFullMatchEngine.runMatch(
             model, navigation, elements.redSelect.value, elements.blueSelect.value, seed, null,
             { heroArchetypes: { red: elements.redHeroMode.value, blue: elements.blueHeroMode.value } },
           );
-          playhead = 0;
-          lastUiSecond = -1;
-          selectedKey = "red:英雄";
-          elements.slider.max = String(simulation.frames.length - 1);
-          elements.seed.textContent = `seed ${seed}`;
-          elements.status.textContent = `${simulation.frames.length} 帧 · ${simulation.events.length} 事件 · 已生成`;
-          elements.status.className = "ready";
-          elements.create.disabled = false;
-          renderUi(true);
-          drawMap();
+          acceptSimulation(result, performance.now() - started);
         } catch (error) {
-          elements.status.textContent = `推演失败：${error.message}`;
-          elements.status.className = "error";
-          elements.create.disabled = false;
+          simulationError(error.message);
         }
       }, 20);
     }
@@ -436,20 +523,25 @@
       elements.blueSelect.innerHTML = options;
       elements.redSelect.value = model.teams[DEFAULT_RED] ? DEFAULT_RED : teams[0][0];
       elements.blueSelect.value = model.teams[DEFAULT_BLUE] ? DEFAULT_BLUE : teams[1][0];
-      elements.status.textContent = `${teams.length} 队 · ${model.ruleset?.version || "规则参数"} 就绪`;
+      elements.status.textContent = `${teams.length} 队 · ${model.ruleset?.version || "规则参数"} 就绪 · 进入沙盘后后台生成`;
       elements.status.className = "ready";
+      // The model is loaded only after the simulator panel enters the loader
+      // observer, so a second visibility observer would add latency here.
       generate();
     }
 
     function animation(now) {
-      const delta = Math.min(0.2, (now - lastAnimation) / 1000);
-      lastAnimation = now;
       if (playing && simulation) {
+        const delta = Math.min(0.2, (now - lastAnimation) / 1000);
+        lastAnimation = now;
         playhead += delta * playbackSpeed;
-        if (playhead >= simulation.frames.length - 1) { playhead = simulation.frames.length - 1; stop(); }
+        if (playhead >= simulation.frames.length - 1) {
+          playhead = simulation.frames.length - 1;
+          if (simulationComplete) stop();
+        }
         renderUi(false);
+        drawMap();
       }
-      drawMap();
       window.requestAnimationFrame(animation);
     }
 
@@ -457,7 +549,7 @@
     elements.play.addEventListener("click", () => {
       if (!simulation) return;
       if (playing) { stop(); return; }
-      if (playhead >= simulation.frames.length - 1) playhead = 0;
+      if (simulationComplete && playhead >= simulation.frames.length - 1) playhead = 0;
       playing = true;
       elements.play.textContent = "Ⅱ 暂停";
       lastAnimation = performance.now();
@@ -480,18 +572,37 @@
     mapImage.addEventListener("load", drawMap);
     window.addEventListener("resize", drawMap);
 
-    Promise.all([
-      fetch("./data/models/full_simulation.json?v=6").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-      fetch("./data/models/terrain_navigation.json?v=18").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
-    ]).then(([modelData, navigationData]) => {
-      model = modelData;
-      navigation = navigationData;
-      populate();
-    }).catch((error) => {
-      elements.status.textContent = `完整沙盘载入失败：${error.message}`;
-      elements.status.className = "error";
-      elements.create.disabled = true;
-    });
+    function loadSimulationData() {
+      if (simulationDataLoading || model) return;
+      simulationDataLoading = true;
+      elements.status.textContent = "正在后台载入沙盘参数…";
+      Promise.all([
+        fetch("./data/models/full_simulation.json?v=6").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=18").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+      ]).then(([modelData, navigationData]) => {
+        model = modelData;
+        navigation = navigationData;
+        populate();
+      }).catch((error) => {
+        elements.status.textContent = `完整沙盘载入失败：${error.message}`;
+        elements.status.className = "error";
+        elements.create.disabled = true;
+      });
+    }
+
+    elements.create.disabled = true;
+    elements.status.textContent = "沙盘已延迟加载 · 进入此区域后启动";
+    const simulatorPanel = canvas.closest("#simulator") || canvas;
+    if ("IntersectionObserver" in window) {
+      const loaderObserver = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        loaderObserver.disconnect();
+        loadSimulationData();
+      }, { rootMargin: "240px" });
+      loaderObserver.observe(simulatorPanel);
+    } else {
+      window.setTimeout(loadSimulationData, 100);
+    }
     window.requestAnimationFrame(animation);
   }
 
