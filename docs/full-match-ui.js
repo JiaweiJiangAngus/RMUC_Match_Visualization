@@ -92,7 +92,7 @@
 
     function interpolatedFrame() {
       if (!simulation) return null;
-      const index = Math.min(simulation.frames.length - 1, Math.floor(playhead));
+      const index = clamp(Math.floor(playhead), 0, simulation.frames.length - 1);
       const afterIndex = Math.min(simulation.frames.length - 1, index + 1);
       const frame = simulation.frames[index];
       const after = simulation.frames[afterIndex];
@@ -387,7 +387,7 @@
 
     function renderUi(force) {
       if (!simulation) return;
-      const second = Math.min(simulation.frames.length - 1, Math.floor(playhead));
+      const second = clamp(Math.floor(playhead), 0, simulation.frames.length - 1);
       if (!force && second === lastUiSecond) return;
       lastUiSecond = second;
       const frame = simulation.frames[second];
@@ -548,9 +548,12 @@
 
     function animation(now) {
       if (playing && simulation) {
-        const delta = Math.min(0.2, (now - lastAnimation) / 1000);
+        // A queued animation frame can carry a timestamp from just before the
+        // play-button handler reset lastAnimation. Never let that race move the
+        // playhead below frame zero and terminate the playback loop.
+        const delta = clamp((now - lastAnimation) / 1000, 0, 0.2);
         lastAnimation = now;
-        playhead += delta * playbackSpeed;
+        playhead = Math.max(0, playhead + delta * playbackSpeed);
         if (playhead >= simulation.frames.length - 1) {
           playhead = simulation.frames.length - 1;
           if (simulationComplete) stop();
