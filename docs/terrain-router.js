@@ -148,6 +148,10 @@
     if (!actions.some((item) => item.id === action.id && item.direction === direction)) actions.push(action);
   }
 
+  function gateRoutingBlocker(gate) {
+    return gate.routing_blocker_polygon || gate.polygon;
+  }
+
   function ascendingThroughGate(gate, start, end) {
     const vector = directionVector(gate.high_direction);
     if (!vector) return null;
@@ -319,16 +323,17 @@
       "fly_ramp", "road_step", "rough_road", "road_tunnel", "highland_tunnel",
     ].includes(gate.category));
     const output = [route[0]];
+    const encounteredBlockers = [];
     for (let index = 1; index < route.length; index += 1) {
       const start = route[index - 1];
       const end = route[index];
       const blockers = [];
       for (const gate of watched) {
-        if (!segmentHitsPolygon(start, end, gate.polygon)) continue;
+        if (!segmentHitsPolygon(start, end, gateRoutingBlocker(gate))) continue;
         if (gate.category === "fly_ramp") {
           const forward = gate.side === "blue" ? end[0] < start[0] : end[0] > start[0];
           const allowed = capabilities.abilities.has("fly_ramp") && (forward || capabilities.reverseFly);
-          if (!allowed) blockers.push(gate.polygon);
+          if (!allowed) blockers.push(gateRoutingBlocker(gate));
           else {
             const label = `${gate.side === "blue" ? "B" : "R"}1${forward ? "飞坡" : "反飞坡"}`;
             passages.push(label);
@@ -336,7 +341,7 @@
           }
         } else if (gate.category === "road_step") {
           const ascending = ascendingThroughGate(gate, start, end);
-          if (ascending !== false && !capabilities.abilities.has("road_step")) blockers.push(gate.polygon);
+          if (ascending !== false && !capabilities.abilities.has("road_step")) blockers.push(gateRoutingBlocker(gate));
           else {
             const direction = ascending === false ? "down" : "up";
             const label = `${gate.side === "blue" ? "B" : "R"}${gate.gate_index}${direction === "down" ? "下" : "上"}公路台阶`;
@@ -345,20 +350,23 @@
           }
         } else if (!capabilities.abilities.has(gate.category)) {
           // 隧道不是普通平地：未确认尺寸/机构能力时必须绕行。
-          blockers.push(gate.polygon);
+          blockers.push(gateRoutingBlocker(gate));
         } else {
           const label = gateLabel(gate, "");
           passages.push(label);
           pushTerrainAction(actions, gate, "through", label);
         }
       }
+      blockers.forEach((polygon) => {
+        if (!encounteredBlockers.includes(polygon)) encounteredBlockers.push(polygon);
+      });
       const segment = blockers.length ? routeAvoiding(navigation, start, end, blockers) : [start, end];
       // routeAvoiding returns only the start when no legal path exists.  Never
       // append the forbidden endpoint in that case; doing so turned a failed
       // detour into a straight traversal through the obstacle.
       if (segment.length > 1) segment.slice(1).forEach((point) => pushPoint(output, point));
     }
-    return output;
+    return { route: output, blockers: encounteredBlockers };
   }
 
   function enforceSymmetricBlockers(navigation, route, blockers) {
@@ -381,9 +389,11 @@
     if (role === "空中") return { route: [start, target], target, passages: ["空中直达"], actions: [], corrected: false };
     const capabilities = roleCapabilities(navigation, school, role);
     const symmetricBlockers = navigation.gates
-      .filter((gate) => ["rough_road", "road_tunnel", "highland_tunnel"].includes(gate.category)
-        && !capabilities.abilities.has(gate.category))
-      .map((gate) => gate.polygon);
+      .filter((gate) => (
+        ["rough_road", "road_tunnel", "highland_tunnel"].includes(gate.category)
+          && !capabilities.abilities.has(gate.category)
+      ) || (gate.category === "fly_ramp" && !capabilities.abilities.has("fly_ramp")))
+      .map(gateRoutingBlocker);
     const avoid = (from, to) => routeAvoiding(navigation, from, to, symmetricBlockers);
     const startRegion = regionAt(navigation, start);
     const targetRegion = regionAt(navigation, target);
@@ -445,10 +455,30 @@
     } else {
       avoid(current, target).slice(1).forEach((point) => pushPoint(route, point));
     }
-    const directional = applyDirectionalGates(navigation, route, capabilities, passages, actions);
-    const legal = enforceSymmetricBlockers(navigation, directional, symmetricBlockers);
+    const allBlockers = [...symmetricBlockers];
+    let legal = route;
+    // A detour around one gate can encounter another directional interface.
+    // Re-evaluate until the accumulated physical closures are stable instead
+    // of alternating between two adjacent gates (for example B2 and B3).
+    for (let iteration = 0; iteration < 6; iteration += 1) {
+      const directional = applyDirectionalGates(navigation, legal, capabilities, passages, actions);
+      let added = false;
+      directional.blockers.forEach((polygon) => {
+        if (!allBlockers.includes(polygon)) { allBlockers.push(polygon); added = true; }
+      });
+      const enforced = enforceSymmetricBlockers(navigation, directional.route, allBlockers);
+      legal = enforced;
+      if (!added && !legal.slice(1).some((point, index) => (
+        allBlockers.some((polygon) => segmentHitsPolygon(legal[index], point, polygon))
+      ))) break;
+    }
+    const finalTarget = legal[legal.length - 1] || adjustedTarget;
+    if (distance(finalTarget, adjustedTarget) > 0.15) {
+      corrected = true;
+      passages.push("能力不足·停在地形外");
+    }
     return {
-      route: legal, target: legal[legal.length - 1] || adjustedTarget,
+      route: legal, target: finalTarget,
       passages: [...new Set(passages)], actions, corrected,
     };
   }

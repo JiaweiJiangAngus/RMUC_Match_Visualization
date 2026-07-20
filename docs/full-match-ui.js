@@ -595,7 +595,7 @@
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
         fetch("./data/models/full_simulation.json?v=7").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=19").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=20").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;

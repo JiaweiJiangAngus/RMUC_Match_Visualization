@@ -679,15 +679,38 @@
     });
   }
 
-  function crossesForbiddenSymmetricGate(state, robot, start, end) {
-    const abilities = new Set(state.navigation.teams?.[robot.school]?.[robot.role]?.abilities || []);
-    const forbiddenGate = state.navigation.gates.some((gate) => (
-      ["rough_road", "road_tunnel", "highland_tunnel"].includes(gate.category)
-      && !abilities.has(gate.category)
-      && state.router.segmentHitsPolygon(start, end, gate.polygon)
-    ));
+  function crossesForbiddenTerrainGate(state, robot, start, end) {
+    const profile = state.navigation.teams?.[robot.school]?.[robot.role] || {};
+    const abilities = new Set(profile.abilities || []);
+    const forbiddenGate = state.navigation.gates.some((gate) => {
+      const blocker = gate.routing_blocker_polygon || gate.polygon;
+      if (!state.router.segmentHitsPolygon(start, end, blocker)) return false;
+      if (["rough_road", "road_tunnel", "highland_tunnel"].includes(gate.category)) {
+        return !abilities.has(gate.category);
+      }
+      if (gate.category === "fly_ramp") {
+        const forward = gate.side === "blue" ? end[0] < start[0] : end[0] > start[0];
+        return !abilities.has("fly_ramp")
+          || (!forward && !profile.reverse_fly_ramp?.allowed);
+      }
+      if (gate.category === "road_step") {
+        const vector = {
+          positive_y: [0, 1], negative_y: [0, -1],
+          positive_x: [1, 0], negative_x: [-1, 0],
+        }[gate.high_direction];
+        const ascending = vector
+          ? (end[0] - start[0]) * vector[0] + (end[1] - start[1]) * vector[1] > 0
+          : true;
+        return ascending && !abilities.has("road_step");
+      }
+      return false;
+    });
     if (forbiddenGate) return true;
     return crossesStaticWall(state, start, end);
+  }
+
+  function crossesForbiddenSymmetricGate(state, robot, start, end) {
+    return crossesForbiddenTerrainGate(state, robot, start, end);
   }
 
   function crossesStaticWall(state, start, end) {
@@ -702,13 +725,13 @@
       // UAVs fly above the wall layer and are intentionally unrestricted.
       if (robot.role === "空中" || robot.hp <= 0) return;
       const start = frameStarts.get(robot.key);
-      if (!start || !crossesStaticWall(state, start, robot.position)) return;
+      if (!start || !crossesForbiddenTerrainGate(state, robot, start, robot.position)) return;
       robot.position = [...start];
       robot.route = [[...start]];
       robot.nextDecisionAt = state.second;
       robot.terrainAction = null;
       robot.terrainSpeedMultiplier = 1;
-      robot.status = "墙体连续碰撞阻止 · 重新规划";
+      robot.status = "墙体/地形封口阻止 · 重新规划";
     });
   }
 
@@ -1270,6 +1293,6 @@
     canShelterInAssembly, serviceRequiredForDecision,
     applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,
     updateAssemblyProtection, lineOfSight, snapshot, runMatch,
-    crossesStaticWall, enforceFrameWallClearance,
+    crossesStaticWall, crossesForbiddenTerrainGate, enforceFrameWallClearance,
   };
 });

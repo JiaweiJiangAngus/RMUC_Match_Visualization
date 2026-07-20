@@ -43,17 +43,71 @@ function validateAllTunnelGates(){
           const value=routeFunction(nav,spec.start,spec.end,school,role);
           const crossed=value.route.slice(1).some((point,index)=>
             router.segmentHitsPolygon(value.route[index],point,gate.polygon));
+          const blockerCrossed=value.route.slice(1).some((point,index)=>
+            router.segmentHitsPolygon(value.route[index],point,gate.routing_blocker_polygon));
           const labelled=value.passages.includes(spec.passage);
           const reached=Math.hypot(value.target[0]-spec.end[0],value.target[1]-spec.end[1])<.15;
           if(allowed) allowedChecks+=1; else blockedChecks+=1;
-          if(crossed!==allowed||labelled!==allowed||!reached){
-            violations.push({implementation,school,role,gate:spec.id,allowed,crossed,labelled,reached});
+          if(crossed!==allowed||(!allowed&&blockerCrossed)||labelled!==allowed||(allowed&&!reached)){
+            violations.push({implementation,school,role,gate:spec.id,allowed,crossed,blockerCrossed,labelled,reached});
           }
         }
       }
     }
   }
   return {checks,allowedChecks,blockedChecks,teams:Object.keys(nav.teams).length,violations};
+}
+function validateRoutingBlockers(){
+  const violations=[];
+  const bounds=polygon=>({
+    minX:Math.min(...polygon.map(point=>point[0])),maxX:Math.max(...polygon.map(point=>point[0])),
+    minY:Math.min(...polygon.map(point=>point[1])),maxY:Math.max(...polygon.map(point=>point[1])),
+  });
+  for(const gate of nav.gates){
+    if(!gate.routing_blocker_polygon?.length){violations.push({gate:gate.id,error:'missing'});continue;}
+    const detected=bounds(gate.polygon), blocker=bounds(gate.routing_blocker_polygon), epsilon=.001;
+    if(blocker.minX>detected.minX+epsilon||blocker.maxX<detected.maxX-epsilon
+      ||blocker.minY>detected.minY+epsilon||blocker.maxY<detected.maxY-epsilon){
+      violations.push({gate:gate.id,error:'does_not_contain_detection',detected,blocker});
+    }
+  }
+  const byId=Object.fromEntries(nav.gates.map(gate=>[gate.id,gate]));
+  const blueRoadTunnel=bounds(byId.blue_road_tunnel.routing_blocker_polygon);
+  const blueRoadStep=bounds(byId.blue_road_step.routing_blocker_polygon);
+  const redRoadTunnel=bounds(byId.red_road_tunnel.routing_blocker_polygon);
+  const redRoadStep=bounds(byId.red_road_step.routing_blocker_polygon);
+  if(blueRoadTunnel.maxX+1e-3<blueRoadStep.minX)violations.push({error:'blue_B2_B3_gap'});
+  if(redRoadStep.maxX+1e-3<redRoadTunnel.minX)violations.push({error:'red_R2_R3_gap'});
+  const blueB6=bounds(byId.blue_highland_tunnel.routing_blocker_polygon);
+  const redB6=bounds(byId.red_highland_tunnel.routing_blocker_polygon);
+  const blueB1=bounds(byId.blue_fly_ramp.routing_blocker_polygon);
+  const redB1=bounds(byId.red_fly_ramp.routing_blocker_polygon);
+  if(blueB6.minY>redB1.maxY+1e-3)violations.push({error:'blue_B6_red_R1_gap'});
+  if(redB6.maxY+1e-3<blueB1.minY)violations.push({error:'red_R6_blue_B1_gap'});
+  if(blueB1.maxY<14.999)violations.push({error:'blue_B1_boundary_gap'});
+  if(redB1.minY>.001)violations.push({error:'red_R1_boundary_gap'});
+  return {schema:nav.schema_version,gates:nav.gates.length,violations};
+}
+function validateDeniedBypasses(){
+  const specs=[
+    ['blue_fly_ramp',[16,14.7],[12,14.7]],['red_fly_ramp',[12,.3],[16,.3]],
+    ['blue_road_tunnel',[18.55,14.5],[18.55,11.8]],['red_road_tunnel',[9.43,.5],[9.43,3.1]],
+    ['blue_road_step',[19.7,11.8],[19.7,14.5]],['red_road_step',[8.3,3.1],[8.3,.5]],
+    ['blue_rough_road',[20.6,14.3],[23.8,14.3]],['red_rough_road',[7.4,.7],[4.2,.7]],
+    ['blue_highland_tunnel',[12.2,1.18],[16,1.18]],['red_highland_tunnel',[15.8,13.83],[12.1,13.83]],
+  ];
+  const implementations=[['prediction-worker',core.terrainRoute],['full-match-router',router.terrainRoute]];
+  const violations=[];
+  for(const [implementation,routeFunction] of implementations){
+    for(const [gateId,start,end] of specs){
+      const gate=nav.gates.find(item=>item.id===gateId);
+      const value=routeFunction(nav,start,end,'未知学校','英雄');
+      const crossed=value.route.slice(1).some((point,index)=>
+        router.segmentHitsPolygon(value.route[index],point,gate.routing_blocker_polygon));
+      if(crossed)violations.push({implementation,gateId,route:value.route});
+    }
+  }
+  return {checks:implementations.length*specs.length,violations};
 }
 function validateStrictTunnelLabels(){
   const violations=[];
@@ -102,7 +156,7 @@ function validateEnclosureRoutes(){
   return {checks,walls:walls.length,violations};
 }
 console.log(JSON.stringify({
-  around:plan([5,7.5],[23,7.5],'未知学校','英雄'),
+  around:plan([5,7.5],[23,7.5],'华南农业大学','步兵3'),
   blockedAscent:plan([6,7.5],[14,7.5],'未知学校','英雄'),
   reverseAllowed:plan([12,14.7],[16,14.7],'上海交通大学','步兵3'),
   reverseBlocked:plan([12,14.7],[16,14.7],'上海交通大学','英雄'),
@@ -127,6 +181,8 @@ console.log(JSON.stringify({
   ,globalTunnelValidation:validateAllTunnelGates()
   ,strictTunnelLabels:validateStrictTunnelLabels()
   ,enclosureRoutes:validateEnclosureRoutes()
+  ,routingBlockers:validateRoutingBlockers()
+  ,deniedBypasses:validateDeniedBypasses()
 }));
 """
         result = subprocess.run(
@@ -183,6 +239,21 @@ console.log(JSON.stringify({
     def test_unobserved_tunnel_passages_are_negative_for_every_team_role(self):
         validation = self.result["strictTunnelLabels"]
         self.assertEqual(440, validation["checks"])
+        self.assertEqual([], validation["violations"])
+
+    def test_every_terrain_gate_has_a_gap_free_routing_blocker(self):
+        validation = self.result["routingBlockers"]
+        self.assertEqual(6, validation["schema"])
+        self.assertEqual(16, validation["gates"])
+        self.assertEqual([], validation["violations"])
+
+    def test_tunnel_bypass_is_reclassified_as_the_adjacent_step(self):
+        value = self.result["neuInfantryTunnel"]
+        self.assertIn("B3下公路台阶", value["passages"])
+
+    def test_denied_routes_cannot_squeeze_around_any_external_gate(self):
+        validation = self.result["deniedBypasses"]
+        self.assertEqual(20, validation["checks"])
         self.assertEqual([], validation["violations"])
 
     def test_road_and_supply_enclosures_never_clip_in_either_router(self):

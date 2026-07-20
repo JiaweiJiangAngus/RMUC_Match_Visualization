@@ -29,6 +29,19 @@ HIGH_DIRECTIONS = {
     "trapezoid_highland_step": {"blue": "positive_y", "red": "negative_y"},
 }
 
+# Detection polygons stay tight so telemetry is labelled with the correct
+# interface.  Routing blockers are deliberately larger: they close the entire
+# physical opening and overlap its adjoining walls/terrain, preventing the
+# 0.35 m navigation grid from treating the edge of a gate as a free crack.
+ROUTING_BLOCKER_DIMENSIONS_PX = {
+    "road_tunnel": (150, 96),
+    "road_step": (150, 96),
+    "rough_road": (200, 180),
+    "central_highland_step": (220, 280),
+    "slope_43": (185, 100),
+    "trapezoid_highland_step": (145, 100),
+}
+
 
 def field_geometry(feature: terrain.Feature) -> list[list[float]]:
     points = np.asarray(
@@ -47,6 +60,24 @@ def map_points_to_field(points: list | tuple, closed: bool = True) -> list[list[
     if len(converted) > 100:
         converted = cv2.approxPolyDP(converted.reshape(-1, 1, 2), 0.02, closed).reshape(-1, 2)
     return [[round(float(x), 4), round(float(y), 4)] for x, y in converted]
+
+
+def routing_blocker_geometry(feature: terrain.Feature) -> list[list[float]]:
+    spec = next(item for item in terrain.BLUE_GATE_SPECS if item.category == feature.category)
+    if feature.category == "fly_ramp":
+        # B1/R1 occupies the outer lane between the field edge and the wall at
+        # map y≈121.  It must meet, but not cover, the adjacent R6/B6 lane.
+        blue = ((1064, 34), (1274, 34), (1274, 122), (1064, 122))
+    elif feature.category == "highland_tunnel":
+        # B6/R6 is bounded by the central highland on one side and the B1/R1
+        # separator wall on the other.  Extending it to the field edge would
+        # incorrectly block a robot that is legitimately using the fly ramp.
+        blue = ((1073, 1028), (1283, 1028), (1283, 1163), (1073, 1163))
+    else:
+        length_px, width_px = ROUTING_BLOCKER_DIMENSIONS_PX[feature.category]
+        blue = terrain.oriented_box(spec.center_px, spec.axis_angle_deg, length_px, width_px)
+    geometry = blue if feature.side == "blue" else terrain.rotate_geometry_180(blue)
+    return map_points_to_field(geometry)
 
 
 def parse_args() -> argparse.Namespace:
@@ -109,6 +140,7 @@ def main() -> None:
                 "gate_index": feature.gate_index,
                 "center": [round(value, 4) for value in terrain.map_to_field(*feature.center_map_px)],
                 "polygon": field_geometry(feature),
+                "routing_blocker_polygon": routing_blocker_geometry(feature),
                 "default_direction": (
                     "right_to_left" if feature.category == "fly_ramp" and feature.side == "blue"
                     else "left_to_right" if feature.category == "fly_ramp" and feature.side == "red"
@@ -143,7 +175,7 @@ def main() -> None:
     red_road_region = terrain.rotate_geometry_180(blue_road_region)
 
     output = {
-        "schema_version": 5,
+        "schema_version": 6,
         "field_size_m": [terrain.FIELD_WIDTH_M, terrain.FIELD_HEIGHT_M],
         "routing": {
             "grid_m": 0.35,

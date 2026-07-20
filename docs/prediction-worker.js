@@ -9,7 +9,7 @@ const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
 const MODEL_URL = "./data/models/trajectory_mlp.json?v=16";
-const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=19";
+const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=20";
 
 let modelPromise = null;
 
@@ -295,6 +295,7 @@ function gateLabel(gate,direction) {
   const name={central_highland_step:"中央高地台阶",slope_43:"43°坡",trapezoid_highland_step:"梯形高地台阶"}[gate.category]||gate.category;
   return `${prefix}${gate.gate_index}${direction}${name}`;
 }
+function gateRoutingBlocker(gate) {return gate.routing_blocker_polygon||gate.polygon;}
 function ascendingThroughGate(gate,start,end) {
   const vector=directionVector(gate.high_direction);if(!vector)return null;
   return (end[0]-start[0])*vector[0]+(end[1]-start[1])*vector[1]>0;
@@ -378,27 +379,28 @@ function bestGate(candidates,start,end,abilities,ascending) {
 }
 function applyDirectionalGates(navigation,route,capabilities,passages) {
   const watched=navigation.gates.filter(gate=>["fly_ramp","road_step","rough_road","road_tunnel","highland_tunnel"].includes(gate.category));
-  const output=[route[0]];
+  const output=[route[0]],encounteredBlockers=[];
   for(let i=1;i<route.length;i++){
     const start=route[i-1],end=route[i],blockers=[];
-    for(const gate of watched){if(!segmentHitsPolygon(start,end,gate.polygon))continue;
+    for(const gate of watched){if(!segmentHitsPolygon(start,end,gateRoutingBlocker(gate)))continue;
       if(gate.category==="fly_ramp"){
         const forward=gate.side==="blue"?end[0]<start[0]:end[0]>start[0],hasBase=capabilities.abilities.has("fly_ramp"),allowed=hasBase&&(!forward?capabilities.reverseFly:true);
-        if(!allowed)blockers.push(gate.polygon);else passages.push(`${gate.side==="blue"?"B":"R"}1${forward?"飞坡":"反飞坡"}`);
+        if(!allowed)blockers.push(gateRoutingBlocker(gate));else passages.push(`${gate.side==="blue"?"B":"R"}1${forward?"飞坡":"反飞坡"}`);
       }else if(gate.category==="road_step"){
         const ascending=ascendingThroughGate(gate,start,end);
-        if(ascending!==false&&!capabilities.abilities.has("road_step"))blockers.push(gate.polygon);
+        if(ascending!==false&&!capabilities.abilities.has("road_step"))blockers.push(gateRoutingBlocker(gate));
         else passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}${ascending===false?"下":"上"}公路台阶`);
-      }else if(!capabilities.abilities.has(gate.category))blockers.push(gate.polygon);
+      }else if(!capabilities.abilities.has(gate.category))blockers.push(gateRoutingBlocker(gate));
       else {
         const name={rough_road:"起伏路",road_tunnel:"公路隧道",highland_tunnel:"高地隧道"}[gate.category]||gate.category;
         passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}${name}`);
       }
     }
+    for(const polygon of blockers)if(!encounteredBlockers.includes(polygon))encounteredBlockers.push(polygon);
     const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):[start,end];
     if(segment.length>1)for(const point of segment.slice(1))pushPoint(output,point);
   }
-  return output;
+  return {route:output,blockers:encounteredBlockers};
 }
 function enforceSymmetricBlockers(navigation,route,blockers){
   if(!blockers.length||route.length<2)return route;
@@ -413,7 +415,7 @@ function enforceSymmetricBlockers(navigation,route,blockers){
 }
 function terrainRoute(navigation,start,target,school,role) {
   const capabilities=roleCapabilities(navigation,school,role),startRegion=regionAt(navigation,start),targetRegion=regionAt(navigation,target),route=[start],passages=[];
-  const symmetricBlockers=navigation.gates.filter(gate=>["rough_road","road_tunnel","highland_tunnel"].includes(gate.category)&&!capabilities.abilities.has(gate.category)).map(gate=>gate.polygon);
+  const symmetricBlockers=navigation.gates.filter(gate=>(["rough_road","road_tunnel","highland_tunnel"].includes(gate.category)&&!capabilities.abilities.has(gate.category))||(gate.category==="fly_ramp"&&!capabilities.abilities.has("fly_ramp"))).map(gateRoutingBlocker);
   const avoid=(from,to)=>routeAvoiding(navigation,from,to,symmetricBlockers);
   let current=start,adjustedTarget=target,corrected=false;
   if(startRegion&&targetRegion&&startRegion.id===targetRegion.id){pushPoint(route,target);return{route,target,passages,corrected};}
@@ -440,9 +442,16 @@ function terrainRoute(navigation,start,target,school,role) {
   }else{
     for(const point of avoid(current,target).slice(1))pushPoint(route,point);
   }
-  const directional=applyDirectionalGates(navigation,route,capabilities,passages);
-  const legal=enforceSymmetricBlockers(navigation,directional,symmetricBlockers);
-  return{route:legal,target:legal.at(-1)||adjustedTarget,passages:[...new Set(passages)],corrected};
+  const allBlockers=[...symmetricBlockers];let legal=route;
+  for(let iteration=0;iteration<6;iteration++){
+    const directional=applyDirectionalGates(navigation,legal,capabilities,passages);let added=false;
+    for(const polygon of directional.blockers)if(!allBlockers.includes(polygon)){allBlockers.push(polygon);added=true;}
+    legal=enforceSymmetricBlockers(navigation,directional.route,allBlockers);
+    if(!added&&!legal.slice(1).some((point,index)=>allBlockers.some(polygon=>segmentHitsPolygon(legal[index],point,polygon))))break;
+  }
+  const finalTarget=legal.at(-1)||adjustedTarget;
+  if(distance(finalTarget,adjustedTarget)>.15){corrected=true;passages.push("能力不足·停在地形外");}
+  return{route:legal,target:finalTarget,passages:[...new Set(passages)],corrected};
 }
 function pointAlongRoute(route,fraction) {
   const total=routeLength(route);if(total<1e-6)return route.at(-1);
