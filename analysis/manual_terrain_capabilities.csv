@@ -12,3 +12,5 @@ school,role,ability,label,source,note
 东北大学,步兵3,highland_tunnel,rejected,user_2026-07-20,用户确认步兵无法通过高地隧道
 东北大学,步兵4,road_tunnel,rejected,user_2026-07-20,用户确认步兵无法通过公路隧道
 东北大学,步兵4,highland_tunnel,rejected,user_2026-07-20,用户确认步兵无法通过高地隧道
+东北大学,英雄,road_tunnel,rejected,user_2026-07-20,用户确认 TDT 英雄无法通过公路隧道
+东北大学,英雄,highland_tunnel,rejected,user_2026-07-20,用户确认 TDT 英雄无法通过高地隧道，覆盖轨迹误判

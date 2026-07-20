@@ -54,9 +54,9 @@
     },
     "road_tunnel": {
       "人工确认": 0,
-      "人工排除": 2,
+      "人工排除": 3,
       "已通过": 43,
-      "样本未通过": 175,
+      "样本未通过": 174,
       "已证实": 0,
       "较强迹象": 0,
       "可能具备": 0,
@@ -66,8 +66,8 @@
     },
     "highland_tunnel": {
       "人工确认": 0,
-      "人工排除": 2,
-      "已通过": 71,
+      "人工排除": 3,
+      "已通过": 70,
       "样本未通过": 147,
       "已证实": 0,
       "较强迹象": 0,
@@ -116,7 +116,7 @@
   "method": {
     "manual_confirmations": {
       "path": "/home/jwj/Desktop/RMUC2026数据可视化/analysis/manual_terrain_capabilities.csv",
-      "count": 13,
+      "count": 15,
       "priority": "higher_than_official_and_trajectory_evidence"
     },
     "official_event_mapping": {

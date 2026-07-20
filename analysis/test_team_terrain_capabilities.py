@@ -67,7 +67,7 @@ class TerrainCapabilityDetectorTests(unittest.TestCase):
 
     def test_manual_confirmations_load_and_override_trajectory_grade(self):
         evidence = defaultdict(Evidence)
-        self.assertEqual(13, load_manual_confirmations(DEFAULT_MANUAL_LABELS, evidence))
+        self.assertEqual(15, load_manual_confirmations(DEFAULT_MANUAL_LABELS, evidence))
         item = evidence[("上海交通大学", "英雄", "central_highland_400mm_jump")]
         item.trajectory_crossings = 0
         self.assertEqual(
@@ -79,6 +79,14 @@ class TerrainCapabilityDetectorTests(unittest.TestCase):
             ("人工排除", 1.0, "negative_confirmed"),
             evidence_status(rejected, sample_games=18),
         )
+        for ability in ("road_tunnel", "highland_tunnel"):
+            tdt_hero = evidence[("东北大学", "英雄", ability)]
+            # 两次高地隧道定位漂移不能再把 TDT 英雄训练成可过洞。
+            tdt_hero.trajectory_crossings = 20
+            self.assertEqual(
+                ("人工排除", 1.0, "negative_confirmed"),
+                evidence_status(tdt_hero, sample_games=18),
+            )
 
     def test_directional_evidence_is_counted_separately(self):
         item = Evidence()

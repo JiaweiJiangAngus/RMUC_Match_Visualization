@@ -301,11 +301,12 @@ def build_ground_navigation(
 def build_target_priors(
     db: sqlite3.Connection,
     schools: tuple[str, ...],
-) -> tuple[dict[str, list[dict]], dict[str, list[int]]]:
+) -> tuple[dict[str, list[dict]], dict[str, list[int]], dict[str, list[dict]]]:
     """Learn 30-second target preference conditional on outpost state."""
     allowed = set(schools)
     records = []
     outpost_damage: Counter = Counter()
+    outpost_first_hit_at: dict[tuple[str, int], float] = {}
     outpost_destroyed_at: dict[tuple[str, int], float] = {}
     for row in db.execute(
         """
@@ -326,6 +327,7 @@ def build_target_priors(
         records.append((attacker, game_id, second, target, damage))
         if target == "outpost":
             key = (attacker, game_id)
+            outpost_first_hit_at.setdefault(key, second)
             outpost_damage[key] += damage
             if outpost_damage[key] >= 1500 and key not in outpost_destroyed_at:
                 outpost_destroyed_at[key] = second
@@ -379,7 +381,16 @@ def build_target_priors(
         destroy_seconds[school].append(round(second))
     for values in destroy_seconds.values():
         values.sort()
-    return payload, destroy_seconds
+    attack_windows: dict[str, list[dict]] = {school: [] for school in schools}
+    for (school, game_id), first_hit in outpost_first_hit_at.items():
+        destroyed = outpost_destroyed_at.get((school, game_id))
+        attack_windows[school].append({
+            "first_hit_second": round(first_hit),
+            "destroy_second": round(destroyed) if destroyed is not None else None,
+        })
+    for values in attack_windows.values():
+        values.sort(key=lambda item: (item["first_hit_second"], item["destroy_second"] or 999))
+    return payload, destroy_seconds, attack_windows
 
 
 def is_uav_home(point: tuple[float, float] | list[float]) -> bool:
@@ -607,7 +618,7 @@ def main() -> None:
     # independently teleporting their intent between minute-level dwell modes.
     # Each game has equal total weight and stationary service dwell is reduced.
     goals, ground_transitions = build_ground_navigation(options.games_dir, schools)
-    target_priors, outpost_destroy_seconds = build_target_priors(db, schools)
+    target_priors, outpost_destroy_seconds, outpost_attack_windows = build_target_priors(db, schools)
 
     spawns: dict[tuple[str, str], list[float]] = {}
     for row in db.execute(
@@ -758,13 +769,14 @@ def main() -> None:
             "economy_prior": economy_priors[school],
             "target_prior_by_30s": target_priors[school],
             "outpost_destroy_seconds": outpost_destroy_seconds[school],
+            "outpost_attack_windows": outpost_attack_windows[school],
             "style": aggregate.get("style", "常规阵地运营"),
             "roles": role_payload,
         }
     db.close()
 
     payload = {
-        "schema_version": 7,
+        "schema_version": 8,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",

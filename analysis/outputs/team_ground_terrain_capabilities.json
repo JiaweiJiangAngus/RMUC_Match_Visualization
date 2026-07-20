@@ -4,7 +4,7 @@
   "method": {
     "manual_confirmations": {
       "path": "/home/jwj/Desktop/RMUC2026数据可视化/analysis/manual_terrain_capabilities.csv",
-      "count": 13,
+      "count": 15,
       "priority": "higher_than_official_and_trajectory_evidence"
     },
     "official_event_mapping": {
@@ -146,9 +146,9 @@
       },
       "road_tunnel": {
         "人工确认": 0,
-        "人工排除": 2,
+        "人工排除": 3,
         "已通过": 43,
-        "样本未通过": 175,
+        "样本未通过": 174,
         "已证实": 0,
         "较强迹象": 0,
         "可能具备": 0,
@@ -158,8 +158,8 @@
       },
       "highland_tunnel": {
         "人工确认": 0,
-        "人工排除": 2,
-        "已通过": 71,
+        "人工排除": 3,
+        "已通过": 70,
         "样本未通过": 147,
         "已证实": 0,
         "较强迹象": 0,
@@ -25549,19 +25549,29 @@
               "alive_seconds": 6912,
               "ability": "road_tunnel",
               "ability_zh": "公路隧道",
-              "status": "样本未通过",
+              "status": "人工排除",
               "confidence": 1.0,
-              "training_label": "negative_unobserved",
+              "training_label": "negative_confirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
-              "manual_rejected": false,
-              "manual_rejections": [],
+              "manual_rejected": true,
+              "manual_rejections": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认 TDT 英雄无法通过公路隧道"
+                }
+              ],
               "official_events": 0,
               "official_games": 0,
               "trajectory_crossings": 0,
               "trajectory_games": 0,
               "trajectory_directions": {},
-              "evidence_examples": []
+              "evidence_examples": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认 TDT 英雄无法通过公路隧道"
+                }
+              ]
             },
             {
               "stage": "全国赛直通",
@@ -25573,19 +25583,28 @@
               "alive_seconds": 6912,
               "ability": "highland_tunnel",
               "ability_zh": "高地隧道",
-              "status": "已通过",
-              "confidence": 0.93,
-              "training_label": "positive_observed",
+              "status": "人工排除",
+              "confidence": 1.0,
+              "training_label": "negative_confirmed",
               "manual_confirmed": false,
               "manual_confirmations": [],
-              "manual_rejected": false,
-              "manual_rejections": [],
+              "manual_rejected": true,
+              "manual_rejections": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认 TDT 英雄无法通过高地隧道，覆盖轨迹误判"
+                }
+              ],
               "official_events": 0,
               "official_games": 0,
               "trajectory_crossings": 2,
               "trajectory_games": 2,
               "trajectory_directions": {},
               "evidence_examples": [
+                {
+                  "source": "user_2026-07-20",
+                  "note": "用户确认 TDT 英雄无法通过高地隧道，覆盖轨迹误判"
+                },
                 {
                   "source": "trajectory",
                   "game_id": 1780189382040,

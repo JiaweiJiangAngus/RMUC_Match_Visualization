@@ -140,6 +140,33 @@
       || (outpostAlive ? { robot: 0.45, outpost: 0.55, base: 0 } : { robot: 0.75, outpost: 0, base: 0.25 });
   }
 
+  function outpostAssaultActive(state, robot) {
+    const campaign = state.teamState[robot.side];
+    return Boolean(robot.outpostAssaultCommitted)
+      && state.structures[otherSide(robot.side)].outpost.hp > 0
+      // 还原“首次命中前的接敌路线”：快攻车需提前进入阵位并为结构目标保留弹药，
+      // 不能到了实战首次命中时刻才开始转点。
+      && state.second >= Math.max(1, Number(campaign.outpostAssaultStartSecond || 1) - 8)
+      && state.second <= Number(campaign.outpostObjectiveSecond || 150) + 35;
+  }
+
+  function objectiveApproachPoint(state, robot, objective, points, forceServiceExit) {
+    const objectivePoint = canonicalPoint(objective.position, robot.side);
+    const range = Math.max(1.5, Number(robot.profile.range_m || 0));
+    const attackDistance = Math.max(1.5, range * 0.7);
+    const legalObserved = points.filter((point) => {
+      const candidate = [Number(point[0]), Number(point[1])];
+      const worldCandidate = canonicalPoint(candidate, robot.side);
+      return state.router.distance(candidate, objectivePoint) <= range * 0.82
+        && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", candidate))
+        && lineOfSightFrom(state, worldCandidate, objective.position, robot.role);
+    });
+    if (legalObserved.length) return weightedPoint(legalObserved, state.random);
+    return [
+      clamp(objectivePoint[0] - attackDistance, 0.1, 27.9), objectivePoint[1],
+    ];
+  }
+
   function tacticalCanonicalGoal(state, robot) {
     const phase = Math.min(6, Math.floor(state.second / 60));
     const current = canonicalPoint(robot.position, robot.side);
@@ -150,27 +177,15 @@
     const objectiveType = enemyStructures.outpost.hp > 0 ? "outpost" : "base";
     const objective = enemyStructures[objectiveType];
     robot.tacticalIntent = null;
-    if (robot.profile.weapon && state.random() < Math.min(0.92, Number(prior[objectiveType] || 0) * 0.95)) {
-      const objectivePoint = canonicalPoint(objective.position, robot.side);
-      const attackDistance = Math.max(1.5, Number(robot.profile.range_m || 0) * 0.78);
-      const observedAttackPoints = points.filter((point) => (
-        state.router.distance([Number(point[0]), Number(point[1])], objectivePoint) <= attackDistance
-        && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", [Number(point[0]), Number(point[1])]))
-      ));
-      if (observedAttackPoints.length) {
-        robot.serviceExitPending = false;
-        robot.tacticalIntent = objectiveType;
-        return weightedPoint(observedAttackPoints, state.random);
-      }
-      const dx = current[0] - objectivePoint[0];
-      const dy = current[1] - objectivePoint[1];
-      const distance = Math.max(0.001, Math.hypot(dx, dy));
+    robot.objectiveKey = null;
+    const committedAssault = objectiveType === "outpost" && outpostAssaultActive(state, robot);
+    if (robot.profile.weapon && (
+      committedAssault || state.random() < Math.min(0.92, Number(prior[objectiveType] || 0) * 0.95)
+    )) {
       robot.serviceExitPending = false;
       robot.tacticalIntent = objectiveType;
-      return [
-        clamp(objectivePoint[0] + dx / distance * attackDistance * 0.82, 0.1, 27.9),
-        clamp(objectivePoint[1] + dy / distance * attackDistance * 0.82, 0.1, 14.9),
-      ];
+      robot.objectiveKey = objective.key;
+      return objectiveApproachPoint(state, robot, objective, points, forceServiceExit);
     }
     const transitions = robot.profile.transitions_by_minute?.[phase] || [];
     const nearbyTransitions = transitions.map((edge) => {
@@ -257,11 +272,13 @@
       terrainAction: null,
       nextDecisionAt: 1,
       targetKey: null,
+      objectiveKey: null,
       mode: "tactic",
       serviceTarget: null,
       serviceExitPending: false,
       serviceModeStartedAt: null,
       ammoServiceCooldownUntil: 0,
+      outpostAssaultCommitted: false,
       shotBudget: 0,
     };
   }
@@ -529,10 +546,17 @@
     SIDES.forEach((side) => {
       const school = state.schools[side];
       const initialCoins = Number(model.rules.initial_coins || 400);
-      const outpostDestroySamples = model.teams[school].outpost_destroy_seconds || [];
-      const outpostObjectiveSecond = outpostDestroySamples.length
-        ? Number(outpostDestroySamples[Math.floor(state.random() * outpostDestroySamples.length)])
-        : 150;
+      const teamProfile = model.teams[school];
+      const attackWindows = teamProfile.outpost_attack_windows || [];
+      const sampledWindow = attackWindows.length
+        ? attackWindows[Math.floor(state.random() * attackWindows.length)]
+        : null;
+      const outpostDestroySamples = teamProfile.outpost_destroy_seconds || [];
+      const sampledDestroy = sampledWindow?.destroy_second ?? (outpostDestroySamples.length
+        ? outpostDestroySamples[Math.floor(state.random() * outpostDestroySamples.length)]
+        : null);
+      const outpostObjectiveSecond = Number(sampledDestroy || 150);
+      const outpostFirstHitObjectiveSecond = Number(sampledWindow?.first_hit_second || Math.min(30, outpostObjectiveSecond * 0.3));
       state.teamState[side] = {
         coins: initialCoins,
         totalCoins: initialCoins,
@@ -541,6 +565,10 @@
         dartWindows: 0,
         dartHits: 0,
         outpostObjectiveSecond,
+        outpostFirstHitObjectiveSecond,
+        outpostAssaultStartSecond: Math.max(1, Math.round(outpostFirstHitObjectiveSecond - 8)),
+        outpostAssaultCount: 0,
+        outpostAssaultAnnounced: false,
         technologyCore: {
           level: 0,
           incomePer10: 0,
@@ -565,6 +593,12 @@
         state.robots.push(robot);
       });
       allocateInitialAmmo(state, side);
+      const openingPrior = Number(teamProfile.target_prior_by_30s?.[0]?.outpost_alive?.outpost || 0);
+      const armedGround = state.robots.filter((robot) => robot.side === side && robot.role !== "空中" && robot.profile.weapon);
+      const committedCount = clamp(Math.round(armedGround.length * openingPrior), openingPrior > 0.2 ? 1 : 0, armedGround.length);
+      const ranked = armedGround.map((robot) => ({ robot, draw: state.random() })).sort((left, right) => left.draw - right.draw);
+      ranked.slice(0, committedCount).forEach(({ robot }) => { robot.outpostAssaultCommitted = true; });
+      state.teamState[side].outpostAssaultCount = committedCount;
     });
     event(state, "system", "start", `${state.codes.red} vs ${state.codes.blue} 完整沙盘开局`);
     return state;
@@ -653,6 +687,7 @@
       chooseUavAirGoal(state, robot);
       return;
     }
+    robot.objectiveKey = null;
     let target;
     if (needsService(state, robot) && canShelterInAssembly(state, robot)) {
       const assembly = state.model.assembly_zones[robot.side];
@@ -937,9 +972,8 @@
     });
   }
 
-  function lineOfSight(state, attacker, end) {
-    if (attacker.role === "空中") return true;
-    const start = attacker.position;
+  function lineOfSightFrom(state, start, end, role) {
+    if (role === "空中") return true;
     const wallBlocked = (state.navigation.static_obstacles || []).some((obstacle) => (
       obstacle.blocks_ground_fire !== false
       && state.router.segmentHitsPolygon(start, end, obstacle.polygon)
@@ -947,11 +981,15 @@
     if (wallBlocked) return false;
     const startRegion = state.router.regionAt(state.navigation, start);
     const endRegion = state.router.regionAt(state.navigation, end);
-    const startLayer = startRegion?.id || "ground";
-    const endLayer = endRegion?.id || "ground";
-    if (startLayer !== endLayer) return false;
-    if (startLayer !== "ground") return true;
+    if (startRegion && endRegion) return startRegion.id === endRegion.id;
+    // 站在高地上向下射击，或从地面攻击高地边缘的前哨站，并不等于
+    // 子弹穿过整块高地。只有发射点和目标都在地面、弹道横穿高地时才阻断。
+    if (startRegion || endRegion) return true;
     return !Object.values(state.navigation.regions).some((polygon) => state.router.segmentHitsPolygon(start, end, polygon));
+  }
+
+  function lineOfSight(state, attacker, end) {
+    return lineOfSightFrom(state, attacker.position, end, attacker.role);
   }
 
   function targetCandidates(state, robot) {
@@ -965,6 +1003,8 @@
     const structures = state.structures[enemy];
     const structureOrder = structures.outpost.hp > 0 ? [structures.outpost, structures.base] : [structures.base];
     structureOrder.forEach((structure) => {
+      if (structure.kind === "outpost"
+        && state.second < Number(state.teamState[robot.side].outpostFirstHitObjectiveSecond || 0)) return;
       const distance = state.router.distance(robot.position, structure.position);
       if (structure.hp > 0 && distance <= range && lineOfSight(state, robot, structure.position)) {
         candidates.push({ entity: structure, distance, type: structure.kind });
@@ -981,6 +1021,10 @@
     ));
     groups.outpost.sort((left, right) => left.distance - right.distance);
     groups.base.sort((left, right) => left.distance - right.distance);
+
+    if (robot.objectiveKey === structures.outpost.key && groups.outpost.length) {
+      return [...groups.outpost, ...groups.robot, ...groups.base];
+    }
 
     const prior = teamTargetPrior(state, robot);
     const available = Object.entries(groups)
@@ -1291,6 +1335,15 @@
   function stepMatch(state) {
     if (state.finished) return state;
     state.second += 1;
+    SIDES.forEach((side) => {
+      const campaign = state.teamState[side];
+      if (!campaign.outpostAssaultAnnounced
+        && campaign.outpostAssaultCount > 0
+        && state.second >= campaign.outpostAssaultStartSecond) {
+        campaign.outpostAssaultAnnounced = true;
+        event(state, side, "objective", `${campaign.outpostAssaultCount} 台战斗机器人执行前哨快攻任务`);
+      }
+    });
     updateEconomy(state);
     respawnRobots(state);
     const groundFrameStarts = new Map(
@@ -1380,7 +1433,7 @@
           technologyCoreEarnedCoins: core.earnedCoins,
           technologyCoreNextLevel: nextCore?.level || null,
           technologyCorePlannedIn: nextCore ? Math.max(0, technologyCoreReadySecond(state, robot.side, nextCore) - state.second) : null,
-          status: robot.status, targetKey: robot.targetKey,
+          status: robot.status, targetKey: robot.targetKey, objectiveKey: robot.objectiveKey,
           terrainAction: robot.terrainAction,
           terrainSpeedMultiplier: robot.terrainSpeedMultiplier,
           serviceZone: robot.role === "空中" ? "" : (serviceZoneAt(state, robot, "heal") || serviceZoneAt(state, robot, "ammo"))?.[1]?.label || "",

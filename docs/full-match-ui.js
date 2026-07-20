@@ -251,6 +251,17 @@
         entityPositions.set(`${side}:outpost`, model.structures[side].outpost);
       });
       robots.forEach((robot) => {
+        if (!robot.objectiveKey || robot.hp <= 0 || robot.targetKey === robot.objectiveKey) return;
+        const objective = entityPositions.get(robot.objectiveKey);
+        if (!objective) return;
+        const [x1, y1] = mapPoint(robot.x, robot.y, size.width, size.height);
+        const [x2, y2] = mapPoint(objective[0], objective[1], size.width, size.height);
+        context.beginPath(); context.moveTo(x1, y1); context.lineTo(x2, y2);
+        context.setLineDash([5 * size.scale, 5 * size.scale]);
+        context.strokeStyle = "rgba(243,189,77,.46)"; context.lineWidth = 1.4 * size.scale; context.stroke();
+        context.setLineDash([]);
+      });
+      robots.forEach((robot) => {
         if (!robot.targetKey || robot.hp <= 0) return;
         const target = entityPositions.get(robot.targetKey);
         if (!target) return;
@@ -374,7 +385,7 @@
           ${uavDetails}
           ${terrainDetails}
         </div>
-        <p class="full-detail-status">当前：${escapeHtml(robot.status)}<br>路线：${robot.passages.length ? escapeHtml(robot.passages.join("、")) : "常规可通行路线"}</p>`;
+        <p class="full-detail-status">当前：${escapeHtml(robot.status)}<br>任务：${robot.objectiveKey ? escapeHtml(robot.objectiveKey.endsWith(":outpost") ? "进攻前哨站" : "进攻基地") : "无指定结构目标"}<br>路线：${robot.passages.length ? escapeHtml(robot.passages.join("、")) : "常规可通行路线"}</p>`;
     }
 
     function renderEvents(second) {
@@ -475,7 +486,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=7");
+      const worker = new Worker("./full-match-worker.js?v=8");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -597,8 +608,8 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=8").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=20").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=9").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=21").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;

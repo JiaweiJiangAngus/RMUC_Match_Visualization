@@ -43,7 +43,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(7, self.model["schema_version"])
+        self.assertEqual(8, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -57,6 +57,8 @@ class FullSimulationDataTests(unittest.TestCase):
         for team in self.model["teams"].values():
             self.assertEqual(14, len(team["target_prior_by_30s"]))
             self.assertTrue(team["outpost_destroy_seconds"])
+            self.assertTrue(team["outpost_attack_windows"])
+            self.assertTrue(all(window["first_hit_second"] >= 0 for window in team["outpost_attack_windows"]))
             for phase in team["target_prior_by_30s"]:
                 for state in ("outpost_alive", "outpost_down"):
                     prior = phase[state]
@@ -261,6 +263,8 @@ function run() {
     terrainDirections:[...new Set(result.frames.flatMap(frame=>frame.robots.map(robot=>robot.terrainAction).filter(Boolean)))],
     firstOutpostDamageSecond:result.frames.find(frame=>frame.structures.blue.outpost<model.rules.outpost_hp)?.second ?? null,
     outpostDestroyedSecond:result.frames.find(frame=>frame.structures.blue.outpost<=0)?.second ?? null,
+    maxVisibleOutpostAssignees:Math.max(...result.frames.slice(0,61).map(frame=>frame.robots.filter(robot=>robot.side==='red'&&robot.role!=='空中'&&robot.objectiveKey==='blue:outpost').length)),
+    visibleOutpostTargetSeconds:result.frames.slice(0,61).reduce((sum,frame)=>sum+frame.robots.filter(robot=>robot.side==='red'&&robot.targetKey==='blue:outpost').length,0),
     signature:JSON.stringify({final,events:result.events})
   };
 }
@@ -486,6 +490,8 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
     def test_tdt_opening_converts_observed_outpost_pressure(self):
         self.assertLessEqual(self.result["firstOutpostDamageSecond"], 15)
         self.assertLessEqual(self.result["outpostDestroyedSecond"], 100)
+        self.assertGreaterEqual(self.result["maxVisibleOutpostAssignees"], 3)
+        self.assertGreaterEqual(self.result["visibleOutpostTargetSeconds"], 5)
 
     def test_supply_status_and_exit_match_actual_ammunition_state(self):
         probe = self.service_exit
