@@ -71,6 +71,12 @@
     ];
   }
 
+  function staticObstaclePolygons(navigation) {
+    return (navigation.static_obstacles || [])
+      .filter((obstacle) => obstacle.blocks_movement !== false && obstacle.polygon?.length >= 3)
+      .map((obstacle) => obstacle.polygon);
+  }
+
   function regionAt(navigation, point) {
     return regionEntries(navigation).find((region) => pointInPolygon(point, region.polygon)) || null;
   }
@@ -180,7 +186,11 @@
   }
 
   function routeAvoiding(navigation, start, end, extraPolygons = []) {
-    const obstacles = [...regionEntries(navigation).map((region) => region.polygon), ...extraPolygons];
+    const obstacles = [
+      ...regionEntries(navigation).map((region) => region.polygon),
+      ...staticObstaclePolygons(navigation),
+      ...extraPolygons,
+    ];
     if (!obstacles.some((polygon) => segmentHitsPolygon(start, end, polygon))) return [start, end];
     const step = Number(navigation.routing.grid_m || 0.35);
     const columns = Math.round(FIELD_WIDTH / step) + 1;
@@ -343,8 +353,26 @@
         }
       }
       const segment = blockers.length ? routeAvoiding(navigation, start, end, blockers) : [start, end];
-      if (segment.length === 1) pushPoint(output, end);
-      else segment.slice(1).forEach((point) => pushPoint(output, point));
+      // routeAvoiding returns only the start when no legal path exists.  Never
+      // append the forbidden endpoint in that case; doing so turned a failed
+      // detour into a straight traversal through the obstacle.
+      if (segment.length > 1) segment.slice(1).forEach((point) => pushPoint(output, point));
+    }
+    return output;
+  }
+
+  function enforceSymmetricBlockers(navigation, route, blockers) {
+    if (!blockers.length || route.length < 2) return route;
+    const output = [route[0]];
+    for (let index = 1; index < route.length; index += 1) {
+      const start = output[output.length - 1];
+      const end = route[index];
+      if (!blockers.some((polygon) => segmentHitsPolygon(start, end, polygon))) {
+        pushPoint(output, end);
+        continue;
+      }
+      const detour = routeAvoiding(navigation, start, end, blockers);
+      if (detour.length > 1) detour.slice(1).forEach((point) => pushPoint(output, point));
     }
     return output;
   }
@@ -418,8 +446,9 @@
       avoid(current, target).slice(1).forEach((point) => pushPoint(route, point));
     }
     const directional = applyDirectionalGates(navigation, route, capabilities, passages, actions);
+    const legal = enforceSymmetricBlockers(navigation, directional, symmetricBlockers);
     return {
-      route: directional, target: directional[directional.length - 1] || adjustedTarget,
+      route: legal, target: legal[legal.length - 1] || adjustedTarget,
       passages: [...new Set(passages)], actions, corrected,
     };
   }

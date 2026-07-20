@@ -344,7 +344,9 @@
           <div><span>已兑科技核心</span><b>Lv.${robot.technologyCoreLevel} / 4</b></div>
           <div><span>科技核心经济</span><b>+${formatNumber(robot.technologyCoreIncomePer10)} / 10s</b></div>
           <div><span>下一等级计划</span><b>${robot.technologyCoreNextLevel ? `Lv.${robot.technologyCoreNextLevel} · ${formatNumber(robot.technologyCorePlannedIn)}s` : "本局暂无"}</b></div>
-          <div><span>核心累计产金</span><b>${formatNumber(robot.technologyCoreEarnedCoins)}</b></div>` : "";
+          <div><span>核心累计产金</span><b>${formatNumber(robot.technologyCoreEarnedCoins)}</b></div>
+          <div><span>装配区累计无敌</span><b>${formatNumber(robot.assemblyInvulnerableSeconds)} / 180s</b></div>
+          <div><span>装配区保护</span><b>${robot.assemblyProtected ? `生效中 · 剩余 ${formatNumber(robot.assemblyInvulnerableRemaining)}s` : "未生效"}</b></div>` : "";
       const uavDetails = robot.role === "空中" ? `
           <div><span>空中状态</span><b>${escapeHtml(UAV_FLIGHT_LABEL[robot.uavFlightState] || "未知")}${robot.uavSupportActive ? " · 支援已开启" : ""}</b></div>
           <div><span>免费 / 付费支援</span><b>${formatNumber(robot.uavSupportSeconds)}s / ${formatNumber(robot.uavPaidSupportSeconds)}s</b></div>
@@ -459,7 +461,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=2");
+      const worker = new Worker("./full-match-worker.js?v=6");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -577,8 +579,8 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=6").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=18").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=7").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=19").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;

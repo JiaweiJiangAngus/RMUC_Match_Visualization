@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis import terrain_crossing_points as terrain  # noqa: E402
+from analysis import road_enclosure_cv  # noqa: E402
 
 
 DEFAULT_CAPABILITIES = ROOT / "analysis" / "outputs" / "team_ground_terrain_capabilities.json"
@@ -41,6 +42,13 @@ def field_geometry(feature: terrain.Feature) -> list[list[float]]:
     return [[round(float(x), 4), round(float(y), 4)] for x, y in points]
 
 
+def map_points_to_field(points: list | tuple, closed: bool = True) -> list[list[float]]:
+    converted = np.asarray([terrain.map_to_field(*point) for point in points], dtype=np.float32)
+    if len(converted) > 100:
+        converted = cv2.approxPolyDP(converted.reshape(-1, 1, 2), 0.02, closed).reshape(-1, 2)
+    return [[round(float(x), 4), round(float(y), 4)] for x, y in converted]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capabilities", type=Path, default=DEFAULT_CAPABILITIES)
@@ -52,6 +60,7 @@ def main() -> None:
     args = parse_args()
     features = terrain.build_features()
     by_id = {feature.feature_id: feature for feature in features}
+    enclosure = road_enclosure_cv.extract_blue_enclosures(terrain.MAP_PATH)
     capability_payload = json.loads(args.capabilities.read_text(encoding="utf-8"))
 
     teams: dict[str, dict] = {}
@@ -109,8 +118,32 @@ def main() -> None:
             }
         )
 
+    static_obstacles = []
+    for wall in enclosure.walls:
+        blue_polygon = road_enclosure_cv.segment_polygon(wall)
+        for side in ("blue", "red"):
+            polygon = blue_polygon if side == "blue" else terrain.rotate_geometry_180(blue_polygon)
+            static_obstacles.append(
+                {
+                    "id": wall.wall_id if side == "blue" else wall.wall_id.replace("blue_", "red_", 1),
+                    "side": side,
+                    "category": wall.category,
+                    "polygon": map_points_to_field(polygon),
+                    "blocks_movement": True,
+                    "blocks_ground_fire": True,
+                    "source": (
+                        "opencv_canny_hough_map"
+                        if side == "blue"
+                        else "opencv_canny_hough_map_180_rotated"
+                    ),
+                }
+            )
+
+    blue_road_region = enclosure.region_px
+    red_road_region = terrain.rotate_geometry_180(blue_road_region)
+
     output = {
-        "schema_version": 4,
+        "schema_version": 5,
         "field_size_m": [terrain.FIELD_WIDTH_M, terrain.FIELD_HEIGHT_M],
         "routing": {
             "grid_m": 0.35,
@@ -140,6 +173,12 @@ def main() -> None:
             "blue_trapezoid_highland": field_geometry(by_id["blue_trapezoid_highland_top"]),
             "red_trapezoid_highland": field_geometry(by_id["red_trapezoid_highland_top"]),
         },
+        "enclosures": {
+            "blue_road_region": map_points_to_field(blue_road_region),
+            "red_road_region": map_points_to_field(red_road_region),
+            "method": "opencv_canny_hough_with_user_confirmed_gate_openings",
+        },
+        "static_obstacles": static_obstacles,
         "gates": gates,
         "teams": teams,
     }
@@ -154,7 +193,7 @@ def main() -> None:
         for role in roles.values()
     )
     print(
-        f"exported {len(gates)} gates, {len(teams)} teams, "
+        f"exported {len(gates)} gates, {len(static_obstacles)} static obstacles, {len(teams)} teams, "
         f"{reverse_roles} reverse-fly-ramp team/roles to {args.output}"
     )
 

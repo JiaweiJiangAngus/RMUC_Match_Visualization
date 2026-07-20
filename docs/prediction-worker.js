@@ -9,7 +9,7 @@ const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
 const MODEL_URL = "./data/models/trajectory_mlp.json?v=16";
-const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=18";
+const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=19";
 
 let modelPromise = null;
 
@@ -249,6 +249,11 @@ function regionEntries(navigation) {
     {id:"red_trapezoid_highland",polygon:navigation.regions.red_trapezoid_highland},
   ];
 }
+function staticObstaclePolygons(navigation) {
+  return (navigation.static_obstacles||[])
+    .filter(obstacle=>obstacle.blocks_movement!==false&&obstacle.polygon?.length>=3)
+    .map(obstacle=>obstacle.polygon);
+}
 function regionAt(navigation,point) {
   return regionEntries(navigation).find(region=>pointInPolygon(point,region.polygon))||null;
 }
@@ -316,7 +321,7 @@ function binaryHeapPop(heap) {
   return root;
 }
 function routeAvoiding(navigation,start,end,extraPolygons=[]) {
-  const obstacles=[...regionEntries(navigation).map(region=>region.polygon),...extraPolygons];
+  const obstacles=[...regionEntries(navigation).map(region=>region.polygon),...staticObstaclePolygons(navigation),...extraPolygons];
   if (!obstacles.some(polygon=>segmentHitsPolygon(start,end,polygon))) return [start,end];
   const step=Number(navigation.routing.grid_m||.35), columns=Math.round(FIELD_WIDTH/step)+1, rows=Math.round(FIELD_HEIGHT/step)+1, total=columns*rows;
   const nodePoint=index=>{const x=index%columns,y=Math.floor(index/columns);return [Math.min(FIELD_WIDTH,x*step),Math.min(FIELD_HEIGHT,y*step)];};
@@ -391,7 +396,18 @@ function applyDirectionalGates(navigation,route,capabilities,passages) {
       }
     }
     const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):[start,end];
-    if(segment.length===1)pushPoint(output,end);else for(const point of segment.slice(1))pushPoint(output,point);
+    if(segment.length>1)for(const point of segment.slice(1))pushPoint(output,point);
+  }
+  return output;
+}
+function enforceSymmetricBlockers(navigation,route,blockers){
+  if(!blockers.length||route.length<2)return route;
+  const output=[route[0]];
+  for(let i=1;i<route.length;i++){
+    const start=output.at(-1),end=route[i];
+    if(!blockers.some(polygon=>segmentHitsPolygon(start,end,polygon))){pushPoint(output,end);continue;}
+    const detour=routeAvoiding(navigation,start,end,blockers);
+    if(detour.length>1)for(const point of detour.slice(1))pushPoint(output,point);
   }
   return output;
 }
@@ -425,7 +441,8 @@ function terrainRoute(navigation,start,target,school,role) {
     for(const point of avoid(current,target).slice(1))pushPoint(route,point);
   }
   const directional=applyDirectionalGates(navigation,route,capabilities,passages);
-  return{route:directional,target:directional.at(-1)||adjustedTarget,passages:[...new Set(passages)],corrected};
+  const legal=enforceSymmetricBlockers(navigation,directional,symmetricBlockers);
+  return{route:legal,target:legal.at(-1)||adjustedTarget,passages:[...new Set(passages)],corrected};
 }
 function pointAlongRoute(route,fraction) {
   const total=routeLength(route);if(total<1e-6)return route.at(-1);

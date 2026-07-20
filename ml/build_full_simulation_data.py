@@ -597,7 +597,7 @@ def main() -> None:
     db.close()
 
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -633,6 +633,8 @@ def main() -> None:
                 "uav_radar_weapon_locked": {"type": "boolean"},
                 "terrain_action": {"type": ["categorical", "null"]},
                 "terrain_speed_multiplier": {"type": "number", "range": [0.1, 1.25]},
+                "assembly_protected": {"type": "boolean"},
+                "assembly_invulnerable_seconds": {"type": "integer", "range": [0, 180]},
             },
             "decision_labels": {
                 "respawn_choice": ["timed_in_place", "immediate_buyback"],
@@ -679,6 +681,7 @@ def main() -> None:
             "late_heal_ratio_per_second": 0.25,
             "late_heal_start_second": 240,
             "out_of_combat_seconds": 6,
+            "engineer_assembly_invulnerability_seconds": 180,
             "respawn": {
                 "read_base": 10,
                 "elapsed_seconds_divisor": 10,
@@ -731,6 +734,7 @@ def main() -> None:
             "goal points are empirical 0.5 m position-density modes and are routed through team-role terrain capabilities",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
             "terrain traversal changes speed for both ascent and descent using configurable coarse priors; these priors model alignment and landing time and should be replaced by team-role distributions when enough national telemetry is available",
+            "navigation hard-blocks the user-annotated elevated regions and 16 terrain gates, but a full CAD-derived occupancy mask for every static wall and structure is not yet available",
             "national matches always start at 400 coins; regional initial-coin ratings are retained only as descriptive telemetry and are not used by the simulator",
             "technology-core completion priors are inferred from persistent ten-second increases in regional total-coins telemetry because the export has no explicit assembly event",
             "V2.1.0 hero archetype and buyback choices were not present in regional telemetry; those features are rule-conditioned simulation inputs until national-match samples are ingested",

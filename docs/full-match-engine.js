@@ -109,14 +109,18 @@
 
   function serviceZoneAt(state, robot, capability) {
     const zones = state.model.service_zones?.[robot.side] || {};
-    return Object.entries(zones).find(([, zone]) => zone[capability] && insideZone(robot.position, zone)) || null;
+    return Object.entries(zones).find(([name, zone]) => (
+      zone[capability]
+      && (name !== "outpost" || state.structures[robot.side].outpost.hp > 0)
+      && insideZone(robot.position, zone)
+    )) || null;
   }
 
   function serviceTarget(state, robot, kind) {
     const zones = state.model.service_zones?.[robot.side] || {};
     if (kind === "heal") return { name: "supply", zone: zones.supply };
     const candidates = Object.entries(zones)
-      .filter(([, zone]) => zone.ammo)
+      .filter(([name, zone]) => zone.ammo && (name !== "outpost" || state.structures[robot.side].outpost.hp > 0))
       .map(([name, zone]) => ({ name, zone, distance: state.router.distance(robot.position, zone.center) }))
       .sort((left, right) => left.distance - right.distance);
     return candidates[0] || { name: "supply", zone: zones.supply };
@@ -157,6 +161,8 @@
       respawnedAt: null,
       buybacks: 0,
       invulnerableUntil: 0,
+      assemblyInvulnerableSeconds: 0,
+      assemblyProtected: false,
       weak: false,
       weakKind: null,
       weakUntil: 0,
@@ -552,13 +558,30 @@
     return needsHealing(robot) || needsAmmo(robot);
   }
 
+  function canShelterInAssembly(state, robot) {
+    if (robot.role !== "工程" || robot.hp <= 0) return false;
+    const limit = Number(state.model.rules.engineer_assembly_invulnerability_seconds || 180);
+    return robot.assemblyInvulnerableSeconds < limit
+      && insideZone(robot.position, state.model.assembly_zones?.[robot.side]);
+  }
+
+  function serviceRequiredForDecision(state, robot) {
+    return needsService(robot) && !canShelterInAssembly(state, robot);
+  }
+
   function chooseGoal(state, robot) {
     if (robot.role === "空中") {
       chooseUavAirGoal(state, robot);
       return;
     }
     let target;
-    if (needsService(robot)) {
+    if (needsService(robot) && canShelterInAssembly(state, robot)) {
+      const assembly = state.model.assembly_zones[robot.side];
+      target = assembly.center;
+      robot.mode = "assembly_hold";
+      robot.serviceTarget = null;
+      robot.status = "装配区无敌驻留 · 暂不回补给区";
+    } else if (needsService(robot)) {
       const healing = needsHealing(robot);
       const service = serviceTarget(state, robot, healing ? "heal" : "ammo");
       target = service.zone.center;
@@ -656,6 +679,20 @@
     });
   }
 
+  function crossesForbiddenSymmetricGate(state, robot, start, end) {
+    const abilities = new Set(state.navigation.teams?.[robot.school]?.[robot.role]?.abilities || []);
+    const forbiddenGate = state.navigation.gates.some((gate) => (
+      ["rough_road", "road_tunnel", "highland_tunnel"].includes(gate.category)
+      && !abilities.has(gate.category)
+      && state.router.segmentHitsPolygon(start, end, gate.polygon)
+    ));
+    if (forbiddenGate) return true;
+    return (state.navigation.static_obstacles || []).some((obstacle) => (
+      obstacle.blocks_movement !== false
+      && state.router.segmentHitsPolygon(start, end, obstacle.polygon)
+    ));
+  }
+
   function moveRobots(state) {
     state.robots.forEach((robot) => {
       robot.heat = Math.max(0, robot.heat - Number(robot.profile.cooling_per_second || 0));
@@ -665,9 +702,13 @@
       }
       updateRobotLevel(state, robot);
       if (robot.hp <= 0) return;
-      const serviceChanged = needsService(robot) && !["heal", "ammo"].includes(robot.mode);
-      const recovered = !needsService(robot) && ["heal", "ammo"].includes(robot.mode);
-      if (state.second >= robot.nextDecisionAt || !robot.route?.length || serviceChanged || recovered) chooseGoal(state, robot);
+      const requiresService = serviceRequiredForDecision(state, robot);
+      const serviceChanged = requiresService && !["heal", "ammo"].includes(robot.mode);
+      const recovered = !requiresService && ["heal", "ammo"].includes(robot.mode);
+      const serviceInvalid = ["heal", "ammo"].includes(robot.mode)
+        && robot.serviceTarget === "outpost"
+        && state.structures[robot.side].outpost.hp <= 0;
+      if (state.second >= robot.nextDecisionAt || !robot.route?.length || serviceChanged || recovered || serviceInvalid) chooseGoal(state, robot);
       const nominalSpeed = Number(robot.profile.speed_mps) * (robot.weak ? 0.88 : 1) * (robot.hp / robot.maxHp < 0.25 ? 0.9 : 1);
       const previousTerrainAction = robot.terrainAction;
       const terrain = state.router.terrainMotion
@@ -681,12 +722,19 @@
       if (robot.terrainAction) {
         robot.status = `${robot.terrainAction} · ${Math.round(robot.terrainSpeedMultiplier * 100)}% 速度`;
       } else if (previousTerrainAction && /% 速度$/.test(robot.status)) {
-        robot.status = robot.mode === "technology_core" ? "前往科技核心装配区" : "战术转点";
+        robot.status = robot.mode === "technology_core" ? "前往科技核心装配区"
+          : robot.mode === "assembly_hold" ? "装配区无敌驻留" : "战术转点";
       }
       const moved = state.router.moveAlongRoute(robot.position, robot.route, speed, true);
       const previous = robot.position;
-      robot.position = moved.position;
-      robot.route = moved.route;
+      if (crossesForbiddenSymmetricGate(state, robot, previous, moved.position)) {
+        robot.route = [[...previous]];
+        robot.nextDecisionAt = state.second;
+        robot.status = "围挡/地形门禁阻止 · 重新规划";
+      } else {
+        robot.position = moved.position;
+        robot.route = moved.route;
+      }
       if (state.router.distance(previous, robot.position) > 0.01) {
         robot.yaw = Math.atan2(robot.position[1] - previous[1], robot.position[0] - previous[0]) * 180 / Math.PI;
       }
@@ -738,10 +786,33 @@
     });
   }
 
-  function lineOfSight(state, start, end) {
+  function updateAssemblyProtection(state) {
+    const limit = Number(state.model.rules.engineer_assembly_invulnerability_seconds || 180);
+    state.robots.forEach((robot) => {
+      robot.assemblyProtected = false;
+      if (robot.role !== "工程" || robot.hp <= 0 || robot.assemblyInvulnerableSeconds >= limit) return;
+      const assembly = state.model.assembly_zones?.[robot.side];
+      if (!insideZone(robot.position, assembly)) return;
+      robot.assemblyProtected = true;
+      robot.assemblyInvulnerableSeconds = Math.min(limit, robot.assemblyInvulnerableSeconds + 1);
+      robot.status = `装配区无敌 · 累计 ${robot.assemblyInvulnerableSeconds}/${limit}s`;
+    });
+  }
+
+  function lineOfSight(state, attacker, end) {
+    if (attacker.role === "空中") return true;
+    const start = attacker.position;
+    const wallBlocked = (state.navigation.static_obstacles || []).some((obstacle) => (
+      obstacle.blocks_ground_fire !== false
+      && state.router.segmentHitsPolygon(start, end, obstacle.polygon)
+    ));
+    if (wallBlocked) return false;
     const startRegion = state.router.regionAt(state.navigation, start);
     const endRegion = state.router.regionAt(state.navigation, end);
-    if (startRegion?.id === endRegion?.id) return true;
+    const startLayer = startRegion?.id || "ground";
+    const endLayer = endRegion?.id || "ground";
+    if (startLayer !== endLayer) return false;
+    if (startLayer !== "ground") return true;
     return !Object.values(state.navigation.regions).some((polygon) => state.router.segmentHitsPolygon(start, end, polygon));
   }
 
@@ -749,15 +820,16 @@
     const enemy = otherSide(robot.side);
     const range = Number(robot.profile.range_m || 0);
     const robots = state.robots
-      .filter((target) => target.side === enemy && target.role !== "空中" && target.hp > 0 && state.second >= target.invulnerableUntil)
+      .filter((target) => target.side === enemy && target.role !== "空中" && target.hp > 0
+        && state.second >= target.invulnerableUntil && !target.assemblyProtected)
       .map((target) => ({ entity: target, distance: state.router.distance(robot.position, target.position), type: "robot" }))
-      .filter((candidate) => candidate.distance <= range && lineOfSight(state, robot.position, candidate.entity.position))
+      .filter((candidate) => candidate.distance <= range && lineOfSight(state, robot, candidate.entity.position))
       .sort((left, right) => (left.entity.hp / left.entity.maxHp + left.distance * 0.035) - (right.entity.hp / right.entity.maxHp + right.distance * 0.035));
     const structures = state.structures[enemy];
     const structureOrder = structures.outpost.hp > 0 ? [structures.outpost, structures.base] : [structures.base];
     structureOrder.forEach((structure) => {
       const distance = state.router.distance(robot.position, structure.position);
-      if (structure.hp > 0 && distance <= range && lineOfSight(state, robot.position, structure.position)) robots.push({ entity: structure, distance, type: "structure" });
+      if (structure.hp > 0 && distance <= range && lineOfSight(state, robot, structure.position)) robots.push({ entity: structure, distance, type: "structure" });
     });
     return robots;
   }
@@ -808,7 +880,7 @@
     pending.forEach((hit) => {
       // V2.1.0: 空中机器人不适用攻击伤害和撞击伤害。
       if (hit.target.role === "空中") return;
-      if (hit.target.invulnerableUntil > state.second) return;
+      if (hit.target.invulnerableUntil > state.second || hit.target.assemblyProtected) return;
       let damage = hit.damage;
       if (hit.target.kind === "base" && state.structures[hit.target.side].outpost.hp > 0) damage *= 0.35;
       const groundOrStructure = hit.target.kind || (hit.target.role && hit.target.role !== "空中");
@@ -1032,8 +1104,14 @@
         const ux = (one.position[0] - two.position[0]) / distance;
         const uy = (one.position[1] - two.position[1]) / distance;
         const push = (0.42 - distance) / 2;
-        one.position = [clamp(one.position[0] + ux * push, 0, 28), clamp(one.position[1] + uy * push, 0, 15)];
-        two.position = [clamp(two.position[0] - ux * push, 0, 28), clamp(two.position[1] - uy * push, 0, 15)];
+        const oneCandidate = [clamp(one.position[0] + ux * push, 0, 28), clamp(one.position[1] + uy * push, 0, 15)];
+        const twoCandidate = [clamp(two.position[0] - ux * push, 0, 28), clamp(two.position[1] - uy * push, 0, 15)];
+        const oneLayer = state.router.regionAt(state.navigation, one.position)?.id || "ground";
+        const twoLayer = state.router.regionAt(state.navigation, two.position)?.id || "ground";
+        const oneCandidateLayer = state.router.regionAt(state.navigation, oneCandidate)?.id || "ground";
+        const twoCandidateLayer = state.router.regionAt(state.navigation, twoCandidate)?.id || "ground";
+        if (oneLayer === oneCandidateLayer && !crossesForbiddenSymmetricGate(state, one, one.position, oneCandidate)) one.position = oneCandidate;
+        if (twoLayer === twoCandidateLayer && !crossesForbiddenSymmetricGate(state, two, two.position, twoCandidate)) two.position = twoCandidate;
       }
     }
   }
@@ -1060,6 +1138,7 @@
     separateRobots(state);
     resupplyRobots(state);
     updateTechnologyCores(state);
+    updateAssemblyProtection(state);
     resolveFortresses(state);
     radarCounterUavs(state);
     fireWeapons(state);
@@ -1112,7 +1191,10 @@
           hp: robot.hp, maxHp: robot.maxHp, ammo: robot.ammo, heat: robot.heat,
           level: robot.level, heroArchetype: robot.heroArchetype,
           shots: robot.shots, hits: robot.hits, kills: robot.kills, deaths: robot.deaths,
-          weak: robot.weak, invulnerable: state.second < robot.invulnerableUntil,
+          weak: robot.weak, invulnerable: state.second < robot.invulnerableUntil || robot.assemblyProtected,
+          assemblyProtected: robot.assemblyProtected,
+          assemblyInvulnerableSeconds: robot.assemblyInvulnerableSeconds,
+          assemblyInvulnerableRemaining: Math.max(0, Number(state.model.rules.engineer_assembly_invulnerability_seconds || 180) - robot.assemblyInvulnerableSeconds),
           respawnIn: robot.respawnAt == null ? 0 : Math.max(0, robot.respawnAt - state.second),
           respawnMode: robot.respawnMode, respawnProgress: robot.respawnProgress,
           respawnRequired: robot.respawnRequired, buybacks: robot.buybacks,
@@ -1156,7 +1238,9 @@
   return {
     ROLE_ORDER, hashSeed, mulberry32, canonicalPoint, robotLevel, roleMaxHp,
     insideZone, serviceZoneAt, reviveReadRequired, immediateReviveCost,
-    createMatch, stepMatch, resupplyRobots, killRobot, respawnRobots,
-    applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores, snapshot, runMatch,
+    createMatch, stepMatch, chooseGoal, moveRobots, resupplyRobots, killRobot, respawnRobots,
+    canShelterInAssembly, serviceRequiredForDecision,
+    applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,
+    updateAssemblyProtection, lineOfSight, snapshot, runMatch,
   };
 });

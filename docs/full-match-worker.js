@@ -2,7 +2,7 @@
 
 // The 421-second simulation performs terrain-aware routing for twelve robots.
 // Keep that CPU work off the UI thread so loading and scrolling stay responsive.
-importScripts("./terrain-router.js?v=2", "./full-match-engine.js?v=6");
+importScripts("./terrain-router.js?v=4", "./full-match-engine.js?v=10");
 
 let model = null;
 let navigation = null;

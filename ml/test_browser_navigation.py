@@ -76,6 +76,31 @@ function validateStrictTunnelLabels(){
   }
   return {checks,violations};
 }
+function validateEnclosureRoutes(){
+  const cases=[
+    {name:'blue_supply_lower_fence',start:[24.8,11.8],end:[24.8,13.0]},
+    {name:'red_supply_lower_fence',start:[3.2,3.2],end:[3.2,2.0]},
+    {name:'blue_road_lower_fence',start:[16.0,12.4],end:[16.0,13.8]},
+    {name:'red_road_lower_fence',start:[12.0,2.6],end:[12.0,1.2]},
+    {name:'blue_supply_zone',start:[24.0,10.0],end:[26.2,13.45]},
+    {name:'red_supply_zone',start:[4.0,5.0],end:[1.8,1.55]},
+  ];
+  const walls=nav.static_obstacles.filter(item=>item.blocks_movement!==false);
+  const implementations=[['prediction-worker',core.terrainRoute],['full-match-router',router.terrainRoute]];
+  const violations=[];
+  let checks=0;
+  for(const [implementation,routeFunction] of implementations){
+    for(const spec of cases){
+      checks+=1;
+      const value=routeFunction(nav,spec.start,spec.end,'东北大学','步兵3');
+      const crossed=value.route.slice(1).some((point,index)=>walls.some(wall=>
+        router.segmentHitsPolygon(value.route[index],point,wall.polygon)));
+      const reached=Math.hypot(value.target[0]-spec.end[0],value.target[1]-spec.end[1])<.15;
+      if(crossed||!reached||value.route.length<2) violations.push({implementation,...spec,crossed,reached,route:value.route});
+    }
+  }
+  return {checks,walls:walls.length,violations};
+}
 console.log(JSON.stringify({
   around:plan([5,7.5],[23,7.5],'未知学校','英雄'),
   blockedAscent:plan([6,7.5],[14,7.5],'未知学校','英雄'),
@@ -101,6 +126,7 @@ console.log(JSON.stringify({
   })()
   ,globalTunnelValidation:validateAllTunnelGates()
   ,strictTunnelLabels:validateStrictTunnelLabels()
+  ,enclosureRoutes:validateEnclosureRoutes()
 }));
 """
         result = subprocess.run(
@@ -157,6 +183,12 @@ console.log(JSON.stringify({
     def test_unobserved_tunnel_passages_are_negative_for_every_team_role(self):
         validation = self.result["strictTunnelLabels"]
         self.assertEqual(440, validation["checks"])
+        self.assertEqual([], validation["violations"])
+
+    def test_road_and_supply_enclosures_never_clip_in_either_router(self):
+        validation = self.result["enclosureRoutes"]
+        self.assertEqual(12, validation["checks"])
+        self.assertGreaterEqual(validation["walls"], 18)
         self.assertEqual([], validation["violations"])
 
     def test_terrain_motion_changes_speed_for_both_step_directions_and_fly_ramp(self):

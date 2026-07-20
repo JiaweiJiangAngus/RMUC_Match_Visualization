@@ -67,6 +67,7 @@ class FullSimulationDataTests(unittest.TestCase):
         self.assertEqual(20, rules["uav_support"]["periodic_seconds"])
         self.assertFalse(rules["uav_support"]["ordinary_damage"])
         self.assertFalse(rules["uav_support"]["healing_and_respawn"])
+        self.assertEqual(180, rules["engineer_assembly_invulnerability_seconds"])
 
     def test_v210_hero_archetype_health_tables_are_exact(self):
         heroes = self.model["rules"]["hero_archetypes"]
@@ -198,7 +199,8 @@ const engine=require('./docs/full-match-engine.js');
 const model=JSON.parse(fs.readFileSync('./docs/data/models/full_simulation.json','utf8'));
 const nav=JSON.parse(fs.readFileSync('./docs/data/models/terrain_navigation.json','utf8'));
 function run() {
-  const result=engine.runMatch(model,nav,'东北大学','中国石油大学（华东）',20260719,router);
+  const schools={red:'东北大学',blue:'中国石油大学（华东）'};
+  const result=engine.runMatch(model,nav,schools.red,schools.blue,20260719,router);
   const final=result.frames.at(-1);
   const tunnelGates=nav.gates.filter(gate=>gate.category.endsWith('tunnel'));
   return {
@@ -219,6 +221,21 @@ function run() {
       .every(robot=>{
         const previous=result.frames[index].robots.find(item=>item.key===robot.key);
         return !tunnelGates.some(gate=>router.segmentHitsPolygon([previous.x,previous.y],[robot.x,robot.y],gate.polygon));
+      })),
+    groundForbiddenGateClear:result.frames.slice(1).every((frame,index)=>frame.robots
+      .filter(robot=>robot.role!=='空中')
+      .every(robot=>{
+        const previous=result.frames[index].robots.find(item=>item.key===robot.key);
+        const abilities=nav.teams[schools[robot.side]][robot.role].abilities;
+        const blockers=nav.gates.filter(gate=>['road_tunnel','highland_tunnel','rough_road'].includes(gate.category)&&!abilities.includes(gate.category));
+        return !blockers.some(gate=>router.segmentHitsPolygon([previous.x,previous.y],[robot.x,robot.y],gate.polygon));
+      })),
+    groundStaticWallClear:result.frames.slice(1).every((frame,index)=>frame.robots
+      .filter(robot=>robot.role!=='空中')
+      .every(robot=>{
+        const previous=result.frames[index].robots.find(item=>item.key===robot.key);
+        return !nav.static_obstacles.some(wall=>wall.blocks_movement!==false
+          &&router.segmentHitsPolygon([previous.x,previous.y],[robot.x,robot.y],wall.polygon));
       })),
     terrainMotionFrames:result.frames.reduce((sum,frame)=>sum+frame.robots.filter(robot=>robot.role!=='空中'&&robot.terrainSpeedMultiplier!==1).length,0),
     terrainDirections:[...new Set(result.frames.flatMap(frame=>frame.robots.map(robot=>robot.terrainAction).filter(Boolean)))],
@@ -323,10 +340,44 @@ function probeTechnologyCore() {
   const paid=engine.snapshot(state);
   return {initial,initialAmmo,completed:completed.teams.red,engineer:completed.robots.find(item=>item.key==='red:工程'),paid:paid.teams.red};
 }
+function probeHardRules() {
+  const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',8,router);
+  const infantry=state.robots.find(item=>item.key==='red:步兵3');
+  infantry.position=[...model.service_zones.red.outpost.center];
+  infantry.ammo=0; infantry.shots=0; infantry.shotBudget=100;
+  infantry.weak=true; infantry.weakKind='timed';
+  state.structures.red.outpost.hp=0;
+  engine.resupplyRobots(state);
+  const destroyedOutpost={ammo:infantry.ammo,weak:infantry.weak,zone:engine.serviceZoneAt(state,infantry,'ammo')};
+
+  const engineer=state.robots.find(item=>item.key==='red:工程');
+  engineer.position=[...model.assembly_zones.red.center];
+  engineer.hp=1;
+  engineer.assemblyInvulnerableSeconds=0;
+  engine.chooseGoal(state,engineer);
+  const protectedDecision={mode:engineer.mode,serviceTarget:engineer.serviceTarget};
+  engineer.position=[...model.assembly_zones.red.center];
+  engineer.assemblyInvulnerableSeconds=180;
+  engine.chooseGoal(state,engineer);
+  const exhaustedDecision={mode:engineer.mode,serviceTarget:engineer.serviceTarget};
+  engineer.position=[...model.assembly_zones.red.center];
+  engineer.assemblyInvulnerableSeconds=0;
+  let protectedSeconds=0;
+  for(let second=0;second<181;second+=1){engine.updateAssemblyProtection(state);if(engineer.assemblyProtected)protectedSeconds+=1;}
+
+  const hero=state.robots.find(item=>item.key==='red:英雄');
+  const uav=state.robots.find(item=>item.key==='red:空中');
+  hero.position=[9,7.5]; uav.position=[9,7.5];
+  return {
+    destroyedOutpost,
+    assembly:{protectedSeconds,used:engineer.assemblyInvulnerableSeconds,protectedAfterLimit:engineer.assemblyProtected,protectedDecision,exhaustedDecision},
+    lineOfSight:{ground:engine.lineOfSight(state,hero,[19,7.5]),uav:engine.lineOfSight(state,uav,[19,7.5])},
+  };
+}
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -339,6 +390,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.v210 = payload["v210"]
         cls.uav_rules = payload["uavRules"]
         cls.technology_core = payload["technologyCore"]
+        cls.hard_rules = payload["hardRules"]
 
     def test_complete_match_has_421_frames_and_12_agents(self):
         self.assertEqual(421, self.result["frames"])
@@ -364,6 +416,8 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
 
     def test_neu_infantry_never_interpolates_through_tunnel_and_terrain_changes_speed(self):
         self.assertTrue(self.result["neuInfantryTunnelClear"])
+        self.assertTrue(self.result["groundForbiddenGateClear"])
+        self.assertTrue(self.result["groundStaticWallClear"])
         self.assertGreater(self.result["terrainMotionFrames"], 0)
         actions = self.result["terrainDirections"]
         self.assertTrue(any("上公路台阶" in action for action in actions))
@@ -429,6 +483,29 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         self.assertEqual(50, core["completed"]["technologyCoreEarnedCoins"])
         self.assertEqual(1, core["engineer"]["technologyCoreLevel"])
         self.assertEqual(100, core["paid"]["technologyCoreEarnedCoins"])
+
+    def test_destroyed_outpost_disables_its_ammunition_and_interaction_zone(self):
+        result = self.hard_rules["destroyedOutpost"]
+        self.assertEqual(0, result["ammo"])
+        self.assertTrue(result["weak"])
+        self.assertIsNone(result["zone"])
+
+    def test_engineer_gets_exactly_180_cumulative_assembly_protection_seconds(self):
+        result = self.hard_rules["assembly"]
+        self.assertEqual(180, result["protectedSeconds"])
+        self.assertEqual(180, result["used"])
+        self.assertFalse(result["protectedAfterLimit"])
+        self.assertEqual(
+            {"mode": "assembly_hold", "serviceTarget": None},
+            result["protectedDecision"],
+        )
+        self.assertEqual(
+            {"mode": "heal", "serviceTarget": "supply"},
+            result["exhaustedDecision"],
+        )
+
+    def test_only_uav_can_ignore_central_highland_height_layer_for_fire(self):
+        self.assertEqual({"ground": False, "uav": True}, self.hard_rules["lineOfSight"])
 
 
 if __name__ == "__main__":
