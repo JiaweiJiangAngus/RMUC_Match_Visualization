@@ -52,15 +52,14 @@ def build_catalog(db: ApiDatabase):
 
 
 def export_frontend():
-    source = (APP_DIR / "index.html").read_text(encoding="utf-8")
-    source = source.replace('href="/app.css?v=14"', 'href="./app.css?v=14"')
-    source = source.replace(
-        '<script src="/app.js?v=14"></script>',
-        '<script>window.RMUC_STATIC_DATA = true;</script>\n  <script src="./app.js?v=14"></script>',
-    )
-    write_if_changed(DOCS_DIR / "index.html", source.encode("utf-8"))
-    write_if_changed(DOCS_DIR / "app.css", (APP_DIR / "web" / "app.css").read_bytes())
-    write_if_changed(DOCS_DIR / "app.js", (APP_DIR / "web" / "app.js").read_bytes())
+    # docs/ is the authoritative static frontend.  It contains the full-match
+    # simulator and worker assets that do not exist in the smaller SQLite API
+    # client at the repository root; copying that client here would silently
+    # delete the simulator on every dataset export.
+    required = (DOCS_DIR / "index.html", DOCS_DIR / "app.css", DOCS_DIR / "app.js")
+    missing = [path for path in required if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"GitHub Pages 前端缺失：{', '.join(str(path) for path in missing)}")
     write_if_changed(DOCS_DIR / ".nojekyll", b"")
     destination = DOCS_DIR / "assets" / "map.webp"
     destination.parent.mkdir(parents=True, exist_ok=True)

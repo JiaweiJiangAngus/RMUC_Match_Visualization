@@ -126,6 +126,76 @@
     return candidates[0] || { name: "supply", zone: zones.supply };
   }
 
+  function insideAnyServiceZone(model, side, point) {
+    return Object.values(model.service_zones?.[side] || {}).some((zone) => insideZone(point, zone));
+  }
+
+  function teamTargetPrior(state, robot) {
+    const priors = state.model.teams[robot.school].target_prior_by_30s || [];
+    const phase = Math.min(priors.length - 1, Math.floor(state.second / 30));
+    const entry = priors[Math.max(0, phase)] || {};
+    const outpostAlive = state.structures[otherSide(robot.side)].outpost.hp > 0;
+    return (outpostAlive ? entry.outpost_alive : entry.outpost_down)
+      || entry
+      || (outpostAlive ? { robot: 0.45, outpost: 0.55, base: 0 } : { robot: 0.75, outpost: 0, base: 0.25 });
+  }
+
+  function tacticalCanonicalGoal(state, robot) {
+    const phase = Math.min(6, Math.floor(state.second / 60));
+    const current = canonicalPoint(robot.position, robot.side);
+    const forceServiceExit = Boolean(robot.serviceExitPending);
+    const points = robot.profile.goals_by_minute[phase] || robot.profile.goals_by_minute.at(-1) || [];
+    const prior = teamTargetPrior(state, robot);
+    const enemyStructures = state.structures[otherSide(robot.side)];
+    const objectiveType = enemyStructures.outpost.hp > 0 ? "outpost" : "base";
+    const objective = enemyStructures[objectiveType];
+    robot.tacticalIntent = null;
+    if (robot.profile.weapon && state.random() < Math.min(0.92, Number(prior[objectiveType] || 0) * 0.95)) {
+      const objectivePoint = canonicalPoint(objective.position, robot.side);
+      const attackDistance = Math.max(1.5, Number(robot.profile.range_m || 0) * 0.78);
+      const observedAttackPoints = points.filter((point) => (
+        state.router.distance([Number(point[0]), Number(point[1])], objectivePoint) <= attackDistance
+        && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", [Number(point[0]), Number(point[1])]))
+      ));
+      if (observedAttackPoints.length) {
+        robot.serviceExitPending = false;
+        robot.tacticalIntent = objectiveType;
+        return weightedPoint(observedAttackPoints, state.random);
+      }
+      const dx = current[0] - objectivePoint[0];
+      const dy = current[1] - objectivePoint[1];
+      const distance = Math.max(0.001, Math.hypot(dx, dy));
+      robot.serviceExitPending = false;
+      robot.tacticalIntent = objectiveType;
+      return [
+        clamp(objectivePoint[0] + dx / distance * attackDistance * 0.82, 0.1, 27.9),
+        clamp(objectivePoint[1] + dy / distance * attackDistance * 0.82, 0.1, 14.9),
+      ];
+    }
+    const transitions = robot.profile.transitions_by_minute?.[phase] || [];
+    const nearbyTransitions = transitions.map((edge) => {
+      const sourceDistance = state.router.distance(current, [Number(edge[0]), Number(edge[1])]);
+      const adjustedWeight = Number(edge[4] || 1) / (0.35 + sourceDistance * sourceDistance);
+      return [...edge, adjustedWeight, sourceDistance];
+    }).filter((edge) => edge[6] <= 3.2 && (
+      !forceServiceExit || !insideAnyServiceZone(state.model, "red", [Number(edge[2]), Number(edge[3])])
+    ));
+    const transition = weightedItem(nearbyTransitions, 5, state.random);
+    let target;
+    if (transition) {
+      target = [Number(transition[2]), Number(transition[3])];
+    } else {
+      const eligible = forceServiceExit
+        ? points.filter((point) => !insideAnyServiceZone(state.model, "red", [Number(point[0]), Number(point[1])]))
+        : points;
+      target = eligible.length ? weightedPoint(eligible, state.random) : [6.65, 7.5];
+    }
+    robot.serviceExitPending = false;
+    target[0] = clamp(target[0] + (state.random() - 0.5) * 0.4, 0.1, 27.9);
+    target[1] = clamp(target[1] + (state.random() - 0.5) * 0.4, 0.1, 14.9);
+    return target;
+  }
+
   function makeRobot(model, school, side, role, heroArchetype) {
     const profile = model.teams[school].roles[role];
     const archetype = role === "英雄" ? heroArchetype : null;
@@ -189,6 +259,9 @@
       targetKey: null,
       mode: "tactic",
       serviceTarget: null,
+      serviceExitPending: false,
+      serviceModeStartedAt: null,
+      ammoServiceCooldownUntil: 0,
       shotBudget: 0,
     };
   }
@@ -456,6 +529,10 @@
     SIDES.forEach((side) => {
       const school = state.schools[side];
       const initialCoins = Number(model.rules.initial_coins || 400);
+      const outpostDestroySamples = model.teams[school].outpost_destroy_seconds || [];
+      const outpostObjectiveSecond = outpostDestroySamples.length
+        ? Number(outpostDestroySamples[Math.floor(state.random() * outpostDestroySamples.length)])
+        : 150;
       state.teamState[side] = {
         coins: initialCoins,
         totalCoins: initialCoins,
@@ -463,6 +540,7 @@
         fortress: "neutral",
         dartWindows: 0,
         dartHits: 0,
+        outpostObjectiveSecond,
         technologyCore: {
           level: 0,
           incomePer10: 0,
@@ -548,14 +626,15 @@
     return robot.weak || robot.hp / robot.maxHp < 0.43;
   }
 
-  function needsAmmo(robot) {
+  function needsAmmo(state, robot) {
     if (!robot.profile.weapon || robot.role === "空中" || robot.shots >= robot.shotBudget) return false;
+    if (state.second < Number(robot.ammoServiceCooldownUntil || 0)) return false;
     return robot.ammo <= (robot.profile.weapon === "42mm" ? 1 : 8);
   }
 
-  function needsService(robot) {
+  function needsService(state, robot) {
     if (robot.role === "空中") return false;
-    return needsHealing(robot) || needsAmmo(robot);
+    return needsHealing(robot) || needsAmmo(state, robot);
   }
 
   function canShelterInAssembly(state, robot) {
@@ -566,7 +645,7 @@
   }
 
   function serviceRequiredForDecision(state, robot) {
-    return needsService(robot) && !canShelterInAssembly(state, robot);
+    return needsService(state, robot) && !canShelterInAssembly(state, robot);
   }
 
   function chooseGoal(state, robot) {
@@ -575,16 +654,19 @@
       return;
     }
     let target;
-    if (needsService(robot) && canShelterInAssembly(state, robot)) {
+    if (needsService(state, robot) && canShelterInAssembly(state, robot)) {
       const assembly = state.model.assembly_zones[robot.side];
       target = assembly.center;
       robot.mode = "assembly_hold";
       robot.serviceTarget = null;
       robot.status = "装配区无敌驻留 · 暂不回补给区";
-    } else if (needsService(robot)) {
+    } else if (needsService(state, robot)) {
       const healing = needsHealing(robot);
       const service = serviceTarget(state, robot, healing ? "heal" : "ammo");
       target = service.zone.center;
+      if (!['heal', 'ammo'].includes(robot.mode) || robot.mode !== (healing ? "heal" : "ammo")) {
+        robot.serviceModeStartedAt = state.second;
+      }
       robot.mode = healing ? "heal" : "ammo";
       robot.serviceTarget = service.name;
       robot.status = robot.weak ? "虚弱撤回补给区" : healing ? "残血前往补给区" : `前往${service.zone.label}补弹`;
@@ -606,15 +688,12 @@
     if (!target) {
       robot.serviceTarget = null;
       robot.mode = "tactic";
-      const phase = Math.min(6, Math.floor(state.second / 60));
-      const points = robot.profile.goals_by_minute[phase] || robot.profile.goals_by_minute.at(-1);
-      const canonical = weightedPoint(points, state.random);
-      canonical[0] = clamp(canonical[0] + (state.random() - 0.5) * 0.55, 0.1, 27.9);
-      canonical[1] = clamp(canonical[1] + (state.random() - 0.5) * 0.55, 0.1, 14.9);
+      const canonical = tacticalCanonicalGoal(state, robot);
       target = canonicalPoint(canonical, robot.side);
       robot.status = robot.role === "工程"
         ? `工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
-        : "战术转点";
+        : robot.tacticalIntent === "outpost" ? "前哨压制转点"
+          : robot.tacticalIntent === "base" ? "基地压制转点" : "战术转点";
     }
     const assembly = robot.mode === "technology_core" ? state.model.assembly_zones?.[robot.side] : null;
     const planned = assembly
@@ -626,7 +705,7 @@
     robot.terrainActions = planned.actions || [];
     robot.nextDecisionAt = robot.mode === "technology_core"
       ? state.second + 3
-      : state.second + 10 + Math.floor(state.random() * 12);
+      : state.second + 6 + Math.floor(state.random() * 6);
     const meaningfulPassages = planned.passages.filter((passage) => passage !== "空中直达");
     if (meaningfulPassages.length) event(state, robot.side, "terrain", `${robot.role}：${meaningfulPassages.join("、")}`);
   }
@@ -790,6 +869,7 @@
       const ammoZone = serviceZoneAt(state, robot, "ammo");
       if (!healingZone && !ammoZone) return;
       const beforeHp = robot.hp;
+      let purchasedAmmo = false;
       if (healingZone) {
         const outOfCombat = state.second - robot.lastDamageAt >= Number(state.model.rules.out_of_combat_seconds || 6);
         const lateFastHeal = state.second >= Number(state.model.rules.late_heal_start_second || 240) && outOfCombat;
@@ -819,12 +899,28 @@
           team.coins -= bundles * 10;
           team.spent += bundles * 10;
           state.stats[robot.side].supplies += 1;
+          purchasedAmmo = true;
           event(state, robot.side, "supply", `${robot.role} 在${ammoZone[1].label}补给 ${rounds} 发 ${weapon}`, { zone: ammoZone[0] });
         }
       }
       if (robot.hp > beforeHp + 0.5) robot.status = "补给区回血";
-      else if (ammoZone && robot.profile.weapon) robot.status = `${ammoZone[1].label}补弹`;
-      if (!needsService(robot) && ["heal", "ammo"].includes(robot.mode)) robot.nextDecisionAt = state.second + 1;
+      else if (purchasedAmmo) robot.status = `${ammoZone[1].label}补弹完成`;
+      else if (robot.mode === "ammo" && needsAmmo(state, robot)) robot.status = `${ammoZone[1].label}等待补弹`;
+      const waitedWithoutCoins = robot.mode === "ammo"
+        && !purchasedAmmo
+        && state.teamState[robot.side].coins < 10
+        && state.second - Number(robot.serviceModeStartedAt ?? state.second) >= 6;
+      if (waitedWithoutCoins) {
+        robot.ammoServiceCooldownUntil = state.second + 20;
+        robot.serviceExitPending = true;
+        robot.nextDecisionAt = state.second;
+        robot.status = "金币不足 · 先离开补弹区";
+      }
+      if (!needsService(state, robot) && ["heal", "ammo"].includes(robot.mode)) {
+        robot.serviceExitPending = true;
+        robot.nextDecisionAt = state.second;
+        robot.serviceModeStartedAt = null;
+      }
     });
   }
 
@@ -861,19 +957,37 @@
   function targetCandidates(state, robot) {
     const enemy = otherSide(robot.side);
     const range = Number(robot.profile.range_m || 0);
-    const robots = state.robots
+    const candidates = state.robots
       .filter((target) => target.side === enemy && target.role !== "空中" && target.hp > 0
         && state.second >= target.invulnerableUntil && !target.assemblyProtected)
       .map((target) => ({ entity: target, distance: state.router.distance(robot.position, target.position), type: "robot" }))
-      .filter((candidate) => candidate.distance <= range && lineOfSight(state, robot, candidate.entity.position))
-      .sort((left, right) => (left.entity.hp / left.entity.maxHp + left.distance * 0.035) - (right.entity.hp / right.entity.maxHp + right.distance * 0.035));
+      .filter((candidate) => candidate.distance <= range && lineOfSight(state, robot, candidate.entity.position));
     const structures = state.structures[enemy];
     const structureOrder = structures.outpost.hp > 0 ? [structures.outpost, structures.base] : [structures.base];
     structureOrder.forEach((structure) => {
       const distance = state.router.distance(robot.position, structure.position);
-      if (structure.hp > 0 && distance <= range && lineOfSight(state, robot, structure.position)) robots.push({ entity: structure, distance, type: "structure" });
+      if (structure.hp > 0 && distance <= range && lineOfSight(state, robot, structure.position)) {
+        candidates.push({ entity: structure, distance, type: structure.kind });
+      }
     });
-    return robots;
+    if (candidates.length <= 1) return candidates;
+
+    const groups = { robot: [], outpost: [], base: [] };
+    candidates.forEach((candidate) => groups[candidate.type].push(candidate));
+    groups.robot.sort((left, right) => (
+      left.entity.hp / left.entity.maxHp + left.distance * 0.035
+    ) - (
+      right.entity.hp / right.entity.maxHp + right.distance * 0.035
+    ));
+    groups.outpost.sort((left, right) => left.distance - right.distance);
+    groups.base.sort((left, right) => left.distance - right.distance);
+
+    const prior = teamTargetPrior(state, robot);
+    const available = Object.entries(groups)
+      .filter(([, values]) => values.length)
+      .map(([type]) => [type, Math.max(0.02, Number(prior[type] || 0))]);
+    const selectedType = weightedItem(available, 1, state.random)?.[0] || available[0][0];
+    return [...groups[selectedType], ...Object.entries(groups).filter(([type]) => type !== selectedType).flatMap(([, values]) => values)];
   }
 
   function fireWeapons(state) {
@@ -902,7 +1016,11 @@
       const baseAccuracy = Number(teamProfile.accuracy[weapon] || 0.1);
       const distanceFactor = 1.12 - 0.47 * target.distance / Math.max(1, Number(robot.profile.range_m));
       const fortressBuff = state.teamState[target.entity.side]?.fortress === robot.side ? 1.08 : 1;
-      const accuracy = clamp(baseAccuracy * ROLE_ACCURACY[robot.role] * distanceFactor * fortressBuff, 0.018, 0.78);
+      const outpostDeadline = Math.max(20, Number(state.teamState[robot.side].outpostObjectiveSecond || 150));
+      const structureAccuracy = target.type === "robot" ? 1
+        : target.type === "outpost" ? 1.35 + 0.75 * clamp((state.second + 20) / outpostDeadline, 0, 1)
+          : 1.35;
+      const accuracy = clamp(baseAccuracy * ROLE_ACCURACY[robot.role] * distanceFactor * fortressBuff * structureAccuracy, 0.018, target.type === "robot" ? 0.78 : 0.9);
       let hits = 0;
       for (let index = 0; index < shots; index += 1) if (state.random() < accuracy) hits += 1;
       robot.ammo -= shots;
@@ -1289,7 +1407,8 @@
   return {
     ROLE_ORDER, hashSeed, mulberry32, canonicalPoint, robotLevel, roleMaxHp,
     insideZone, serviceZoneAt, reviveReadRequired, immediateReviveCost,
-    createMatch, stepMatch, chooseGoal, moveRobots, resupplyRobots, killRobot, respawnRobots,
+    createMatch, stepMatch, chooseGoal, tacticalCanonicalGoal, targetCandidates,
+    moveRobots, resupplyRobots, killRobot, respawnRobots,
     canShelterInAssembly, serviceRequiredForDecision,
     applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,
     updateAssemblyProtection, lineOfSight, snapshot, runMatch,

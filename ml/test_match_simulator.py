@@ -43,6 +43,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
+        self.assertEqual(7, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -50,6 +51,25 @@ class FullSimulationDataTests(unittest.TestCase):
                 self.assertEqual(7, len(role["goals_by_minute"]))
                 self.assertEqual(7, len(role["hp_by_minute"]))
                 self.assertGreater(role["speed_mps"], 0)
+
+    def test_ground_roles_have_conditional_transitions_and_team_target_priors(self):
+        ground = {"英雄", "工程", "步兵3", "步兵4", "哨兵"}
+        for team in self.model["teams"].values():
+            self.assertEqual(14, len(team["target_prior_by_30s"]))
+            self.assertTrue(team["outpost_destroy_seconds"])
+            for phase in team["target_prior_by_30s"]:
+                for state in ("outpost_alive", "outpost_down"):
+                    prior = phase[state]
+                    self.assertAlmostEqual(1, sum(prior[key] for key in ("robot", "outpost", "base")), places=3)
+                    self.assertGreaterEqual(prior["samples"], 0)
+            for role in ground:
+                transitions = team["roles"][role]["transitions_by_minute"]
+                self.assertEqual(7, len(transitions))
+                self.assertTrue(any(transitions))
+
+        tdt_opening = self.model["teams"]["东北大学"]["target_prior_by_30s"][0]["outpost_alive"]
+        self.assertGreater(tdt_opening["outpost"], 0.75)
+        self.assertLessEqual(sorted(self.model["teams"]["东北大学"]["outpost_destroy_seconds"])[8], 40)
 
     def test_rule_parameters_cover_agent_state_transitions(self):
         rules = self.model["rules"]
@@ -239,6 +259,8 @@ function run() {
       })),
     terrainMotionFrames:result.frames.reduce((sum,frame)=>sum+frame.robots.filter(robot=>robot.role!=='空中'&&robot.terrainSpeedMultiplier!==1).length,0),
     terrainDirections:[...new Set(result.frames.flatMap(frame=>frame.robots.map(robot=>robot.terrainAction).filter(Boolean)))],
+    firstOutpostDamageSecond:result.frames.find(frame=>frame.structures.blue.outpost<model.rules.outpost_hp)?.second ?? null,
+    outpostDestroyedSecond:result.frames.find(frame=>frame.structures.blue.outpost<=0)?.second ?? null,
     signature:JSON.stringify({final,events:result.events})
   };
 }
@@ -374,6 +396,32 @@ function probeHardRules() {
     lineOfSight:{ground:engine.lineOfSight(state,hero,[19,7.5]),uav:engine.lineOfSight(state,uav,[19,7.5])},
   };
 }
+function probeServiceExit() {
+  const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',9,router);
+  const hero=state.robots.find(item=>item.key==='red:英雄');
+  hero.position=[...model.service_zones.red.base.center];
+  hero.goal=[...hero.position]; hero.route=[[...hero.position]];
+  hero.mode='tactic'; hero.status='战术转点'; hero.ammo=hero.profile.magazine; hero.shotBudget=100;
+  engine.resupplyRobots(state);
+  const passiveStatus=hero.status;
+
+  hero.mode='ammo'; hero.ammo=0; hero.serviceModeStartedAt=state.second;
+  state.teamState.red.coins=1000;
+  engine.resupplyRobots(state);
+  const purchased={status:hero.status,pending:hero.serviceExitPending,ammo:hero.ammo};
+  state.second+=1;
+  engine.moveRobots(state);
+  const goalInService=Object.values(model.service_zones.red).some(zone=>engine.insideZone(hero.goal,zone));
+  const departed={mode:hero.mode,goalInService,status:hero.status};
+
+  const broke=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',10,router);
+  const waiting=broke.robots.find(item=>item.key==='red:英雄');
+  waiting.position=[...model.service_zones.red.base.center]; waiting.mode='ammo'; waiting.ammo=0;
+  waiting.shotBudget=100; waiting.serviceModeStartedAt=0; broke.second=7; broke.teamState.red.coins=0;
+  engine.resupplyRobots(broke);
+  const noCoins={pending:waiting.serviceExitPending,cooldown:waiting.ammoServiceCooldownUntil,status:waiting.status};
+  return {passiveStatus,purchased,departed,noCoins};
+}
 function wallCrossingSegment(wall) {
   const xs=wall.polygon.map(point=>point[0]), ys=wall.polygon.map(point=>point[1]);
   const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
@@ -411,7 +459,7 @@ function probeWallSeeds() {
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -425,6 +473,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.uav_rules = payload["uavRules"]
         cls.technology_core = payload["technologyCore"]
         cls.hard_rules = payload["hardRules"]
+        cls.service_exit = payload["serviceExit"]
         cls.wall_layers = payload["wallLayers"]
         cls.wall_seeds = payload["wallSeeds"]
 
@@ -433,6 +482,22 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         self.assertEqual(12, self.result["robots"])
         self.assertTrue(self.result["final"]["finished"])
         self.assertIn(self.result["final"]["winner"], {"red", "blue", "draw"})
+
+    def test_tdt_opening_converts_observed_outpost_pressure(self):
+        self.assertLessEqual(self.result["firstOutpostDamageSecond"], 15)
+        self.assertLessEqual(self.result["outpostDestroyedSecond"], 100)
+
+    def test_supply_status_and_exit_match_actual_ammunition_state(self):
+        probe = self.service_exit
+        self.assertEqual("战术转点", probe["passiveStatus"])
+        self.assertIn("补弹完成", probe["purchased"]["status"])
+        self.assertTrue(probe["purchased"]["pending"])
+        self.assertGreater(probe["purchased"]["ammo"], 0)
+        self.assertEqual("tactic", probe["departed"]["mode"])
+        self.assertFalse(probe["departed"]["goalInService"])
+        self.assertTrue(probe["noCoins"]["pending"])
+        self.assertGreater(probe["noCoins"]["cooldown"], 7)
+        self.assertIn("金币不足", probe["noCoins"]["status"])
 
     def test_positions_health_ammo_and_heat_stay_valid(self):
         self.assertTrue(self.result["positionsValid"])

@@ -38,7 +38,7 @@
 python3 export_pages.py
 ```
 
-如果只修改了 HTML、CSS 或 JavaScript，可以快速更新前端而不重新导出比赛数据：
+静态站前端的权威源文件位于 `docs/`，修改 HTML、CSS 或 JavaScript 后可直接本地检查并提交。如果只需刷新共享地图和 Pages 元数据，可运行：
 
 ```bash
 python3 export_pages.py --frontend-only
@@ -58,7 +58,7 @@ Branch: main
 Folder: /docs
 ```
 
-当前 `docs/` 总大小约 43 MB，其中分局压缩数据约 39 MB；不要把原始 1.2 GB SQLite 文件提交到仓库。
+当前 `docs/` 总大小约 45 MB，其中分局压缩数据约 39 MB；不要把原始 1.2 GB SQLite 文件提交到仓库。
 
 ## 窗口内容
 

@@ -10,6 +10,7 @@ accuracy as detected hits divided by projectiles fired.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import sqlite3
 import sys
@@ -27,8 +28,11 @@ from analysis.team_style_report import TEAMS  # noqa: E402
 DEFAULT_DB = ROOT.parent / "RMUC2026区域赛数据" / "rmuc_2026_region_dataset.sqlite"
 DEFAULT_MACRO = ROOT / "docs" / "data" / "models" / "match_simulation.json"
 DEFAULT_OUTPUT = ROOT / "docs" / "data" / "models" / "full_simulation.json"
+DEFAULT_GAMES_DIR = ROOT / "docs" / "data" / "games"
 ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵", "空中")
+GROUND_ROLES = ROLES[:-1]
 PHASES = 7
+TARGET_PHASES = 14
 CORE_UNLOCK_SECONDS = (0, 60, 120, 180)
 CORE_FIRST_INCOME_PER_10 = (50, 25, 25, 50)
 # Total recurring core income after first completing Lv.1-Lv.4.  A little
@@ -65,6 +69,7 @@ def args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--macro", type=Path, default=DEFAULT_MACRO)
+    parser.add_argument("--games-dir", type=Path, default=DEFAULT_GAMES_DIR)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -194,6 +199,187 @@ def infer_regional_economy(db: sqlite3.Connection, schools: tuple[str, ...]) -> 
             "regional_peak_core_income_per_10": round(median(peak_values)) if peak_values else 0,
         }
     return priors
+
+
+def inside_ellipse(point: tuple[float, float], center: tuple[float, float], radius: tuple[float, float]) -> bool:
+    dx = (point[0] - center[0]) / radius[0]
+    dy = (point[1] - center[1]) / radius[1]
+    return dx * dx + dy * dy <= 1
+
+
+def stationary_service_weight(
+    point: tuple[float, float],
+    previous: tuple[float, float] | None,
+    following: tuple[float, float] | None,
+) -> float:
+    """Down-weight stationary service dwell without deleting real base defence."""
+    neighbours = [candidate for candidate in (previous, following) if candidate is not None]
+    if not neighbours or max(((point[0] - value[0]) ** 2 + (point[1] - value[1]) ** 2) ** 0.5 for value in neighbours) > 0.4:
+        return 1.0
+    if inside_ellipse(point, (1.8, 1.55), (1.65, 1.3)):
+        return 0.08
+    if inside_ellipse(point, (2.66, 7.5), (1.35, 1.35)):
+        return 0.3
+    return 1.0
+
+
+def build_ground_navigation(
+    games_dir: Path,
+    schools: tuple[str, ...],
+) -> tuple[dict[tuple[str, str, int], list[list[float]]], dict[tuple[str, str, int], list[list[float]]]]:
+    """Build per-game-balanced ground goals and five-second movement transitions."""
+    allowed = set(schools)
+    goal_weights: dict[tuple[str, str, int], Counter] = defaultdict(Counter)
+    transition_weights: dict[tuple[str, str, int], Counter] = defaultdict(Counter)
+
+    for path in sorted(games_dir.glob("*.json.gz")):
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            game = json.load(handle)
+        info = game.get("info", {})
+        side_school = {"红": info.get("red"), "蓝": info.get("blue")}
+        tracks: dict[tuple[str, str], list[tuple[int, float, float]]] = defaultdict(list)
+        for second_text, rows in game.get("frames", {}).items():
+            second = int(float(second_text))
+            for row in rows:
+                if len(row) < 7 or row[1] not in GROUND_ROLES or float(row[3] or 0) <= 0:
+                    continue
+                school = side_school.get(row[2])
+                if school not in allowed or row[5] is None or row[6] is None:
+                    continue
+                x, y = float(row[5]), float(row[6])
+                if row[2] == "蓝":
+                    x, y = 28.0 - x, 15.0 - y
+                if not (0.05 <= x <= 27.95 and 0.05 <= y <= 14.95):
+                    continue
+                tracks[(school, row[1])].append((second, x, y))
+
+        for (school, role), values in tracks.items():
+            values.sort()
+            by_second = {second: (x, y) for second, x, y in values}
+            game_goals: dict[int, Counter] = defaultdict(Counter)
+            game_transitions: dict[int, Counter] = defaultdict(Counter)
+            for index, (second, x, y) in enumerate(values):
+                phase = min(PHASES - 1, second // 60)
+                point = (x, y)
+                previous = (values[index - 1][1], values[index - 1][2]) if index and second - values[index - 1][0] <= 2 else None
+                following = (values[index + 1][1], values[index + 1][2]) if index + 1 < len(values) and values[index + 1][0] - second <= 2 else None
+                cell = (round(x * 2) / 2, round(y * 2) / 2)
+                game_goals[phase][cell] += stationary_service_weight(point, previous, following)
+
+                target = by_second.get(second + 5)
+                if target is None:
+                    continue
+                distance = ((target[0] - x) ** 2 + (target[1] - y) ** 2) ** 0.5
+                if not (0.25 <= distance <= 18.0):
+                    continue
+                target_cell = (round(target[0] * 2) / 2, round(target[1] * 2) / 2)
+                game_transitions[phase][(*cell, *target_cell)] += 1
+
+            for phase, counts in game_goals.items():
+                total = sum(counts.values()) or 1
+                for cell, count in counts.items():
+                    goal_weights[(school, role, phase)][cell] += 1000 * count / total
+            for phase, counts in game_transitions.items():
+                total = sum(counts.values()) or 1
+                for edge, count in counts.items():
+                    transition_weights[(school, role, phase)][edge] += 1000 * count / total
+
+    goals = {
+        key: [[rounded(cell[0]), rounded(cell[1]), max(1, round(weight))] for cell, weight in counts.most_common(28)]
+        for key, counts in goal_weights.items()
+    }
+    transitions = {
+        key: [
+            [rounded(edge[0]), rounded(edge[1]), rounded(edge[2]), rounded(edge[3]), max(1, round(weight))]
+            for edge, weight in counts.most_common(96)
+        ]
+        for key, counts in transition_weights.items()
+    }
+    return goals, transitions
+
+
+def build_target_priors(
+    db: sqlite3.Connection,
+    schools: tuple[str, ...],
+) -> tuple[dict[str, list[dict]], dict[str, list[int]]]:
+    """Learn 30-second target preference conditional on outpost state."""
+    allowed = set(schools)
+    records = []
+    outpost_damage: Counter = Counter()
+    outpost_destroyed_at: dict[tuple[str, int], float] = {}
+    for row in db.execute(
+        """
+        SELECT e.game_id,e.时刻秒,e.机器人类型 victim_type,ABS(e.数值) damage,
+               CASE WHEN e.学校名=m.红方学校 THEN m.蓝方学校 ELSE m.红方学校 END attacker
+        FROM events e JOIN matches m USING(game_id)
+        WHERE e.事件类型='受击' AND e.类别 IN ('17mm','42mm')
+        ORDER BY e.game_id,e.时刻秒
+        """
+    ):
+        attacker = row["attacker"]
+        if attacker not in allowed:
+            continue
+        game_id = int(row["game_id"])
+        second = float(row["时刻秒"] or 0)
+        target = "outpost" if row["victim_type"] == "前哨站" else "base" if row["victim_type"] == "基地" else "robot"
+        damage = float(row["damage"] or 0)
+        records.append((attacker, game_id, second, target, damage))
+        if target == "outpost":
+            key = (attacker, game_id)
+            outpost_damage[key] += damage
+            if outpost_damage[key] >= 1500 and key not in outpost_destroyed_at:
+                outpost_destroyed_at[key] = second
+
+    per_game: dict[tuple[str, int, int, str], Counter] = defaultdict(Counter)
+    event_samples: Counter = Counter()
+    for school, game_id, second, target, damage in records:
+        phase = min(TARGET_PHASES - 1, int(second // 30))
+        destroyed_at = outpost_destroyed_at.get((school, game_id))
+        outpost_state = "alive" if destroyed_at is None or second <= destroyed_at else "down"
+        per_game[(school, game_id, phase, outpost_state)][target] += damage
+        event_samples[(school, phase, outpost_state)] += 1
+
+    team_weights: dict[tuple[str, int, str], Counter] = defaultdict(Counter)
+    global_weights: dict[tuple[int, str], Counter] = defaultdict(Counter)
+    for (school, _, phase, outpost_state), counts in per_game.items():
+        total = sum(counts.values()) or 1
+        for target, damage in counts.items():
+            value = 1000 * damage / total
+            team_weights[(school, phase, outpost_state)][target] += value
+            global_weights[(phase, outpost_state)][target] += value
+
+    def smoothed_prior(school: str, phase: int, outpost_state: str) -> dict:
+        team = team_weights[(school, phase, outpost_state)]
+        global_values = global_weights[(phase, outpost_state)]
+        if not global_values:
+            global_values = Counter({"robot": 45, "outpost": 55}) if outpost_state == "alive" else Counter({"robot": 75, "base": 25})
+        global_total = sum(global_values.values()) or 1
+        smoothed = Counter(team)
+        for target in ("robot", "outpost", "base"):
+            smoothed[target] += 250 * global_values[target] / global_total
+        total = sum(smoothed.values()) or 1
+        return {
+            "robot": rounded(smoothed["robot"] / total, 4),
+            "outpost": rounded(smoothed["outpost"] / total, 4),
+            "base": rounded(smoothed["base"] / total, 4),
+            "samples": int(event_samples[(school, phase, outpost_state)]),
+        }
+
+    payload: dict[str, list[dict]] = {}
+    for school in schools:
+        phases = []
+        for phase in range(TARGET_PHASES):
+            phases.append({
+                "outpost_alive": smoothed_prior(school, phase, "alive"),
+                "outpost_down": smoothed_prior(school, phase, "down"),
+            })
+        payload[school] = phases
+    destroy_seconds: dict[str, list[int]] = {school: [] for school in schools}
+    for (school, _), second in outpost_destroyed_at.items():
+        destroy_seconds[school].append(round(second))
+    for values in destroy_seconds.values():
+        values.sort()
+    return payload, destroy_seconds
 
 
 def is_uav_home(point: tuple[float, float] | list[float]) -> bool:
@@ -417,37 +603,11 @@ def main() -> None:
         if row["attacker"] in entries:
             dealt[(row["attacker"], row["category"])] = float(row["damage"] or 0)
 
-    # Team/role position distributions in canonical red perspective.  A 0.5 m
-    # grid is detailed enough for tactical goals without shipping raw tracks.
-    goals: dict[tuple[str, str, int], list[list[float]]] = defaultdict(list)
-    position_rows = db.execute(
-        f"""
-        WITH canonical AS (
-          SELECT 学校名,机器人类型,
-                 MIN({PHASES - 1},CAST(时刻秒/60 AS INT)) phase,
-                 ROUND((CASE WHEN 阵营='蓝' THEN 28.0-x ELSE x END)*2)/2.0 qx,
-                 ROUND((CASE WHEN 阵营='蓝' THEN 15.0-y ELSE y END)*2)/2.0 qy,
-                 COUNT(*) samples
-          FROM timeseries
-          WHERE 学校名 IN ({placeholders})
-            AND 机器人类型 IN ('英雄','工程','步兵3','步兵4','哨兵','空中')
-            AND 当前血量>0 AND x BETWEEN 0.05 AND 27.95 AND y BETWEEN 0.05 AND 14.95
-          GROUP BY 学校名,机器人类型,phase,qx,qy
-        ), ranked AS (
-          SELECT *,ROW_NUMBER() OVER (
-            PARTITION BY 学校名,机器人类型,phase ORDER BY samples DESC
-          ) rank
-          FROM canonical
-        )
-        SELECT * FROM ranked WHERE rank<=14
-        ORDER BY 学校名,机器人类型,phase,rank
-        """,
-        schools,
-    )
-    for row in position_rows:
-        goals[(row["学校名"], row["机器人类型"], int(row["phase"]))].append(
-            [rounded(row["qx"]), rounded(row["qy"]), int(row["samples"])]
-        )
+    # Ground robots retain five-second conditional movement rather than
+    # independently teleporting their intent between minute-level dwell modes.
+    # Each game has equal total weight and stationary service dwell is reduced.
+    goals, ground_transitions = build_ground_navigation(options.games_dir, schools)
+    target_priors, outpost_destroy_seconds = build_target_priors(db, schools)
 
     spawns: dict[tuple[str, str], list[float]] = {}
     for row in db.execute(
@@ -572,6 +732,11 @@ def main() -> None:
                 "burst_per_active_second": rounded(role_shots / max(1, active), 2),
                 "goals_by_minute": role_goals,
             }
+            if role in GROUND_ROLES:
+                role_payload[role]["transitions_by_minute"] = [
+                    ground_transitions.get((school, role, phase), [])
+                    for phase in range(PHASES)
+                ]
             if role == "英雄":
                 role_payload[role].update({
                     "hero_archetype_default": "ranged",
@@ -591,13 +756,15 @@ def main() -> None:
             "radar_counters_per_game": rounded(radar_counters[school] / max(1, games[school]), 3),
             "uav_counters_received_per_game": rounded(uav_counters_received[school] / max(1, games[school]), 3),
             "economy_prior": economy_priors[school],
+            "target_prior_by_30s": target_priors[school],
+            "outpost_destroy_seconds": outpost_destroy_seconds[school],
             "style": aggregate.get("style", "常规阵地运营"),
             "roles": role_payload,
         }
     db.close()
 
     payload = {
-        "schema_version": 6,
+        "schema_version": 7,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -731,7 +898,8 @@ def main() -> None:
         "limitations": [
             "remaining ammunition and explicit supply completion are not present in the referee export",
             "17mm attacker identity is estimated because hit events only identify the victim",
-            "goal points are empirical 0.5 m position-density modes and are routed through team-role terrain capabilities",
+            "ground goals are per-game-balanced 0.5 m position modes with stationary service dwell down-weighted; five-second transitions preserve local tactical continuity",
+            "team target priorities are learned in 30-second phases from damage dealt to robots, outposts and bases; hit telemetry does not identify the attacking robot role",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
             "terrain traversal changes speed for both ascent and descent using configurable coarse priors; these priors model alignment and landing time and should be replaced by team-role distributions when enough national telemetry is available",
             "navigation hard-blocks the user-annotated elevated regions and 16 terrain gates, but a full CAD-derived occupancy mask for every static wall and structure is not yet available",
