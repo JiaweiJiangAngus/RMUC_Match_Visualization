@@ -62,6 +62,21 @@
     return items[0];
   }
 
+  function sampleMatchAccuracy(teamProfile, weapon, random) {
+    const learned = teamProfile.accuracy_models?.[weapon];
+    const mean = Number(learned?.mean_probability ?? teamProfile.accuracy?.[weapon] ?? 0.1);
+    const range = learned?.match_multiplier_range || [0.85, 1.15];
+    const multiplier = Number(range[0]) + random() * (Number(range[1]) - Number(range[0]));
+    return clamp(mean * multiplier, 0.018, 0.9);
+  }
+
+  function damagePerHit(state, robot, target, weapon) {
+    const fallback = Number(state.model.rules.damage[weapon] || 0);
+    if (robot.role !== "英雄" || weapon !== "42mm") return fallback;
+    const targetType = target.kind || "robot";
+    return Number(robot.profile.damage_per_hit_by_target?.[targetType]?.mode_damage || fallback);
+  }
+
   function event(state, side, type, text, data) {
     state.events.push({ second: state.second, side, type, text, ...(data || {}) });
   }
@@ -166,7 +181,8 @@
   function objectiveApproachPoint(state, robot, objective, points, forceServiceExit) {
     const objectivePoint = canonicalPoint(objective.position, robot.side);
     const range = Math.max(1.5, Number(robot.profile.range_m || 0));
-    const attackDistance = Math.max(1.5, range * 0.7);
+    const preferredRange = Number(robot.profile.engagement_profile?.preferred_range_m || range * 0.7);
+    const attackDistance = clamp(preferredRange, 1.5, range * 0.95);
     const legalObserved = points.filter((point) => {
       const candidate = [Number(point[0]), Number(point[1])];
       const worldCandidate = canonicalPoint(candidate, robot.side);
@@ -174,6 +190,10 @@
         && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", candidate))
         && lineOfSightFrom(state, worldCandidate, objective.position, robot.role);
     });
+    const preferredObserved = robot.profile.engagement_profile?.style === "long_range"
+      ? legalObserved.filter((point) => state.router.distance([Number(point[0]), Number(point[1])], objectivePoint) >= attackDistance * 0.72)
+      : legalObserved;
+    if (preferredObserved.length) return weightedPoint(preferredObserved, state.random);
     if (legalObserved.length) return weightedPoint(legalObserved, state.random);
     return [
       clamp(objectivePoint[0] - attackDistance, 0.1, 27.9), objectivePoint[1],
@@ -283,6 +303,7 @@
       terrainActions: [],
       terrainSpeedMultiplier: 1,
       terrainAction: null,
+      terrainMotionState: null,
       nextDecisionAt: 1,
       targetKey: null,
       objectiveKey: null,
@@ -382,9 +403,21 @@
     const navigation = robot.profile.uav_navigation || {};
     const phase = Math.min(6, Math.floor(state.second / 60));
     const transitions = navigation.transitions_by_minute?.[phase] || [];
+    const points = navigation.airborne_goals_by_minute?.[phase]
+      || robot.profile.goals_by_minute?.[phase]
+      || [[13.5, 12.5, 1]];
     const current = canonicalPoint(robot.position, robot.side);
     let selected = null;
-    if (transitions.length) {
+    if (outpostAssaultActive(state, robot)) {
+      const outpost = state.structures[otherSide(robot.side)].outpost;
+      robot.tacticalIntent = "outpost";
+      robot.objectiveKey = outpost.key;
+      selected = objectiveApproachPoint(state, robot, outpost, points, false);
+    } else {
+      robot.tacticalIntent = null;
+      robot.objectiveKey = null;
+    }
+    if (!selected && transitions.length) {
       let nearest = Infinity;
       transitions.forEach((edge) => {
         nearest = Math.min(nearest, Math.hypot(current[0] - Number(edge[0]), current[1] - Number(edge[1])));
@@ -397,9 +430,6 @@
       if (edge) selected = [Number(edge[2]), Number(edge[3])];
     }
     if (!selected) {
-      const points = navigation.airborne_goals_by_minute?.[phase]
-        || robot.profile.goals_by_minute?.[phase]
-        || [[13.5, 12.5, 1]];
       selected = weightedPoint(points, state.random);
     }
     selected[0] = clamp(selected[0] + (state.random() - 0.5) * 0.16, 0.1, 27.9);
@@ -410,7 +440,7 @@
     robot.passages = ["空中连续航迹"];
     robot.terrainActions = [];
     robot.nextDecisionAt = state.second + 5;
-    uavStatus(state, robot, "空中巡航");
+    uavStatus(state, robot, robot.tacticalIntent === "outpost" ? "前哨空中压制" : "空中巡航");
   }
 
   function startUavSortie(state, robot) {
@@ -582,6 +612,10 @@
         outpostAssaultStartSecond: Math.max(1, Math.round(outpostFirstHitObjectiveSecond - 8)),
         outpostAssaultCount: 0,
         outpostAssaultAnnounced: false,
+        weaponAccuracy: {
+          "17mm": sampleMatchAccuracy(teamProfile, "17mm", state.random),
+          "42mm": sampleMatchAccuracy(teamProfile, "42mm", state.random),
+        },
         technologyCore: {
           level: 0,
           incomePer10: 0,
@@ -611,14 +645,14 @@
       });
       allocateInitialAmmo(state, side);
       const openingPrior = Number(teamProfile.target_prior_by_30s?.[0]?.outpost_alive?.outpost || 0);
-      const armedGround = state.robots.filter((robot) => robot.side === side && robot.role !== "空中" && robot.profile.weapon);
+      const armedRobots = state.robots.filter((robot) => robot.side === side && robot.profile.weapon);
       const roleEvidence = teamProfile.outpost_attack_roles?.roles || {};
-      const eligible = armedGround.map((robot) => ({
+      const eligible = armedRobots.map((robot) => ({
         robot,
         evidence: roleEvidence[robot.role] || {},
       })).filter((item) => item.evidence.primary_assault_role);
       eligible.forEach(({ robot, evidence }) => {
-        const probability = clamp(0.2 + Number(evidence.game_rate || 0) * 0.75, 0.2, 0.92);
+        const probability = Number(evidence.commitment_probability ?? clamp(0.2 + Number(evidence.game_rate || 0) * 0.75, 0.2, 0.92));
         if (state.random() < probability) robot.outpostAssaultCommitted = true;
       });
       if (openingPrior > 0.2 && eligible.length && !eligible.some(({ robot }) => robot.outpostAssaultCommitted)) {
@@ -628,7 +662,7 @@
         ));
         eligible[0].robot.outpostAssaultCommitted = true;
       }
-      const committedCount = armedGround.filter((robot) => robot.outpostAssaultCommitted).length;
+      const committedCount = armedRobots.filter((robot) => robot.outpostAssaultCommitted).length;
       state.teamState[side].outpostAssaultCount = committedCount;
     });
     event(state, "system", "start", `${state.codes.red} vs ${state.codes.blue} 完整沙盘开局`);
@@ -912,6 +946,46 @@
     });
   }
 
+  function learnedTerrainMotion(state, robot, terrain) {
+    const action = terrain.action;
+    if (!action || action.category !== "fly_ramp") {
+      robot.terrainMotionState = null;
+      return terrain;
+    }
+    const key = `${action.id}:${action.direction}`;
+    const profile = state.navigation.teams?.[robot.school]?.[robot.role]
+      ?.terrain_motion_profiles?.fly_ramp
+      || state.navigation.routing?.default_terrain_motion_profiles?.fly_ramp;
+    if (!profile) return terrain;
+    if (robot.terrainMotionState?.key !== key) {
+      const alignmentProbability = Number(profile.alignment_probability || 0);
+      const aligns = state.random() < alignmentProbability;
+      const conditionalStop = clamp(Number(profile.full_stop_probability || 0) / Math.max(0.001, alignmentProbability), 0, 1);
+      const stops = aligns && state.random() < conditionalStop;
+      robot.terrainMotionState = {
+        key,
+        alignmentRemaining: aligns ? Number(profile.alignment_seconds || 1) : 0,
+        alignmentMultiplier: stops ? 0 : Number(profile.alignment_multiplier || 0.2),
+        accelerationIndex: aligns ? 0 : Number(profile.acceleration_multipliers?.length || 0),
+      };
+    }
+    const motion = robot.terrainMotionState;
+    if (motion.alignmentRemaining > 0) {
+      motion.alignmentRemaining -= 1;
+      return {
+        multiplier: motion.alignmentMultiplier,
+        action: { ...action, label: `${action.label}·起点对位${motion.alignmentMultiplier === 0 ? "停顿" : "减速"}` },
+      };
+    }
+    const acceleration = profile.acceleration_multipliers || [];
+    if (motion.accelerationIndex < acceleration.length) {
+      const multiplier = Number(acceleration[motion.accelerationIndex]);
+      motion.accelerationIndex += 1;
+      return { multiplier, action: { ...action, label: `${action.label}·加速 ${motion.accelerationIndex}/${acceleration.length}` } };
+    }
+    return { multiplier: Number(profile.cruise_multiplier || terrain.multiplier || 1), action };
+  }
+
   function moveRobots(state) {
     state.robots.forEach((robot) => {
       robot.heat = Math.max(0, robot.heat - Number(robot.profile.cooling_per_second || 0));
@@ -930,13 +1004,14 @@
       if (state.second >= robot.nextDecisionAt || !robot.route?.length || serviceChanged || recovered || serviceInvalid) chooseGoal(state, robot);
       const nominalSpeed = Number(robot.profile.speed_mps) * (robot.weak ? 0.88 : 1) * (robot.hp / robot.maxHp < 0.25 ? 0.9 : 1);
       const previousTerrainAction = robot.terrainAction;
-      const terrain = state.router.terrainMotion
+      const rawTerrain = state.router.terrainMotion
         ? state.router.terrainMotion(
           state.navigation, robot.position, robot.route, robot.terrainActions, nominalSpeed,
         )
         : { multiplier: 1, action: null };
-      const speed = nominalSpeed * Number(terrain.multiplier || 1);
-      robot.terrainSpeedMultiplier = Number(terrain.multiplier || 1);
+      const terrain = learnedTerrainMotion(state, robot, rawTerrain);
+      const speed = nominalSpeed * Number(terrain.multiplier ?? 1);
+      robot.terrainSpeedMultiplier = Number(terrain.multiplier ?? 1);
       robot.terrainAction = terrain.action?.label || null;
       if (robot.terrainAction) {
         robot.status = `${robot.terrainAction} · ${Math.round(robot.terrainSpeedMultiplier * 100)}% 速度`;
@@ -1126,7 +1201,7 @@
       if (state.random() < burst - shots) shots += 1;
       if (!shots) return;
       const teamProfile = state.model.teams[robot.school];
-      const baseAccuracy = Number(teamProfile.accuracy[weapon] || 0.1);
+      const baseAccuracy = Number(state.teamState[robot.side].weaponAccuracy?.[weapon] ?? teamProfile.accuracy[weapon] ?? 0.1);
       const distanceFactor = 1.12 - 0.47 * target.distance / Math.max(1, Number(robot.profile.range_m));
       const outpostDeadline = Math.max(20, Number(state.teamState[robot.side].outpostObjectiveSecond || 150));
       const structureAccuracy = target.type === "robot" ? 1
@@ -1143,7 +1218,13 @@
       robot.status = target.type === "robot" ? `对枪 ${target.entity.role}` : `攻击${target.entity.kind === "base" ? "基地" : "前哨"}`;
       state.stats[robot.side][weapon === "42mm" ? "shots42" : "shots17"] += shots;
       state.stats[robot.side].hits += hits;
-      if (hits) pending.push({ attacker: robot, target: target.entity, hits, weapon, damage: hits * Number(state.model.rules.damage[weapon]) });
+      if (hits) pending.push({
+        attacker: robot,
+        target: target.entity,
+        hits,
+        weapon,
+        damage: hits * damagePerHit(state, robot, target.entity, weapon),
+      });
     });
     applyDamage(state, pending);
   }
@@ -1510,6 +1591,8 @@
           x: robot.position[0], y: robot.position[1], yaw: robot.yaw,
           hp: robot.hp, maxHp: robot.maxHp, ammo: robot.ammo, heat: robot.heat,
           level: robot.level, heroArchetype: robot.heroArchetype,
+          sampledWeaponAccuracy: Number(state.teamState[robot.side].weaponAccuracy?.[robot.profile.weapon] || 0),
+          damagePerHitByTarget: robot.role === "英雄" ? robot.profile.damage_per_hit_by_target : null,
           shots: robot.shots, hits: robot.hits, kills: robot.kills, deaths: robot.deaths,
           weak: robot.weak, invulnerable: state.second < robot.invulnerableUntil || robot.assemblyProtected,
           assemblyProtected: robot.assemblyProtected,

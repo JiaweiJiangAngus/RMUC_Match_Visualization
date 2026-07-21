@@ -10,6 +10,7 @@ accuracy as detected hits divided by projectiles fired.
 from __future__ import annotations
 
 import argparse
+import csv
 import gzip
 import json
 import sqlite3
@@ -29,6 +30,7 @@ DEFAULT_DB = ROOT.parent / "RMUC2026区域赛数据" / "rmuc_2026_region_dataset
 DEFAULT_MACRO = ROOT / "docs" / "data" / "models" / "match_simulation.json"
 DEFAULT_OUTPUT = ROOT / "docs" / "data" / "models" / "full_simulation.json"
 DEFAULT_GAMES_DIR = ROOT / "docs" / "data" / "games"
+DEFAULT_BEHAVIOR_LABELS = ROOT / "analysis" / "manual_team_behavior_labels.csv"
 ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵", "空中")
 GROUND_ROLES = ROLES[:-1]
 PHASES = 7
@@ -70,6 +72,7 @@ def args() -> argparse.Namespace:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--macro", type=Path, default=DEFAULT_MACRO)
     parser.add_argument("--games-dir", type=Path, default=DEFAULT_GAMES_DIR)
+    parser.add_argument("--behavior-labels", type=Path, default=DEFAULT_BEHAVIOR_LABELS)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -81,6 +84,23 @@ def clamp(value: float, low: float, high: float) -> float:
 def rounded(value: float, digits: int = 3) -> int | float:
     result = float(round(float(value), digits))
     return int(result) if result.is_integer() else result
+
+
+def load_behavior_labels(path: Path) -> dict[tuple[str, str, str], dict]:
+    """Load explicit supervised labels without hiding team names in the engine."""
+    labels = {}
+    if not path.exists():
+        return labels
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            key = (row["school"].strip(), row["role"].strip(), row["feature"].strip())
+            labels[key] = {
+                "value": row["value"].strip(),
+                "label": row["label"].strip(),
+                "source": row["source"].strip(),
+                "note": row["note"].strip(),
+            }
+    return labels
 
 
 def percentile(values: list[float], ratio: float) -> float | None:
@@ -301,6 +321,7 @@ def build_ground_navigation(
 def build_target_priors(
     db: sqlite3.Connection,
     schools: tuple[str, ...],
+    behavior_labels: dict[tuple[str, str, str], dict],
 ) -> tuple[dict[str, list[dict]], dict[str, list[int]], dict[str, list[dict]], dict[str, dict]]:
     """Learn target preference and attribute structure hits to firing roles.
 
@@ -428,7 +449,8 @@ def build_target_priors(
     for school in schools:
         total = sum(outpost_role_damage[(school, role)] for role in ROLES) or 1
         opening_total = sum(outpost_role_opening_damage[(school, role)] for role in ROLES) or 1
-        maximum_share = max((outpost_role_damage[(school, role)] / total for role in GROUND_ROLES), default=0) or 1
+        combat_roles = tuple(role for role in ROLES if role != "工程")
+        maximum_share = max((outpost_role_damage[(school, role)] / total for role in combat_roles), default=0) or 1
         attacked_games = max(1, len(outpost_attack_games[school]))
         roles = {}
         for role in ROLES:
@@ -436,12 +458,18 @@ def build_target_priors(
             share = damage / total
             opening_share = outpost_role_opening_damage[(school, role)] / opening_total
             role_games = len(outpost_role_games[(school, role)])
-            # A visible, pre-planned ground assault is reserved for roles with
-            # meaningful repeated evidence. Incidental same-second fire remains
-            # in the preference weight but cannot create a scripted assignment.
-            primary = role in GROUND_ROLES and role != "工程" and role_games >= 2 and (
+            # A visible, pre-planned assault is reserved for combat roles with
+            # meaningful repeated evidence.  UAVs are valid attackers; only the
+            # engineer is excluded from a weapon objective.
+            primary = role in combat_roles and role_games >= 2 and (
                 share >= 0.10 or opening_share >= 0.10
             )
+            manual = behavior_labels.get((school, role, "outpost_assault_role"))
+            if manual:
+                primary = manual["value"].lower() in {"1", "true", "yes", "positive"}
+            # Manual supervision confirms/rejects eligibility; how often the
+            # role is committed still comes from its observed game rate.
+            commitment_probability = clamp(0.2 + role_games / attacked_games * 0.75, 0.2, 0.92)
             roles[role] = {
                 "attributed_damage": rounded(damage),
                 "share": rounded(share, 4),
@@ -450,6 +478,8 @@ def build_target_priors(
                 "game_rate": rounded(role_games / attacked_games, 4),
                 "outpost_preference": rounded(clamp(share / maximum_share, 0.02, 1), 4),
                 "primary_assault_role": primary,
+                "commitment_probability": rounded(commitment_probability, 4),
+                "manual_label": manual,
             }
         role_evidence[school] = {
             "method": "同局同秒同口径发弹角色按发弹数分摊前哨受击伤害",
@@ -460,7 +490,11 @@ def build_target_priors(
     return payload, destroy_seconds, attack_windows, role_evidence
 
 
-def infer_hero_archetype_priors(db: sqlite3.Connection, schools: tuple[str, ...]) -> dict[str, dict]:
+def infer_hero_archetype_priors(
+    db: sqlite3.Connection,
+    schools: tuple[str, ...],
+    behavior_labels: dict[tuple[str, str, str], dict],
+) -> dict[str, dict]:
     """Infer an automatic national archetype prior from regional hero posture.
 
     The new V2.1 archetype choice did not exist in regional telemetry.  We do
@@ -501,12 +535,22 @@ def infer_hero_archetype_priors(db: sqlite3.Connection, schools: tuple[str, ...]
         median_distance = median(distances) if distances else 8.0
         median_forward = median(positions) if positions else 10.0
         archetype = "melee" if median_distance <= 6.0 or median_forward >= 14.0 else "ranged"
+        archetype_label = behavior_labels.get((school, "英雄", "hero_archetype_default"))
+        if archetype_label and archetype_label["value"] in HERO_ARCHETYPES:
+            archetype = archetype_label["value"]
+        inferred_style = "long_range" if median_distance >= 8.0 else "close_pressure" if median_distance <= 5.5 else "flexible"
+        style_label = behavior_labels.get((school, "英雄", "engagement_style"))
+        engagement_style = style_label["value"] if style_label else inferred_style
         result[school] = {
             "archetype": archetype,
-            "source": "区域赛英雄42mm发弹位置的近结构距离与前压深度画像推断；非国赛实选标签",
+            "source": archetype_label["source"] if archetype_label else "区域赛英雄42mm发弹位置的近结构距离与前压深度画像推断；非国赛实选标签",
+            "manual_label": archetype_label,
             "firing_seconds": len(distances),
             "median_enemy_structure_distance_m": rounded(median_distance),
             "median_canonical_forward_x_m": rounded(median_forward),
+            "engagement_style": engagement_style,
+            "engagement_style_label": style_label,
+            "preferred_range_m": rounded(clamp(median_distance * 0.92, 3.0, 11.4)),
         }
     return result
 
@@ -704,11 +748,12 @@ def main() -> None:
     entries = {entry.school: entry for entry in TEAMS}
     placeholders = ",".join("?" for _ in schools)
     macro = json.loads(options.macro.read_text(encoding="utf-8"))
+    behavior_labels = load_behavior_labels(options.behavior_labels)
     db = sqlite3.connect(f"file:{options.db}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
     economy_priors = infer_regional_economy(db, schools)
     uav_navigation = build_uav_navigation(db, schools)
-    hero_archetype_priors = infer_hero_archetype_priors(db, schools)
+    hero_archetype_priors = infer_hero_archetype_priors(db, schools, behavior_labels)
     dart_mode_priors = build_dart_mode_priors(db, schools)
 
     games = defaultdict(int)
@@ -752,27 +797,34 @@ def main() -> None:
         shots[key] = int(row["shots"] or 0)
         active_fire_seconds[key] = int(row["active_seconds"] or 0)
 
-    dealt: dict[tuple[str, str], float] = defaultdict(float)
+    hit_events: Counter = Counter()
+    damage_values: dict[tuple[str, str, str], Counter] = defaultdict(Counter)
     for row in db.execute(
         f"""
         SELECT CASE
                  WHEN e.学校名=m.红方学校 THEN m.蓝方学校
                  WHEN e.学校名=m.蓝方学校 THEN m.红方学校
                END attacker,
-               e.类别 category,SUM(ABS(e.数值)) damage
+               e.类别 category,e.机器人类型 victim,ABS(e.数值) damage,COUNT(*) hits
         FROM events e JOIN matches m USING(game_id)
         WHERE e.事件类型='受击' AND e.类别 IN ('17mm','42mm')
-        GROUP BY attacker,e.类别
+        GROUP BY attacker,e.类别,e.机器人类型,damage
         """
     ):
         if row["attacker"] in entries:
-            dealt[(row["attacker"], row["category"])] = float(row["damage"] or 0)
+            school, category = row["attacker"], row["category"]
+            hits = int(row["hits"] or 0)
+            hit_events[(school, category)] += hits
+            target = "base" if row["victim"] == "基地" else "outpost" if row["victim"] == "前哨站" else "robot"
+            damage_values[(school, category, target)][rounded(row["damage"])] += hits
 
     # Ground robots retain five-second conditional movement rather than
     # independently teleporting their intent between minute-level dwell modes.
     # Each game has equal total weight and stationary service dwell is reduced.
     goals, ground_transitions = build_ground_navigation(options.games_dir, schools)
-    target_priors, outpost_destroy_seconds, outpost_attack_windows, outpost_attack_roles = build_target_priors(db, schools)
+    target_priors, outpost_destroy_seconds, outpost_attack_windows, outpost_attack_roles = build_target_priors(
+        db, schools, behavior_labels,
+    )
 
     spawns: dict[tuple[str, str], list[float]] = {}
     for row in db.execute(
@@ -841,8 +893,20 @@ def main() -> None:
             for category in ("17mm", "42mm")
         }
         accuracy = {
-            "17mm": clamp(dealt[(school, "17mm")] / 20 / max(1, team_shots["17mm"]), 0.025, 0.62),
-            "42mm": clamp(dealt[(school, "42mm")] / 200 / max(1, team_shots["42mm"]), 0.025, 0.72),
+            "17mm": clamp(hit_events[(school, "17mm")] / max(1, team_shots["17mm"]), 0.025, 0.62),
+            "42mm": clamp(hit_events[(school, "42mm")] / max(1, team_shots["42mm"]), 0.025, 0.72),
+        }
+        accuracy_models = {
+            category: {
+                "distribution": "match_uniform_then_per_shot_bernoulli",
+                "mean_probability": rounded(accuracy[category], 4),
+                "match_multiplier_range": [0.78, 1.22],
+                "per_shot_random": True,
+                "shots": team_shots[category],
+                "detected_hit_events": int(hit_events[(school, category)]),
+                "source": "对手受击事件数/本队发弹数；每局先采样基础概率，每发再伯努利抽样",
+            }
+            for category in ("17mm", "42mm")
         }
         role_payload = {}
         for role in ROLES:
@@ -895,6 +959,7 @@ def main() -> None:
                 "magazine": default["magazine"],
                 "shots_per_game": rounded(role_shots / max(1, games[school]), 2),
                 "burst_per_active_second": rounded(role_shots / max(1, active), 2),
+                "accuracy_model": accuracy_models.get(weapon),
                 "goals_by_minute": role_goals,
             }
             if role in GROUND_ROLES:
@@ -903,9 +968,35 @@ def main() -> None:
                     for phase in range(PHASES)
                 ]
             if role == "英雄":
+                damage_by_target = {}
+                for target in ("robot", "outpost", "base"):
+                    distribution = damage_values[(school, "42mm", target)]
+                    # Values below 200 are already reduced by defense/remaining
+                    # HP and must not be learned again as raw projectile damage.
+                    raw_modes = Counter({damage: count for damage, count in distribution.items() if damage in {200, 300}})
+                    mode_damage = raw_modes.most_common(1)[0][0] if raw_modes else 200
+                    manual_damage = behavior_labels.get((school, role, f"{target}_damage_per_hit"))
+                    if manual_damage:
+                        mode_damage = float(manual_damage["value"])
+                    damage_by_target[target] = {
+                        "mode_damage": rounded(mode_damage),
+                        "distribution": [
+                            {"damage": damage, "weight": count}
+                            for damage, count in distribution.most_common(12)
+                        ],
+                        "manual_label": manual_damage,
+                        "source": "区域赛对手受击原始合法值 200/300 主模态；排除残血与防御减伤值",
+                    }
                 role_payload[role].update({
                     "hero_archetype_default": hero_archetype_priors[school]["archetype"],
                     "hero_archetype_evidence": hero_archetype_priors[school],
+                    "engagement_profile": {
+                        "style": hero_archetype_priors[school]["engagement_style"],
+                        "preferred_range_m": hero_archetype_priors[school]["preferred_range_m"],
+                        "source": hero_archetype_priors[school]["engagement_style_label"]
+                        or "英雄42mm发弹位置与敌方结构距离",
+                    },
+                    "damage_per_hit_by_target": damage_by_target,
                     "level_by_minute": level_by_minute,
                 })
             elif role == "空中":
@@ -917,6 +1008,7 @@ def main() -> None:
             "region": entry.region,
             "games": games[school],
             "accuracy": {key: rounded(value, 4) for key, value in accuracy.items()},
+            "accuracy_models": accuracy_models,
             "dart_hits_per_game": aggregate.get("dart_hits_per_game", 0),
             "dart_gates_per_game": aggregate.get("dart_gates_per_game", 0),
             "dart_base_modes": dart_mode_priors[school],
@@ -933,7 +1025,7 @@ def main() -> None:
     db.close()
 
     payload = {
-        "schema_version": 9,
+        "schema_version": 10,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -968,7 +1060,8 @@ def main() -> None:
                 "uav_support_seconds": {"type": "number", "minimum": 0},
                 "uav_radar_weapon_locked": {"type": "boolean"},
                 "terrain_action": {"type": ["categorical", "null"]},
-                "terrain_speed_multiplier": {"type": "number", "range": [0.1, 1.25]},
+                "terrain_speed_multiplier": {"type": "number", "range": [0, 1.25]},
+                "sampled_weapon_accuracy": {"type": "number", "range": [0.018, 0.9]},
                 "assembly_protected": {"type": "boolean"},
                 "assembly_invulnerable_seconds": {"type": "integer", "range": [0, 180]},
             },
@@ -1082,7 +1175,7 @@ def main() -> None:
             "ground goals are per-game-balanced 0.5 m position modes with stationary service dwell down-weighted; five-second transitions preserve local tactical continuity",
             "team target priorities are learned in 30-second phases; visible outpost assignments additionally require repeated role-level shot attribution evidence",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
-            "terrain traversal changes speed for both ascent and descent using configurable coarse priors; these priors model alignment and landing time and should be replaced by team-role distributions when enough national telemetry is available",
+            "fly-ramp alignment/stop/acceleration comes from official event windows; complete B3/R3 trajectories learn ascent/descent angles separately per school-role, with documented direction-specific global fallbacks",
             "navigation hard-blocks the user-annotated elevated regions and 16 terrain gates, but a full CAD-derived occupancy mask for every static wall and structure is not yet available",
             "national matches always start at 400 coins; regional initial-coin ratings are retained only as descriptive telemetry and are not used by the simulator",
             "technology-core completion priors are inferred from persistent ten-second increases in regional total-coins telemetry because the export has no explicit assembly event",

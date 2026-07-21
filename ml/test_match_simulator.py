@@ -43,7 +43,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(9, self.model["schema_version"])
+        self.assertEqual(10, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -75,6 +75,9 @@ class FullSimulationDataTests(unittest.TestCase):
         roles = self.model["teams"]["东北大学"]["outpost_attack_roles"]["roles"]
         self.assertTrue(roles["英雄"]["primary_assault_role"])
         self.assertTrue(roles["哨兵"]["primary_assault_role"])
+        self.assertTrue(roles["空中"]["primary_assault_role"])
+        self.assertAlmostEqual(0.7417, roles["空中"]["commitment_probability"], places=4)
+        self.assertEqual("positive_confirmed", roles["空中"]["manual_label"]["label"])
         self.assertFalse(roles["步兵3"]["primary_assault_role"])
         self.assertFalse(roles["步兵4"]["primary_assault_role"])
         self.assertLess(roles["步兵3"]["share"], 0.04)
@@ -125,6 +128,13 @@ class FullSimulationDataTests(unittest.TestCase):
             self.assertTrue(all(item["damage"] in {200, 300, 625, 1000} for item in team["dart_base_modes"]))
         for school in ("东北大学", "上海交通大学", "中国石油大学（华东）"):
             self.assertEqual("melee", self.model["teams"][school]["roles"]["英雄"]["hero_archetype_default"])
+        tongji = self.model["teams"]["同济大学"]
+        self.assertEqual("ranged", tongji["roles"]["英雄"]["hero_archetype_default"])
+        self.assertEqual("long_range", tongji["roles"]["英雄"]["engagement_profile"]["style"])
+        self.assertGreater(tongji["roles"]["英雄"]["engagement_profile"]["preferred_range_m"], 10)
+        self.assertEqual(300, tongji["roles"]["英雄"]["damage_per_hit_by_target"]["base"]["mode_damage"])
+        self.assertTrue(tongji["accuracy_models"]["42mm"]["per_shot_random"])
+        self.assertAlmostEqual(61 / 436, tongji["accuracy_models"]["42mm"]["mean_probability"], places=3)
 
     def test_service_zones_separate_ammo_and_healing(self):
         for side in ("red", "blue"):
@@ -296,6 +306,8 @@ function run() {
     outpostDestroyedSecond:result.frames.find(frame=>frame.structures.blue.outpost<=0)?.second ?? null,
     maxVisibleOutpostAssignees:Math.max(...result.frames.slice(0,61).map(frame=>frame.robots.filter(robot=>robot.side==='red'&&robot.role!=='空中'&&robot.objectiveKey==='blue:outpost').length)),
     visibleOutpostTargetSeconds:result.frames.slice(0,61).reduce((sum,frame)=>sum+frame.robots.filter(robot=>robot.side==='red'&&robot.targetKey==='blue:outpost').length,0),
+    uavOutpostObjectiveSeconds:result.frames.slice(0,121).filter(frame=>frame.robots.find(robot=>robot.key==='red:空中')?.objectiveKey==='blue:outpost').length,
+    uavOutpostTargetSeconds:result.frames.slice(0,121).filter(frame=>frame.robots.find(robot=>robot.key==='red:空中')?.targetKey==='blue:outpost').length,
     committedOutpostRoles:result.state.robots.filter(robot=>robot.side==='red'&&robot.outpostAssaultCommitted).map(robot=>robot.role).sort(),
     signature:JSON.stringify({final,events:result.events})
   };
@@ -506,6 +518,18 @@ function probeBaseRules() {
     armorOpen:fortress.structures.blue.base.armorOpen,
   };
 }
+function probeLearnedFlyRamp() {
+  const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',31,router);
+  state.robots.forEach(robot=>{if(robot.key!=='red:步兵3')robot.hp=0;});
+  const robot=state.robots.find(item=>item.key==='red:步兵3');
+  const planned=router.terrainRoute(nav,[16,14.7],[12,14.7],'东北大学','步兵3');
+  robot.position=[16,14.7]; robot.goal=[12,14.7]; robot.route=planned.route;
+  robot.ammo=100; robot.shotBudget=100; robot.shots=0; robot.mode='tactic';
+  robot.terrainActions=planned.actions; robot.nextDecisionAt=999;
+  const values=[];
+  for(let second=1;second<=7;second+=1){state.second=second;engine.moveRobots(state);values.push({multiplier:robot.terrainSpeedMultiplier,action:robot.terrainAction,x:robot.position[0]});}
+  return {profile:nav.teams['东北大学']['步兵3'].terrain_motion_profiles.fly_ramp,values};
+}
 function probeDartRules() {
   const schools=['东北大学','中国石油大学（华东）'];
   const saved=schools.map(school=>({
@@ -577,7 +601,7 @@ function probeWallSeeds() {
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),baseRules:probeBaseRules(),dartRules:probeDartRules(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),baseRules:probeBaseRules(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -594,6 +618,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.service_exit = payload["serviceExit"]
         cls.base_rules = payload["baseRules"]
         cls.dart_rules = payload["dartRules"]
+        cls.learned_fly_ramp = payload["learnedFlyRamp"]
         cls.wall_layers = payload["wallLayers"]
         cls.wall_seeds = payload["wallSeeds"]
 
@@ -606,9 +631,20 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
     def test_tdt_opening_converts_observed_outpost_pressure(self):
         self.assertLessEqual(self.result["firstOutpostDamageSecond"], 15)
         self.assertLessEqual(self.result["outpostDestroyedSecond"], 100)
-        self.assertEqual(["哨兵", "英雄"], self.result["committedOutpostRoles"])
-        self.assertEqual(2, self.result["maxVisibleOutpostAssignees"])
+        self.assertEqual(["哨兵", "空中", "英雄"], self.result["committedOutpostRoles"])
+        self.assertLessEqual(self.result["maxVisibleOutpostAssignees"], 3)
         self.assertGreaterEqual(self.result["visibleOutpostTargetSeconds"], 5)
+        self.assertGreater(self.result["uavOutpostObjectiveSeconds"], 0)
+        self.assertGreater(self.result["uavOutpostTargetSeconds"], 0)
+
+    def test_fly_ramp_uses_learned_alignment_then_acceleration(self):
+        profile = self.learned_fly_ramp["profile"]
+        values = self.learned_fly_ramp["values"]
+        self.assertEqual("team_role", profile["source_scope"])
+        self.assertEqual(1, profile["alignment_probability"])
+        self.assertTrue(any("起点对位" in (item["action"] or "") for item in values))
+        self.assertTrue(any("加速" in (item["action"] or "") for item in values))
+        self.assertLess(values[0]["multiplier"], values[-1]["multiplier"])
 
     def test_base_armor_damage_point_blank_targeting_and_fortress_unlock_follow_v210(self):
         probe = self.base_rules

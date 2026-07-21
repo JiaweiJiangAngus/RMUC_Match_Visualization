@@ -83,7 +83,11 @@
 
   function roleCapabilities(navigation, school, role) {
     const data = navigation.teams?.[school]?.[role];
-    return { abilities: new Set(data?.abilities || []), reverseFly: Boolean(data?.reverse_fly_ramp?.allowed) };
+    return {
+      abilities: new Set(data?.abilities || []),
+      reverseFly: Boolean(data?.reverse_fly_ramp?.allowed),
+      motionProfiles: data?.terrain_motion_profiles || navigation.routing?.default_terrain_motion_profiles || {},
+    };
   }
 
   function polygonCentroid(polygon) {
@@ -137,13 +141,14 @@
   }
 
   function pushTerrainAction(actions, gate, direction, label, centreOverride) {
+    const fullWidthMotion = ["fly_ramp", "rough_road"].includes(gate?.category);
     const action = {
       id: gate?.id || `${gate?.category || "terrain"}:${label}`,
       category: gate?.category || "terrain",
       direction,
       label,
       center: [...(centreOverride || gate?.center || [0, 0])],
-      polygon: gate?.polygon?.map((point) => [...point]) || null,
+      polygon: (fullWidthMotion ? gateRoutingBlocker(gate) : gate?.polygon)?.map((point) => [...point]) || null,
     };
     if (!actions.some((item) => item.id === action.id && item.direction === direction)) actions.push(action);
   }
@@ -318,6 +323,24 @@
     return allowed[0] || null;
   }
 
+  function straightRoadStepSegment(gate, start, end) {
+    const blocker = gateRoutingBlocker(gate);
+    const xs = gate.polygon.map((point) => point[0]);
+    const ys = blocker.map((point) => point[1]);
+    const minX = Math.min(...xs) + 0.1;
+    const maxX = Math.max(...xs) - 0.1;
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const crossingY = (minY + maxY) / 2;
+    const ratio = Math.abs(end[1] - start[1]) > 1e-6
+      ? (crossingY - start[1]) / (end[1] - start[1]) : 0.5;
+    const crossingX = clamp(start[0] + (end[0] - start[0]) * ratio, minX, maxX);
+    const positiveY = end[1] > start[1];
+    const entry = [crossingX, positiveY ? minY - 0.08 : maxY + 0.08];
+    const exit = [crossingX, positiveY ? maxY + 0.08 : minY - 0.08];
+    return [start, entry, exit, end];
+  }
+
   function applyDirectionalGates(navigation, route, capabilities, passages, actions) {
     const watched = navigation.gates.filter((gate) => [
       "fly_ramp", "road_step", "rough_road", "road_tunnel", "highland_tunnel",
@@ -328,6 +351,7 @@
       const start = route[index - 1];
       const end = route[index];
       const blockers = [];
+      let alignedRoadStep = null;
       for (const gate of watched) {
         if (!segmentHitsPolygon(start, end, gateRoutingBlocker(gate))) continue;
         if (gate.category === "fly_ramp") {
@@ -347,6 +371,9 @@
             const label = `${gate.side === "blue" ? "B" : "R"}${gate.gate_index}${direction === "down" ? "下" : "上"}公路台阶`;
             passages.push(label);
             pushTerrainAction(actions, gate, direction, label);
+            const roadStepProfile = capabilities.motionProfiles?.road_step;
+            const directionProfile = roadStepProfile?.directions?.[direction] || roadStepProfile;
+            if (directionProfile?.route_alignment_enabled) alignedRoadStep = gate;
           }
         } else if (!capabilities.abilities.has(gate.category)) {
           // 隧道不是普通平地：未确认尺寸/机构能力时必须绕行。
@@ -360,7 +387,9 @@
       blockers.forEach((polygon) => {
         if (!encounteredBlockers.includes(polygon)) encounteredBlockers.push(polygon);
       });
-      const segment = blockers.length ? routeAvoiding(navigation, start, end, blockers) : [start, end];
+      const segment = blockers.length
+        ? routeAvoiding(navigation, start, end, blockers)
+        : alignedRoadStep ? straightRoadStepSegment(alignedRoadStep, start, end) : [start, end];
       // routeAvoiding returns only the start when no legal path exists.  Never
       // append the forbidden endpoint in that case; doing so turned a failed
       // detour into a straight traversal through the obstacle.

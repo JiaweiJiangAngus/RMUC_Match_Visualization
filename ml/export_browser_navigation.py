@@ -19,6 +19,7 @@ from analysis import road_enclosure_cv  # noqa: E402
 
 
 DEFAULT_CAPABILITIES = ROOT / "analysis" / "outputs" / "team_ground_terrain_capabilities.json"
+DEFAULT_MOTION_PROFILES = ROOT / "analysis" / "outputs" / "team_terrain_motion_profiles.json"
 DEFAULT_OUTPUT = ROOT / "docs" / "data" / "models" / "terrain_navigation.json"
 POSITIVE_STATUS = {"人工确认", "已通过", "已证实", "较强迹象"}
 TUNNEL_ABILITIES = {"road_tunnel", "highland_tunnel"}
@@ -69,6 +70,11 @@ def routing_blocker_geometry(feature: terrain.Feature) -> list[list[float]]:
         # B1/R1 occupies the outer lane between the field edge and the wall at
         # map y≈121.  It must meet, but not cover, the adjacent R6/B6 lane.
         blue = ((1064, 34), (1274, 34), (1274, 122), (1064, 122))
+    elif feature.category == "rough_road":
+        # Close the 0.64 m flat crack that remained between B3/R3 and B4/R4.
+        # The road is continuous from the outer edge of the step to the field
+        # boundary, so the blocker is intentionally asymmetric around label B4.
+        blue = ((1680, 0), (2124, 0), (2124, 180), (1680, 180))
     elif feature.category == "highland_tunnel":
         # B6/R6 is bounded by the central highland on one side and the B1/R1
         # separator wall on the other.  Extending it to the field edge would
@@ -84,6 +90,7 @@ def routing_blocker_geometry(feature: terrain.Feature) -> list[list[float]]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capabilities", type=Path, default=DEFAULT_CAPABILITIES)
+    parser.add_argument("--motion-profiles", type=Path, default=DEFAULT_MOTION_PROFILES)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -94,6 +101,7 @@ def main() -> None:
     by_id = {feature.feature_id: feature for feature in features}
     enclosure = road_enclosure_cv.extract_blue_enclosures(terrain.MAP_PATH)
     capability_payload = json.loads(args.capabilities.read_text(encoding="utf-8"))
+    motion_payload = json.loads(args.motion_profiles.read_text(encoding="utf-8"))
 
     teams: dict[str, dict] = {}
     for team in capability_payload["teams"]:
@@ -126,6 +134,7 @@ def main() -> None:
                 "abilities": sorted(abilities),
                 "tunnel_observations": tunnel_observations,
                 "reverse_fly_ramp": reverse,
+                "terrain_motion_profiles": motion_payload["teams"][team["school"]][robot["role"]],
             }
         teams[team["school"]] = roles
 
@@ -176,7 +185,7 @@ def main() -> None:
     red_road_region = terrain.rotate_geometry_180(blue_road_region)
 
     output = {
-        "schema_version": 6,
+        "schema_version": 8,
         "field_size_m": [terrain.FIELD_WIDTH_M, terrain.FIELD_HEIGHT_M],
         "routing": {
             "grid_m": 0.35,
@@ -200,6 +209,7 @@ def main() -> None:
                 "road_tunnel": {"through": 0.72},
                 "highland_tunnel": {"through": 0.66},
             },
+            "default_terrain_motion_profiles": motion_payload["global"],
         },
         "regions": {
             "central_highland": field_geometry(by_id["central_highland_region"]),

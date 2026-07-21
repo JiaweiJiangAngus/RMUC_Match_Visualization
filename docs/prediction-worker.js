@@ -9,7 +9,7 @@ const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
 const MODEL_URL = "./data/models/trajectory_mlp.json?v=16";
-const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=22";
+const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=23";
 
 let modelPromise = null;
 
@@ -259,7 +259,11 @@ function regionAt(navigation,point) {
 }
 function roleCapabilities(navigation,school,role) {
   const data=navigation.teams?.[school]?.[role];
-  return {abilities:new Set(data?.abilities||[]),reverseFly:Boolean(data?.reverse_fly_ramp?.allowed)};
+  return {
+    abilities:new Set(data?.abilities||[]),
+    reverseFly:Boolean(data?.reverse_fly_ramp?.allowed),
+    motionProfiles:data?.terrain_motion_profiles||navigation.routing?.default_terrain_motion_profiles||{},
+  };
 }
 function polygonCentroid(polygon) {
   const sum=polygon.reduce((value,point)=>[value[0]+point[0],value[1]+point[1]],[0,0]);
@@ -377,11 +381,18 @@ function bestGate(candidates,start,end,abilities,ascending) {
   allowed.sort((a,b)=>distance(start,a.outside)+distance(a.inside,end)-distance(start,b.outside)-distance(b.inside,end));
   return allowed[0]||null;
 }
+function straightRoadStepSegment(gate,start,end) {
+  const blocker=gateRoutingBlocker(gate),xs=gate.polygon.map(point=>point[0]),ys=blocker.map(point=>point[1]);
+  const minX=Math.min(...xs)+.1,maxX=Math.max(...xs)-.1,minY=Math.min(...ys),maxY=Math.max(...ys),crossingY=(minY+maxY)/2;
+  const ratio=Math.abs(end[1]-start[1])>1e-6?(crossingY-start[1])/(end[1]-start[1]):.5;
+  const crossingX=clamp(start[0]+(end[0]-start[0])*ratio,minX,maxX),positiveY=end[1]>start[1];
+  return [start,[crossingX,positiveY?minY-.08:maxY+.08],[crossingX,positiveY?maxY+.08:minY-.08],end];
+}
 function applyDirectionalGates(navigation,route,capabilities,passages) {
   const watched=navigation.gates.filter(gate=>["fly_ramp","road_step","rough_road","road_tunnel","highland_tunnel"].includes(gate.category));
   const output=[route[0]],encounteredBlockers=[];
   for(let i=1;i<route.length;i++){
-    const start=route[i-1],end=route[i],blockers=[];
+    const start=route[i-1],end=route[i],blockers=[];let alignedRoadStep=null;
     for(const gate of watched){if(!segmentHitsPolygon(start,end,gateRoutingBlocker(gate)))continue;
       if(gate.category==="fly_ramp"){
         const forward=gate.side==="blue"?end[0]<start[0]:end[0]>start[0],hasBase=capabilities.abilities.has("fly_ramp"),allowed=hasBase&&(!forward?capabilities.reverseFly:true);
@@ -389,7 +400,12 @@ function applyDirectionalGates(navigation,route,capabilities,passages) {
       }else if(gate.category==="road_step"){
         const ascending=ascendingThroughGate(gate,start,end);
         if(ascending!==false&&!capabilities.abilities.has("road_step"))blockers.push(gateRoutingBlocker(gate));
-        else passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}${ascending===false?"下":"上"}公路台阶`);
+        else {
+          passages.push(`${gate.side==="blue"?"B":"R"}${gate.gate_index}${ascending===false?"下":"上"}公路台阶`);
+          const roadStepProfile=capabilities.motionProfiles?.road_step,direction=ascending===false?"down":"up";
+          const directionProfile=roadStepProfile?.directions?.[direction]||roadStepProfile;
+          if(directionProfile?.route_alignment_enabled)alignedRoadStep=gate;
+        }
       }else if(!capabilities.abilities.has(gate.category))blockers.push(gateRoutingBlocker(gate));
       else {
         const name={rough_road:"起伏路",road_tunnel:"公路隧道",highland_tunnel:"高地隧道"}[gate.category]||gate.category;
@@ -397,7 +413,7 @@ function applyDirectionalGates(navigation,route,capabilities,passages) {
       }
     }
     for(const polygon of blockers)if(!encounteredBlockers.includes(polygon))encounteredBlockers.push(polygon);
-    const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):[start,end];
+    const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):alignedRoadStep?straightRoadStepSegment(alignedRoadStep,start,end):[start,end];
     if(segment.length>1)for(const point of segment.slice(1))pushPoint(output,point);
   }
   return {route:output,blockers:encounteredBlockers};

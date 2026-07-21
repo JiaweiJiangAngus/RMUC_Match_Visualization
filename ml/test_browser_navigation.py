@@ -19,7 +19,7 @@ const router=require('./docs/terrain-router.js');
 const nav=JSON.parse(fs.readFileSync('./docs/data/models/terrain_navigation.json','utf8'));
 function plan(start,end,school,role){
   const value=core.terrainRoute(nav,start,end,school,role);
-  return {length:core.routeLength(value.route),points:value.route.length,corrected:value.corrected,passages:value.passages,target:value.target};
+  return {length:core.routeLength(value.route),points:value.route.length,route:value.route,corrected:value.corrected,passages:value.passages,target:value.target};
 }
 function validateAllTunnelGates(){
   const specs=[
@@ -86,6 +86,10 @@ function validateRoutingBlockers(){
   if(redB6.maxY+1e-3<blueB1.minY)violations.push({error:'red_R6_blue_B1_gap'});
   if(blueB1.maxY<14.999)violations.push({error:'blue_B1_boundary_gap'});
   if(redB1.minY>.001)violations.push({error:'red_R1_boundary_gap'});
+  const blueRough=bounds(byId.blue_rough_road.routing_blocker_polygon);
+  const redRough=bounds(byId.red_rough_road.routing_blocker_polygon);
+  if(blueRough.minX>blueRoadStep.maxX+1e-3)violations.push({error:'blue_B3_B4_gap'});
+  if(redRough.maxX+1e-3<redRoadStep.minX)violations.push({error:'red_R3_R4_gap'});
   return {schema:nav.schema_version,gates:nav.gates.length,violations};
 }
 function validateDeniedBypasses(){
@@ -165,6 +169,8 @@ console.log(JSON.stringify({
   trapezoidDescent:plan([24,3],[24,1],'未知学校','英雄'),
   roadStepAscent:plan([19.7,12],[19.7,14.3],'未知学校','英雄'),
   roadStepDescent:plan([19.7,14.3],[19.7,12],'未知学校','英雄'),
+  alignedRoadStepAscent:plan([19.35,12],[19.95,14.3],'东北大学','步兵3'),
+  alignedRoadStepDescent:plan([19.95,14.3],[19.35,12],'东北大学','步兵3'),
   confirmedJump:plan([6,12],[14,10],'上海交通大学','英雄')
   ,neuInfantryTunnel:plan([18.55,14.5],[18.55,11.8],'东北大学','步兵3')
   ,neuSentinelTunnel:plan([18.55,14.5],[18.55,11.8],'东北大学','哨兵')
@@ -173,11 +179,13 @@ console.log(JSON.stringify({
     const down=router.terrainRoute(nav,[19.7,14.3],[19.7,12],'东北大学','步兵3');
     const fly=router.terrainRoute(nav,[16,14.7],[12,14.7],'东北大学','步兵3');
     return {
-      up:router.terrainMotion(nav,up.route[0],up.route,up.actions,2),
-      down:router.terrainMotion(nav,down.route[0],down.route,down.actions,2),
+      up:router.terrainMotion(nav,up.route[1],up.route.slice(1),up.actions,2),
+      down:router.terrainMotion(nav,down.route[1],down.route.slice(1),down.actions,2),
       fly:router.terrainMotion(nav,fly.route[0],fly.route,fly.actions,2),
     };
   })()
+  ,motionProfile:nav.teams['东北大学']['步兵3'].terrain_motion_profiles.fly_ramp
+  ,roadStepMotionProfile:nav.teams['东北大学']['步兵3'].terrain_motion_profiles.road_step
   ,globalTunnelValidation:validateAllTunnelGates()
   ,strictTunnelLabels:validateStrictTunnelLabels()
   ,enclosureRoutes:validateEnclosureRoutes()
@@ -216,6 +224,21 @@ console.log(JSON.stringify({
         self.assertGreater(self.result["roadStepAscent"]["points"], 2)
         self.assertIn("B3下公路台阶", self.result["roadStepDescent"]["passages"])
 
+    def test_road_step_model_aligns_ascent_and_descent_straight_through_gate(self):
+        for key in ("alignedRoadStepAscent", "alignedRoadStepDescent"):
+            value = self.result[key]
+            self.assertFalse(value["corrected"])
+            self.assertEqual(4, value["points"])
+            self.assertAlmostEqual(value["route"][1][0], value["route"][2][0], places=6)
+        profile = self.result["roadStepMotionProfile"]
+        self.assertEqual("team_role", profile["source_scope"])
+        self.assertGreaterEqual(profile["samples"], 5)
+        self.assertTrue(profile["route_alignment_enabled"])
+        for direction in ("up", "down"):
+            self.assertEqual("team_role", profile["directions"][direction]["source_scope"])
+            self.assertGreaterEqual(profile["directions"][direction]["samples"], 5)
+            self.assertTrue(profile["directions"][direction]["route_alignment_enabled"])
+
     def test_confirmed_jump_can_use_non_step_highland_edge(self):
         self.assertIn("400mm跳跃上高地", self.result["confirmedJump"]["passages"])
 
@@ -243,7 +266,7 @@ console.log(JSON.stringify({
 
     def test_every_terrain_gate_has_a_gap_free_routing_blocker(self):
         validation = self.result["routingBlockers"]
-        self.assertEqual(6, validation["schema"])
+        self.assertEqual(8, validation["schema"])
         self.assertEqual(16, validation["gates"])
         self.assertEqual([], validation["violations"])
 
@@ -269,6 +292,13 @@ console.log(JSON.stringify({
         self.assertEqual(1.12, speed["fly"]["multiplier"])
         self.assertIn("上公路台阶", speed["up"]["action"]["label"])
         self.assertIn("下公路台阶", speed["down"]["action"]["label"])
+
+    def test_fly_ramp_motion_profile_is_learned_per_team_role(self):
+        profile = self.result["motionProfile"]
+        self.assertEqual("team_role", profile["source_scope"])
+        self.assertGreaterEqual(profile["samples"], 5)
+        self.assertEqual(1, profile["alignment_probability"])
+        self.assertEqual(3, len(profile["acceleration_multipliers"]))
 
 
 if __name__ == "__main__":

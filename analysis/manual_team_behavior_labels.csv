@@ -1,0 +1,5 @@
+school,role,feature,value,label,source,note
+东北大学,空中,outpost_assault_role,true,positive_confirmed,user_2026-07-21,TDT 无人机会参与前哨快攻，不能因为是空中角色被地面车筛选器排除
+同济大学,英雄,hero_archetype_default,ranged,positive_confirmed,user_2026-07-21,同济英雄默认远程优先
+同济大学,英雄,engagement_style,long_range,positive_confirmed,user_2026-07-21,常在远距离阵位部署并吊射
+同济大学,英雄,base_damage_per_hit,300,positive_confirmed,user_2026-07-21,基地 42mm 伤害主模态为 300，区域赛数据中同济 39 次记录也支持该模态

@@ -387,10 +387,22 @@
           <div><span>空中状态</span><b>${escapeHtml(UAV_FLIGHT_LABEL[robot.uavFlightState] || "未知")}${robot.uavSupportActive ? " · 支援已开启" : ""}</b></div>
           <div><span>免费 / 付费支援</span><b>${formatNumber(robot.uavSupportSeconds)}s / ${formatNumber(robot.uavPaidSupportSeconds)}s</b></div>
           <div><span>发射机构</span><b>${robot.uavRadarWeaponLocked ? `锁定中 · ${robot.radarCounteredIn}s` : "可用"}</b></div>
-          <div><span>普通伤害 / 补给复活</span><b>规则不适用</b></div>` : "";
+          <div><span>承受攻击 / 补给复活</span><b>规则不适用</b></div>` : "";
+      const terrainProfile = navigation?.teams?.[robot.school]?.[robot.role];
+      const terrainAbilityLabels = {
+        fly_ramp: "飞坡", rough_road: "起伏路", road_tunnel: "公路隧道",
+        highland_tunnel: "高地隧道", road_step: "公路台阶",
+        central_highland_step: "中央高地台阶", central_highland_400mm_jump: "400mm 跳高地",
+        slope_43: "43°坡", trapezoid_highland_step: "梯形高地台阶",
+      };
+      const terrainAbilities = (terrainProfile?.abilities || []).map((ability) => terrainAbilityLabels[ability] || ability);
       const terrainDetails = robot.role !== "空中" ? `
+          <div><span>已学习地形能力</span><b>${escapeHtml(terrainAbilities.join(" / ") || "无特殊跨越")}</b></div>
           <div><span>当前地形动作</span><b>${escapeHtml(robot.terrainAction || "常规地面")}</b></div>
-          <div><span>地形速度倍率</span><b>${Math.round((robot.terrainSpeedMultiplier || 1) * 100)}%</b></div>` : "";
+          <div><span>地形速度倍率</span><b>${Math.round((robot.terrainSpeedMultiplier ?? 1) * 100)}%</b></div>` : "";
+      const weaponModel = robot.sampledWeaponAccuracy ? `
+          <div><span>本局基础命中率</span><b>${(robot.sampledWeaponAccuracy * 100).toFixed(1)}% · 每发随机</b></div>
+          ${robot.role === "英雄" ? `<div><span>42mm 单发模型</span><b>机器人 ${formatNumber(robot.damagePerHitByTarget?.robot?.mode_damage || 200)} / 前哨 ${formatNumber(robot.damagePerHitByTarget?.outpost?.mode_damage || 200)} / 基地 ${formatNumber(robot.damagePerHitByTarget?.base?.mode_damage || 200)}</b></div>` : ""}` : "";
       elements.selectedLabel.textContent = `${sideCode(robot.side)} · ${robot.role}`;
       elements.detail.className = "";
       elements.detail.innerHTML = `
@@ -405,6 +417,7 @@
           <div><span>所在补给区域</span><b>${robot.role === "空中" ? "不适用" : escapeHtml(robot.serviceZone || "无")}</b></div>
           <div><span>复活决策</span><b>${robot.role === "空中" ? "不适用" : robot.respawnMode === "reading" ? `读条 ${robot.respawnProgress}/${robot.respawnRequired}` : `买活 ${robot.buybacks} 次`}</b></div>
           <div><span>无人机反制</span><b>${robot.role === "空中" ? `${robot.radarCounterCount}/5 · 剩 ${robot.radarCounteredIn}s` : "—"}</b></div>
+          ${weaponModel}
           ${coreDetails}
           ${uavDetails}
           ${terrainDetails}
@@ -510,7 +523,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=9");
+      const worker = new Worker("./full-match-worker.js?v=10");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -646,8 +659,8 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=10").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=22").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=11").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=23").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;

@@ -103,7 +103,7 @@ python3 ml/predict_trajectory.py \
 - 前哨站被击毁后立即关闭“前哨站下”的补弹和虚弱解除交互，机器人会重新选择基地或补给区；
 - 地面机器人按地面层/中央高地层/梯形高地层判定射界：弹道横穿整块高地会被阻断，但允许从地面攻击高地边缘的前哨站；空中机器人不受该高度层遮挡；
 - 工程在己方装配区内按全局累计获得 180 秒无敌，离开区域时暂停计时，耗尽后不再生效；无敌期间即使残血/虚弱也优先留在装配区，不强制撤回补给区，无敌耗尽后恢复正常补给决策；
-- 地形通过不再沿用平地速度：中央/公路/梯形台阶分别计算上行和下行，43°坡、400mm 跳跃、飞坡、起伏路和隧道也有独立倍率；地面机器人到达绕行拐点后先完成转向，避免逐秒插值切弯穿地形；
+- 地形通过不再沿用平地速度：中央/公路/梯形台阶分别计算上行和下行，43°坡、400mm 跳跃、飞坡、起伏路和隧道也有独立倍率；B3/R3 二级台阶还会从“台阶跨越”轨迹学习直行概率和横向偏移，上下台阶的入口/出口会对齐；
 - 国赛双方固定以 400 金币开局，定时金币与 V2.1.0 一致。区域赛“队伍总金币”只用于学习每队科技核心的到达等级概率和首兑时刻，不把区域赛项目评级造成的初始金币差带入国赛；
 - 科技核心必须由存活工程进入中央装配区才能完成，一级至四级首次经济为每 10 秒 +50/+25/+25/+50；二至四级的等级上限、防御和四级基地 +2000 血量随兑换逐秒生效；
 - 默认按真实 1 秒播放，支持 0.5×、0.75×、1×、1.2×、1.5×、2×，并可逐秒前后检查；
@@ -119,6 +119,30 @@ python3 ml/build_full_simulation_data.py
 输出为 `docs/data/models/full_simulation.json`。浏览器规则引擎、地形寻路器和界面分别位于 `docs/full-match-engine.js`、`docs/terrain-router.js` 与 `docs/full-match-ui.js`。
 
 裁判导出没有“剩余允许发弹量/补给完成”字段，受击事件也只有受击方、没有攻击者。因此补给过程按规则和累计发弹反推，17mm 命中率按队伍总命中与各兵种发弹节奏分配；这些推断在模型文件中保留了限制说明。
+
+### 怎么训练和修正沙盘行为
+
+不要直接改 `docs/data/models/*.json`，它们都是构建产物。正确的分层是：
+
+- **硬约束**：场地实体边界、规则伤害和哪些兵种有资格通过，分别在 `analysis/terrain_crossing_points.py`、`ml/export_browser_navigation.py` 和规则模型中维护，不交给概率模型违反。
+- **地形能力标签**：`analysis/manual_terrain_capabilities.csv` 只写“某校×某兵种会/不会过”的人工监督标签；其余样本由完整穿越轨迹自动标注。
+- **队伍行为标签**：`analysis/manual_team_behavior_labels.csv` 用于数据没有显式字段的监督信息，例如英雄整机类型、远/近程风格、确认的前哨任务角色。队名只出现在训练标签和模型中，不得在 JS 引擎写 `if (队名)` 特判。
+- **可学习过程**：`ml/train_terrain_motion_profiles.py` 从裁判“飞坡”事件前后的 1 Hz 轨迹学习每校×兵种的对位概率、停顿概率/时长和三段加速曲线；同时检测完整从一侧穿到另一侧的 B3/R3 轨迹，将上台阶和下台阶分开学习入射偏角、横向偏移和直行概率。单个方向的样本少于 5 次时才回退到该方向的全局分布。
+- **火力概率**：逐队发弹数与对手受击事件生成 `accuracy_models`；每局先在该队区间内抽样基础命中率，每一发再做伯努利随机判定。英雄对机器人/前哨/基地的 42mm 主模态分开统计，防御减伤后的小于 200 数值不会反向学成原始弹丸伤害。
+
+`manual_terrain_capabilities.csv` 的 `ability` 可填 `central_highland_step`、`road_step`、`fly_ramp`、`rough_road`、`road_tunnel`、`highland_tunnel`、`slope_43`、`trapezoid_highland_step` 或 `central_highland_400mm_jump`，`label` 只能是 `confirmed` / `rejected`。`manual_team_behavior_labels.csv` 当前支持 `outpost_assault_role`、`hero_archetype_default`、`engagement_style` 和 `robot/outpost/base_damage_per_hit`。每次改 CSV 后都必须重新运行下面的构建链。
+
+完整重训顺序：
+
+```bash
+python3 analysis/team_terrain_capabilities.py
+python3 ml/train_terrain_motion_profiles.py
+python3 ml/export_browser_navigation.py
+python3 ml/build_full_simulation_data.py
+python3 -m unittest analysis.test_team_terrain_capabilities ml.test_browser_navigation ml.test_match_simulator
+```
+
+想加新的跨地形属性时，先在 `terrain_crossing_points.py` 定义几何门，再在 `team_terrain_capabilities.py` 定义正负样本口径；如果它还包含“对位→停顿→加速→落地”时序或“入射角→横向漂移”轨迹特征，再给 `train_terrain_motion_profiles.py` 增加事件窗口，最后由 `export_browser_navigation.py` 导出到浏览器模型。
 
 ### 快速宏观推演
 
