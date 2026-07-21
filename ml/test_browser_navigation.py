@@ -300,6 +300,30 @@ console.log(JSON.stringify({
         self.assertEqual(1, profile["alignment_probability"])
         self.assertEqual(3, len(profile["acceleration_multipliers"]))
 
+    def test_all_44_teams_and_roles_have_terrain_behavior_profiles(self):
+        navigation = json.loads(
+            (ROOT / "docs" / "data" / "models" / "terrain_navigation.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(44, len(navigation["teams"]))
+        team_specific = {"fly_ramp": 0, "road_step_up": 0, "road_step_down": 0}
+        for roles in navigation["teams"].values():
+            self.assertEqual({"英雄", "工程", "步兵3", "步兵4", "哨兵"}, set(roles))
+            for role in roles.values():
+                profiles = role["terrain_motion_profiles"]
+                self.assertEqual({"fly_ramp", "road_step"}, set(profiles))
+                self.assertIn(profiles["fly_ramp"]["source_scope"], {"team_role", "global_fallback"})
+                if profiles["fly_ramp"]["source_scope"] == "team_role":
+                    team_specific["fly_ramp"] += 1
+                for direction in ("up", "down"):
+                    value = profiles["road_step"]["directions"][direction]
+                    self.assertIn(value["source_scope"], {"team_role", "global_fallback"})
+                    self.assertIn("straight_crossing_probability", value)
+                    if value["source_scope"] == "team_role":
+                        team_specific[f"road_step_{direction}"] += 1
+        self.assertGreaterEqual(team_specific["fly_ramp"], 30)
+        self.assertGreaterEqual(team_specific["road_step_up"], 60)
+        self.assertGreaterEqual(team_specific["road_step_down"], 60)
+
 
 if __name__ == "__main__":
     unittest.main()

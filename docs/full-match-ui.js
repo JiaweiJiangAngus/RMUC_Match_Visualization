@@ -6,6 +6,7 @@
   const DEFAULT_BLUE = "中国石油大学（华东）";
   const ROLE_LABEL = { 英雄: "1", 工程: "2", 步兵3: "3", 步兵4: "4", 哨兵: "AI", 空中: "6" };
   const HERO_ARCHETYPE_LABEL = { melee: "近战优先", ranged: "远程优先" };
+  const ENGAGEMENT_LABEL = { long_range: "远程吊射", close_pressure: "近身压制", flexible: "灵活站位" };
   const UAV_FLIGHT_LABEL = { parked: "停机坪", airborne: "空中巡航", returning: "正在返航" };
   const COLORS = { red: "#ff526c", blue: "#48a0ff", gold: "#f3bd4d", green: "#38d39f" };
   const MAP_RATIO = 1125 / 2048;
@@ -356,8 +357,20 @@
     function renderStats(frame) {
       const red = frame.stats.red;
       const blue = frame.stats.blue;
+      const behaviorSummary = (side) => {
+        const school = side === "red" ? elements.redSelect.value : elements.blueSelect.value;
+        const profile = model.teams[school]?.behavior_profile;
+        if (!profile) return "暂无队伍画像";
+        const hero = profile.hero;
+        const roles = profile.outpost.primary_roles.length ? profile.outpost.primary_roles.join("/") : "无固定兵种";
+        return `${HERO_ARCHETYPE_LABEL[hero.archetype] || hero.archetype}·${ENGAGEMENT_LABEL[hero.engagement_style] || hero.engagement_style} ${Number(hero.preferred_range_m).toFixed(1)}m·命中 ${(hero.accuracy_42mm * 100).toFixed(1)}%·前哨 ${roles}·空中份额 ${(profile.outpost.uav_attributed_share * 100).toFixed(1)}%`;
+      };
       elements.stats.innerHTML = `
         <div class="full-stat-score"><div><strong>${escapeHtml(sideCode("red"))}</strong><span>红方</span></div><b>${formatNumber(frame.structures.red.base)} : ${formatNumber(frame.structures.blue.base)}</b><div class="blue"><strong>${escapeHtml(sideCode("blue"))}</strong><span>蓝方</span></div></div>
+        <div class="full-behavior-compare">
+          <div class="red"><span>红方·44 队独立画像</span><b>${escapeHtml(behaviorSummary("red"))}</b></div>
+          <div class="blue"><span>蓝方·44 队独立画像</span><b>${escapeHtml(behaviorSummary("blue"))}</b></div>
+        </div>
         <div class="full-stat-table">
           <div class="full-stat-row"><span>累计伤害</span><b>${formatNumber(red.damage)}</b><b>${formatNumber(blue.damage)}</b></div>
           <div class="full-stat-row"><span>机器人伤害</span><b>${formatNumber(red.robotDamage)}</b><b>${formatNumber(blue.robotDamage)}</b></div>
@@ -659,7 +672,7 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=11").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=12").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
         fetch("./data/models/terrain_navigation.json?v=23").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;

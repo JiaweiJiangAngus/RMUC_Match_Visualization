@@ -43,7 +43,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(10, self.model["schema_version"])
+        self.assertEqual(11, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -51,6 +51,50 @@ class FullSimulationDataTests(unittest.TestCase):
                 self.assertEqual(7, len(role["goals_by_minute"]))
                 self.assertEqual(7, len(role["hp_by_minute"]))
                 self.assertGreater(role["speed_mps"], 0)
+
+    def test_all_44_teams_have_distinct_data_driven_behavior_profiles(self):
+        coverage = self.model["team_behavior_coverage"]
+        self.assertEqual(44, coverage["team_count"])
+        self.assertTrue(coverage["school_specific"])
+        self.assertTrue(coverage["manual_labels_are_overrides_only"])
+        signatures = set()
+        ranges = set()
+        accuracies = set()
+        uav_shares = set()
+        archetypes = set()
+        engagement_styles = set()
+        for team in self.model["teams"].values():
+            profile = team["behavior_profile"]
+            hero = profile["hero"]
+            outpost = profile["outpost"]
+            evidence = profile["evidence"]
+            self.assertGreater(evidence["games"], 0)
+            self.assertGreater(evidence["hero_firing_seconds"], 0)
+            self.assertGreater(evidence["uav_navigation_samples"], 0)
+            self.assertEqual(set(self.model["roles"]), set(profile["movement"]["speed_mps_by_role"]))
+            self.assertTrue(set(outpost["primary_roles"]).issubset(set(self.model["roles"])))
+            archetypes.add(hero["archetype"])
+            engagement_styles.add(hero["engagement_style"])
+            ranges.add(hero["preferred_range_m"])
+            accuracies.add(hero["accuracy_42mm"])
+            uav_shares.add(outpost["uav_attributed_share"])
+            signatures.add((
+                hero["archetype"], hero["engagement_style"], hero["preferred_range_m"],
+                hero["accuracy_42mm"], tuple(outpost["primary_roles"]),
+                outpost["uav_attributed_share"],
+            ))
+        self.assertEqual({"ranged", "melee"}, archetypes)
+        self.assertGreaterEqual(len(engagement_styles), 3)
+        self.assertGreaterEqual(len(ranges), 35)
+        self.assertGreaterEqual(len(accuracies), 40)
+        self.assertEqual(44, len(uav_shares))
+        self.assertEqual(44, len(signatures))
+
+    def test_runtime_behavior_engines_do_not_hardcode_school_names(self):
+        school_names = set(self.model["teams"])
+        for relative in ("docs/full-match-engine.js", "docs/terrain-router.js", "docs/prediction-worker.js"):
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertFalse({name for name in school_names if name in source}, relative)
 
     def test_ground_roles_have_conditional_transitions_and_team_target_priors(self):
         ground = {"英雄", "工程", "步兵3", "步兵4", "哨兵"}

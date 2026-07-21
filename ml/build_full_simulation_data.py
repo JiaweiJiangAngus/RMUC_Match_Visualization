@@ -1002,6 +1002,46 @@ def main() -> None:
             elif role == "空中":
                 role_payload[role]["uav_navigation"] = uav_profile
         aggregate = macro["teams"].get(school, {}).get("aggregate", {})
+        hero_profile = role_payload["英雄"]
+        assault_roles = outpost_attack_roles[school]["roles"]
+        behavior_profile = {
+            "source": "44 队区域赛逐校统计；人工标签只覆盖数据无显式字段的已确认行为",
+            "style": aggregate.get("style", "常规阵地运营"),
+            "hero": {
+                "archetype": hero_profile["hero_archetype_default"],
+                "engagement_style": hero_profile["engagement_profile"]["style"],
+                "preferred_range_m": hero_profile["engagement_profile"]["preferred_range_m"],
+                "accuracy_42mm": accuracy_models["42mm"]["mean_probability"],
+                "shots_42mm": accuracy_models["42mm"]["shots"],
+                "base_damage_per_hit": hero_profile["damage_per_hit_by_target"]["base"]["mode_damage"],
+            },
+            "outpost": {
+                "opening_target_probability": target_priors[school][0]["outpost_alive"]["outpost"],
+                "primary_roles": [
+                    role for role in ROLES
+                    if assault_roles[role]["primary_assault_role"]
+                ],
+                "role_commitment_probability": {
+                    role: assault_roles[role]["commitment_probability"]
+                    for role in ROLES if role != "工程"
+                },
+                "uav_attributed_share": assault_roles["空中"]["share"],
+                "uav_commitment_probability": assault_roles["空中"]["commitment_probability"],
+            },
+            "movement": {
+                "speed_mps_by_role": {
+                    role: role_payload[role]["speed_mps"] for role in ROLES
+                },
+                "uav_first_takeoff_second": uav_navigation[school]["first_takeoff_second"],
+                "uav_median_airborne_run_seconds": uav_navigation[school]["median_airborne_run_seconds"],
+            },
+            "evidence": {
+                "games": games[school],
+                "hero_firing_seconds": hero_archetype_priors[school]["firing_seconds"],
+                "outpost_attack_games": outpost_attack_roles[school]["attack_games"],
+                "uav_navigation_samples": uav_navigation[school]["samples"],
+            },
+        }
         teams[school] = {
             "team": entry.team,
             "stage": entry.stage,
@@ -1020,12 +1060,13 @@ def main() -> None:
             "outpost_attack_windows": outpost_attack_windows[school],
             "outpost_attack_roles": outpost_attack_roles[school],
             "style": aggregate.get("style", "常规阵地运营"),
+            "behavior_profile": behavior_profile,
             "roles": role_payload,
         }
     db.close()
 
     payload = {
-        "schema_version": 10,
+        "schema_version": 11,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -1037,6 +1078,18 @@ def main() -> None:
         "duration_seconds": 420,
         "field_m": [28, 15],
         "roles": list(ROLES),
+        "team_behavior_coverage": {
+            "team_count": len(teams),
+            "school_specific": True,
+            "manual_labels_are_overrides_only": True,
+            "dimensions": [
+                "hero_archetype_and_engagement_range",
+                "weapon_accuracy_and_target_damage",
+                "outpost_role_attribution_and_commitment",
+                "ground_and_uav_movement",
+                "terrain_capability_and_motion_in_navigation_model",
+            ],
+        },
         "training_feature_schema": {
             "static": {
                 "hero_archetype": {"type": "categorical", "values": ["ranged", "melee"], "default": "team_profile"},
