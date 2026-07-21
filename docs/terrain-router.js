@@ -289,7 +289,7 @@
     return simplified;
   }
 
-  function boundaryCrossing(start, end, polygon) {
+  function boundaryCrossingDetail(start, end, polygon) {
     const dx = end[0] - start[0];
     const dy = end[1] - start[1];
     const hits = [];
@@ -302,10 +302,16 @@
       if (Math.abs(denominator) < 1e-9) continue;
       const t = ((a[0] - start[0]) * ey - (a[1] - start[1]) * ex) / denominator;
       const u = ((a[0] - start[0]) * dy - (a[1] - start[1]) * dx) / denominator;
-      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) hits.push({ t, point: [start[0] + dx * t, start[1] + dy * t] });
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+        hits.push({ t, point: [start[0] + dx * t, start[1] + dy * t], edgeStart: a, edgeEnd: b });
+      }
     }
     hits.sort((left, right) => left.t - right.t);
-    return hits[0]?.point || null;
+    return hits[0] || null;
+  }
+
+  function boundaryCrossing(start, end, polygon) {
+    return boundaryCrossingDetail(start, end, polygon)?.point || null;
   }
 
   function crossingPair(start, end, polygon) {
@@ -315,6 +321,29 @@
     const ux = (end[0] - start[0]) / length;
     const uy = (end[1] - start[1]) / length;
     return { outside: [crossing[0] - ux * 0.24, crossing[1] - uy * 0.24], inside: [crossing[0] + ux * 0.24, crossing[1] + uy * 0.24] };
+  }
+
+  function straightJumpPair(start, end, polygon, profile) {
+    const detail = boundaryCrossingDetail(start, end, polygon);
+    if (!detail) return null;
+    const edgeLength = Math.max(0.001, distance(detail.edgeStart, detail.edgeEnd));
+    const tangent = [
+      (detail.edgeEnd[0] - detail.edgeStart[0]) / edgeLength,
+      (detail.edgeEnd[1] - detail.edgeStart[1]) / edgeLength,
+    ];
+    const firstNormal = [-tangent[1], tangent[0]];
+    const probe = 0.18;
+    const firstProbe = [detail.point[0] + firstNormal[0] * probe, detail.point[1] + firstNormal[1] * probe];
+    const inward = pointInPolygon(firstProbe, polygon) ? firstNormal : [-firstNormal[0], -firstNormal[1]];
+    const runup = clamp(Number(profile?.straight_runup_m || 1.35), 0.8, 2.8);
+    const lipClearance = clamp(Number(profile?.lip_clearance_m || 0.1), 0.05, 0.3);
+    const landing = clamp(Number(profile?.landing_m || 0.55), 0.3, 1.2);
+    return {
+      outside: [detail.point[0] - inward[0] * runup, detail.point[1] - inward[1] * runup],
+      lip: [detail.point[0] - inward[0] * lipClearance, detail.point[1] - inward[1] * lipClearance],
+      inside: [detail.point[0] + inward[0] * landing, detail.point[1] + inward[1] * landing],
+      crossing: detail.point,
+    };
   }
 
   function bestGate(candidates, start, end, abilities, ascending) {
@@ -341,6 +370,29 @@
     return [start, entry, exit, end];
   }
 
+  function straightFlyRampSegment(navigation, gate, start, end, capabilities) {
+    const blocker = gateRoutingBlocker(gate);
+    const xs = blocker.map((point) => point[0]);
+    const ys = blocker.map((point) => point[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    // B1/R1 is a physical channel: its usable trajectory is the channel
+    // centre, not any diagonal that happens to touch the blocker polygon.
+    const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const direction = end[0] < start[0] ? -1 : 1;
+    const entryEdgeX = direction < 0 ? maxX : minX;
+    const exitEdgeX = direction < 0 ? minX : maxX;
+    const routeProfile = navigation.routing?.terrain_route_profiles?.fly_ramp || {};
+    const learned = capabilities.motionProfiles?.fly_ramp || {};
+    const runup = clamp(Number(learned.straight_runup_m || 1.4), 1, 2.8);
+    const entryClearance = clamp(Number(routeProfile.entry_clearance_m || 0.08), 0.04, 0.25);
+    const exitClearance = clamp(Number(routeProfile.exit_clearance_m || 0.18), 0.08, 0.4);
+    const runupPoint = [entryEdgeX - direction * runup, centerY];
+    const lip = [entryEdgeX - direction * entryClearance, centerY];
+    const exit = [exitEdgeX + direction * exitClearance, centerY];
+    return [start, runupPoint, lip, exit, end];
+  }
+
   function applyDirectionalGates(navigation, route, capabilities, passages, actions) {
     const watched = navigation.gates.filter((gate) => [
       "fly_ramp", "road_step", "rough_road", "road_tunnel", "highland_tunnel",
@@ -352,6 +404,7 @@
       const end = route[index];
       const blockers = [];
       let alignedRoadStep = null;
+      let alignedFlyRamp = null;
       for (const gate of watched) {
         if (!segmentHitsPolygon(start, end, gateRoutingBlocker(gate))) continue;
         if (gate.category === "fly_ramp") {
@@ -362,6 +415,7 @@
             const label = `${gate.side === "blue" ? "B" : "R"}1${forward ? "飞坡" : "反飞坡"}`;
             passages.push(label);
             pushTerrainAction(actions, gate, forward ? "forward" : "reverse", label);
+            alignedFlyRamp = gate;
           }
         } else if (gate.category === "road_step") {
           const ascending = ascendingThroughGate(gate, start, end);
@@ -389,7 +443,8 @@
       });
       const segment = blockers.length
         ? routeAvoiding(navigation, start, end, blockers)
-        : alignedRoadStep ? straightRoadStepSegment(alignedRoadStep, start, end) : [start, end];
+        : alignedFlyRamp ? straightFlyRampSegment(navigation, alignedFlyRamp, start, end, capabilities)
+          : alignedRoadStep ? straightRoadStepSegment(alignedRoadStep, start, end) : [start, end];
       // routeAvoiding returns only the start when no legal path exists.  Never
       // append the forbidden endpoint in that case; doing so turned a failed
       // detour into a straight traversal through the obstacle.
@@ -449,14 +504,16 @@
     }
     if (targetRegion) {
       const entry = bestGate(gatesForRegion(navigation, targetRegion), current, target, capabilities.abilities, true);
+      const jumpProfile = navigation.routing?.terrain_route_profiles?.central_highland_400mm_jump || {};
       const jumpPair = targetRegion.id === "central_highland" && capabilities.abilities.has("central_highland_400mm_jump")
-        ? crossingPair(current, target, targetRegion.polygon) : null;
-      const jumpCentre = jumpPair ? [(jumpPair.outside[0] + jumpPair.inside[0]) / 2, (jumpPair.outside[1] + jumpPair.inside[1]) / 2] : null;
+        ? straightJumpPair(current, target, targetRegion.polygon, jumpProfile) : null;
+      const jumpCentre = jumpPair?.crossing || null;
       const crossesStep = jumpCentre && navigation.gates.some((gate) => gate.category === "central_highland_step" && pointInPolygon(jumpCentre, gate.polygon));
       const entryScore = entry ? distance(current, entry.outside) + distance(entry.inside, target) + 0.35 : Infinity;
       const jumpScore = jumpPair && !crossesStep ? distance(current, jumpPair.outside) + distance(jumpPair.inside, target) + 0.65 : Infinity;
       if (jumpScore < entryScore) {
         avoid(current, jumpPair.outside).slice(1).forEach((point) => pushPoint(route, point));
+        pushPoint(route, jumpPair.lip);
         pushPoint(route, jumpPair.inside);
         pushPoint(route, target);
         passages.push("400mm跳跃上高地");
@@ -470,6 +527,7 @@
         pushTerrainAction(actions, entry.gate, "up", label);
       } else if (jumpPair && !crossesStep) {
         avoid(current, jumpPair.outside).slice(1).forEach((point) => pushPoint(route, point));
+        pushPoint(route, jumpPair.lip);
         pushPoint(route, jumpPair.inside);
         pushPoint(route, target);
         passages.push("400mm跳跃上高地");

@@ -185,7 +185,7 @@ def main() -> None:
     red_road_region = terrain.rotate_geometry_180(blue_road_region)
 
     output = {
-        "schema_version": 8,
+        "schema_version": 9,
         "field_size_m": [terrain.FIELD_WIDTH_M, terrain.FIELD_HEIGHT_M],
         "routing": {
             "grid_m": 0.35,
@@ -194,6 +194,26 @@ def main() -> None:
             "ascending_requires_positive_capability": True,
             "descending_uses_designed_entry_by_default": True,
             "tunnel_capability_policy": "one_or_more_observed_complete_passages_else_blocked",
+            "terrain_route_profiles": {
+                "fly_ramp": {
+                    "centerline_required": True,
+                    "entry_clearance_m": 0.08,
+                    "exit_clearance_m": 0.18,
+                    "straight_runup_source": "team_role_terrain_motion_profile",
+                },
+                "central_highland_400mm_jump": {
+                    "perpendicular_entry_required": True,
+                    "straight_runup_m": 1.35,
+                    "lip_clearance_m": 0.10,
+                    "landing_m": 0.55,
+                    "source": "field_geometry_and_motion_prior",
+                },
+                "service_return": {
+                    "selection": "shortest_reachable_route",
+                    "failed_route_retry_seconds": 3,
+                    "own_half_staging_x_m": 6.5,
+                },
+            },
             # Coarse one-second traversal priors.  They intentionally model
             # setup/landing time as well as the obstacle itself; they can be
             # replaced by team-role empirical distributions when national

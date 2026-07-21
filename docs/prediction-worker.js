@@ -1,5 +1,18 @@
 "use strict";
 
+// Fast macro prediction and the complete 421-second sandbox must obey the
+// same terrain geometry.  Load the shared router in both Worker and Node test
+// environments; the compact implementation below remains only as a fallback
+// for old cached pages.
+let sharedTerrainRouter = globalThis.RMUCTerrainRouter || null;
+if (!sharedTerrainRouter && typeof importScripts === "function") {
+  importScripts("./terrain-router.js?v=7");
+  sharedTerrainRouter = globalThis.RMUCTerrainRouter || null;
+}
+if (!sharedTerrainRouter && typeof module === "object" && module.exports) {
+  sharedTerrainRouter = require("./terrain-router.js");
+}
+
 // Browser-only trajectory inference.  Keeping this in a Worker means replay,
 // seeking and canvas drawing never wait for the neural-network calculation.
 const MOBILE_TYPES = ["英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"];
@@ -9,7 +22,7 @@ const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
 const MODEL_URL = "./data/models/trajectory_mlp.json?v=16";
-const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=23";
+const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=24";
 
 let modelPromise = null;
 
@@ -430,6 +443,13 @@ function enforceSymmetricBlockers(navigation,route,blockers){
   return output;
 }
 function terrainRoute(navigation,start,target,school,role) {
+  if (sharedTerrainRouter?.terrainRoute) {
+    const planned=sharedTerrainRouter.terrainRoute(navigation,start,target,school,role);
+    return {
+      route:planned.route,target:planned.target,passages:planned.passages,
+      corrected:planned.corrected,
+    };
+  }
   const capabilities=roleCapabilities(navigation,school,role),startRegion=regionAt(navigation,start),targetRegion=regionAt(navigation,target),route=[start],passages=[];
   const symmetricBlockers=navigation.gates.filter(gate=>(["rough_road","road_tunnel","highland_tunnel"].includes(gate.category)&&!capabilities.abilities.has(gate.category))||(gate.category==="fly_ramp"&&!capabilities.abilities.has("fly_ramp"))).map(gateRoutingBlocker);
   const avoid=(from,to)=>routeAvoiding(navigation,from,to,symmetricBlockers);

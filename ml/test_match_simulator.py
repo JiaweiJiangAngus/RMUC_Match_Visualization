@@ -514,6 +514,47 @@ function probeServiceExit() {
   const noCoins={pending:waiting.serviceExitPending,cooldown:waiting.ammoServiceCooldownUntil,status:waiting.status};
   return {passiveStatus,purchased,departed,noCoins};
 }
+function probeEnemyHalfServiceReturn() {
+  const state=engine.createMatch(model,nav,'东北大学','同济大学',20260721,router);
+  state.robots.forEach(robot=>{robot.hp=0;});
+  const specs=[
+    {key:'red:步兵3',position:[22,7.5]},
+    {key:'blue:步兵3',position:[6,7.5]},
+  ];
+  const probes=specs.map(spec=>{
+    const robot=state.robots.find(item=>item.key===spec.key);
+    robot.hp=robot.maxHp;robot.position=[...spec.position];robot.ammo=0;
+    robot.shots=0;robot.shotBudget=100;robot.nextDecisionAt=0;
+    engine.chooseGoal(state,robot);
+    return {robot,start:[...spec.position],initialPoints:robot.route.length,initialLength:router.routeLength(robot.route),serviceTarget:robot.serviceTarget};
+  });
+  let strandedSeconds=0;
+  for(let second=1;second<=30;second+=1){
+    state.second=second;engine.moveRobots(state);
+    for(const probe of probes){
+      const robot=probe.robot;
+      const enemyHalf=robot.side==='red'?robot.position[0]>14:robot.position[0]<14;
+      if(enemyHalf&&['heal','ammo'].includes(robot.mode)&&robot.route.length<2)strandedSeconds+=1;
+    }
+  }
+  const disconnectedState=engine.createMatch(model,nav,'电子科技大学中山学院','同济大学',20260722,router);
+  const disconnected=disconnectedState.robots.find(item=>item.key==='red:步兵3');
+  disconnected.position=[22,7.5];disconnected.ammo=0;disconnected.shots=0;disconnected.shotBudget=100;
+  engine.chooseGoal(disconnectedState,disconnected);
+  return {
+    strandedSeconds,
+    probes:probes.map(probe=>({
+      key:probe.robot.key,initialPoints:probe.initialPoints,initialLength:probe.initialLength,
+      serviceTarget:probe.serviceTarget,start:probe.start,position:probe.robot.position,
+      ownHalf:probe.robot.side==='red'?probe.robot.position[0]<14:probe.robot.position[0]>14,
+      moved:router.distance(probe.start,probe.robot.position),
+    })),
+    disconnected:{
+      mode:disconnected.mode,serviceTarget:disconnected.serviceTarget,status:disconnected.status,
+      nextDecisionAt:disconnected.nextDecisionAt,routePoints:disconnected.route.length,
+    },
+  };
+}
 function probeBaseRules() {
   const damageState=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',11,router);
   const infantry=damageState.robots.find(item=>item.key==='red:步兵3');
@@ -571,7 +612,7 @@ function probeLearnedFlyRamp() {
   robot.ammo=100; robot.shotBudget=100; robot.shots=0; robot.mode='tactic';
   robot.terrainActions=planned.actions; robot.nextDecisionAt=999;
   const values=[];
-  for(let second=1;second<=7;second+=1){state.second=second;engine.moveRobots(state);values.push({multiplier:robot.terrainSpeedMultiplier,action:robot.terrainAction,x:robot.position[0]});}
+  for(let second=1;second<=12;second+=1){state.second=second;engine.moveRobots(state);values.push({multiplier:robot.terrainSpeedMultiplier,action:robot.terrainAction,x:robot.position[0]});}
   return {profile:nav.teams['东北大学']['步兵3'].terrain_motion_profiles.fly_ramp,values};
 }
 function probeDartRules() {
@@ -645,7 +686,7 @@ function probeWallSeeds() {
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),baseRules:probeBaseRules(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),enemyHalfServiceReturn:probeEnemyHalfServiceReturn(),baseRules:probeBaseRules(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -660,6 +701,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.technology_core = payload["technologyCore"]
         cls.hard_rules = payload["hardRules"]
         cls.service_exit = payload["serviceExit"]
+        cls.enemy_half_service_return = payload["enemyHalfServiceReturn"]
         cls.base_rules = payload["baseRules"]
         cls.dart_rules = payload["dartRules"]
         cls.learned_fly_ramp = payload["learnedFlyRamp"]
@@ -688,7 +730,11 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         self.assertEqual(1, profile["alignment_probability"])
         self.assertTrue(any("起点对位" in (item["action"] or "") for item in values))
         self.assertTrue(any("加速" in (item["action"] or "") for item in values))
-        self.assertLess(values[0]["multiplier"], values[-1]["multiplier"])
+        active = [item for item in values if item["action"]]
+        self.assertLess(min(item["multiplier"] for item in active), max(item["multiplier"] for item in active))
+        align_index = next(index for index, item in enumerate(values) if "起点对位" in (item["action"] or ""))
+        accelerate_index = next(index for index, item in enumerate(values) if "加速" in (item["action"] or ""))
+        self.assertLess(align_index, accelerate_index)
 
     def test_base_armor_damage_point_blank_targeting_and_fortress_unlock_follow_v210(self):
         probe = self.base_rules
@@ -720,6 +766,20 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         self.assertTrue(probe["noCoins"]["pending"])
         self.assertGreater(probe["noCoins"]["cooldown"], 7)
         self.assertIn("金币不足", probe["noCoins"]["status"])
+
+    def test_infantry_in_enemy_half_gets_a_reachable_service_route_and_moves_home(self):
+        probe = self.enemy_half_service_return
+        self.assertEqual(0, probe["strandedSeconds"])
+        for robot in probe["probes"]:
+            self.assertGreaterEqual(robot["initialPoints"], 2)
+            self.assertGreater(robot["initialLength"], 1)
+            self.assertTrue(robot["ownHalf"])
+            self.assertGreater(robot["moved"], 5)
+        disconnected = probe["disconnected"]
+        self.assertEqual("tactic", disconnected["mode"])
+        self.assertIsNone(disconnected["serviceTarget"])
+        self.assertIn("无已确认返程通道", disconnected["status"])
+        self.assertEqual(3, disconnected["nextDecisionAt"])
 
     def test_positions_health_ammo_and_heat_stay_valid(self):
         self.assertTrue(self.result["positionsValid"])

@@ -131,14 +131,78 @@
     )) || null;
   }
 
-  function serviceTarget(state, robot, kind) {
+  function serviceCandidates(state, robot, kind) {
     const zones = state.model.service_zones?.[robot.side] || {};
-    if (kind === "heal") return { name: "supply", zone: zones.supply };
-    const candidates = Object.entries(zones)
-      .filter(([name, zone]) => zone.ammo && (name !== "outpost" || state.structures[robot.side].outpost.hp > 0))
-      .map(([name, zone]) => ({ name, zone, distance: state.router.distance(robot.position, zone.center) }))
-      .sort((left, right) => left.distance - right.distance);
-    return candidates[0] || { name: "supply", zone: zones.supply };
+    return Object.entries(zones)
+      .filter(([name, zone]) => (
+        (kind === "heal" ? name === "supply" && zone.heal : zone.ammo)
+        && (name !== "outpost" || state.structures[robot.side].outpost.hp > 0)
+      ))
+      .map(([name, zone]) => ({ name, zone }));
+  }
+
+  function routePlanLength(state, planned) {
+    if (state.router.routeLength) return state.router.routeLength(planned.route || []);
+    return (planned.route || []).slice(1).reduce(
+      (sum, point, index) => sum + state.router.distance(planned.route[index], point), 0,
+    );
+  }
+
+  function routePlanReached(state, planned, point) {
+    return Boolean(planned?.route?.length)
+      && state.router.distance(planned.target || planned.route.at(-1), point) <= 0.18;
+  }
+
+  function combineRoutePlans(first, second) {
+    return {
+      route: [...first.route, ...second.route.slice(1)],
+      target: second.target,
+      passages: [...new Set([...(first.passages || []), ...(second.passages || [])])],
+      actions: [...(first.actions || []), ...(second.actions || [])],
+      corrected: Boolean(first.corrected || second.corrected),
+    };
+  }
+
+  function planServiceRoute(state, robot, kind) {
+    const candidates = serviceCandidates(state, robot, kind);
+    const direct = candidates.map((service) => {
+      const planned = state.router.terrainRoute(
+        state.navigation, robot.position, service.zone.center, robot.school, robot.role,
+      );
+      return {
+        service, planned,
+        reachable: routePlanReached(state, planned, service.zone.center),
+        length: routePlanLength(state, planned),
+      };
+    });
+    const reachable = direct.filter((item) => item.reachable)
+      .sort((left, right) => left.length - right.length);
+    if (reachable.length) return reachable[0];
+
+    // A direct route can fail when the robot is across a directional terrain
+    // interface (most visibly a reverse fly-ramp).  Retreat through an open
+    // own-half staging point, then plan the final service leg independently.
+    const stagingX = Number(state.navigation.routing?.terrain_route_profiles?.service_return?.own_half_staging_x_m || 6.5);
+    const staging = canonicalPoint([stagingX, 7.5], robot.side);
+    const retreat = state.router.terrainRoute(
+      state.navigation, robot.position, staging, robot.school, robot.role,
+    );
+    if (routePlanReached(state, retreat, staging)) {
+      const staged = candidates.map((service) => {
+        const finalLeg = state.router.terrainRoute(
+          state.navigation, staging, service.zone.center, robot.school, robot.role,
+        );
+        const planned = combineRoutePlans(retreat, finalLeg);
+        return {
+          service, planned,
+          reachable: routePlanReached(state, finalLeg, service.zone.center),
+          length: routePlanLength(state, planned),
+        };
+      }).filter((item) => item.reachable)
+        .sort((left, right) => left.length - right.length);
+      if (staged.length) return staged[0];
+    }
+    return null;
   }
 
   function insideAnyServiceZone(model, side, point) {
@@ -312,6 +376,7 @@
       serviceExitPending: false,
       serviceModeStartedAt: null,
       ammoServiceCooldownUntil: 0,
+      serviceRouteBlockedUntil: 0,
       outpostAssaultCommitted: false,
       shotBudget: 0,
     };
@@ -765,6 +830,7 @@
 
   function needsService(state, robot) {
     if (robot.role === "空中") return false;
+    if (state.second < Number(robot.serviceRouteBlockedUntil || 0)) return false;
     return needsHealing(robot) || needsAmmo(state, robot);
   }
 
@@ -786,6 +852,8 @@
     }
     robot.objectiveKey = null;
     let target;
+    let preplanned = null;
+    let serviceRouteFailed = false;
     if (needsService(state, robot) && canShelterInAssembly(state, robot)) {
       const assembly = state.model.assembly_zones[robot.side];
       target = assembly.center;
@@ -794,14 +862,28 @@
       robot.status = "装配区无敌驻留 · 暂不回补给区";
     } else if (needsService(state, robot)) {
       const healing = needsHealing(robot);
-      const service = serviceTarget(state, robot, healing ? "heal" : "ammo");
-      target = service.zone.center;
-      if (!['heal', 'ammo'].includes(robot.mode) || robot.mode !== (healing ? "heal" : "ammo")) {
-        robot.serviceModeStartedAt = state.second;
+      const servicePlan = planServiceRoute(state, robot, healing ? "heal" : "ammo");
+      if (!servicePlan?.reachable) {
+        const retry = Number(state.navigation.routing?.terrain_route_profiles?.service_return?.failed_route_retry_seconds || 3);
+        robot.serviceRouteBlockedUntil = state.second + retry;
+        const canonical = tacticalCanonicalGoal(state, robot);
+        target = canonicalPoint(canonical, robot.side);
+        robot.mode = "tactic";
+        robot.serviceTarget = null;
+        robot.status = `无已确认返程通道 · 就地转点 ${retry}s 后重试补给`;
+        serviceRouteFailed = true;
+      } else {
+        const service = servicePlan.service;
+        robot.serviceRouteBlockedUntil = 0;
+        target = service.zone.center;
+        preplanned = servicePlan.planned;
+        if (!['heal', 'ammo'].includes(robot.mode) || robot.mode !== (healing ? "heal" : "ammo")) {
+          robot.serviceModeStartedAt = state.second;
+        }
+        robot.mode = healing ? "heal" : "ammo";
+        robot.serviceTarget = service.name;
+        robot.status = robot.weak ? "虚弱撤回补给区" : healing ? "残血前往补给区" : `前往${service.zone.label}补弹`;
       }
-      robot.mode = healing ? "heal" : "ammo";
-      robot.serviceTarget = service.name;
-      robot.status = robot.weak ? "虚弱撤回补给区" : healing ? "残血前往补给区" : `前往${service.zone.label}补弹`;
     } else if (robot.role === "工程") {
       const task = nextTechnologyCoreTask(state, robot.side);
       const assembly = state.model.assembly_zones?.[robot.side];
@@ -830,12 +912,14 @@
     const assembly = robot.mode === "technology_core" ? state.model.assembly_zones?.[robot.side] : null;
     const planned = assembly
       ? technologyCoreRoute(state, robot, assembly)
-      : state.router.terrainRoute(state.navigation, robot.position, target, robot.school, robot.role);
+      : preplanned || state.router.terrainRoute(state.navigation, robot.position, target, robot.school, robot.role);
     robot.goal = planned.target;
     robot.route = planned.route;
     robot.passages = planned.passages;
     robot.terrainActions = planned.actions || [];
-    robot.nextDecisionAt = robot.mode === "technology_core"
+    robot.nextDecisionAt = serviceRouteFailed
+      ? Number(robot.serviceRouteBlockedUntil || state.second + 3)
+      : robot.mode === "technology_core"
       ? state.second + 3
       : state.second + 6 + Math.floor(state.random() * 6);
     const meaningfulPassages = planned.passages.filter((passage) => passage !== "空中直达");
@@ -1640,7 +1724,7 @@
 
   return {
     ROLE_ORDER, hashSeed, mulberry32, canonicalPoint, robotLevel, roleMaxHp,
-    insideZone, serviceZoneAt, reviveReadRequired, immediateReviveCost,
+    insideZone, serviceZoneAt, planServiceRoute, reviveReadRequired, immediateReviveCost,
     createMatch, stepMatch, chooseGoal, tacticalCanonicalGoal, targetCandidates,
     moveRobots, resupplyRobots, killRobot, respawnRobots,
     canShelterInAssembly, serviceRequiredForDecision,

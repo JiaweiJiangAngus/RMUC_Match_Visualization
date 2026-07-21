@@ -82,11 +82,18 @@ def fly_ramp_event_window(connection: sqlite3.Connection, event: sqlite3.Row) ->
     if not pre or not any(by_offset.get(offset) for offset in (-2, -1, 0)):
         return None
     minimum = min(pre)
+    # The referee event is emitted at the ramp crossing.  The final one-second
+    # track segment ending at it is therefore a useful, observable
+    # approximation of the minimum straight launch run.  Keep this quantity
+    # separate from the hard centre-line constraint used by the router.
+    runup_samples = by_offset.get(0) or by_offset.get(-1) or []
+    runup_distance = median(runup_samples) if runup_samples else 0
     return {
         "minimum_pre_speed": minimum,
         "slow_seconds": sum(speed < ALIGN_SPEED_MPS for speed in pre),
         "aligned": minimum < ALIGN_SPEED_MPS,
         "stopped": minimum < STOP_SPEED_MPS,
+        "runup_distance_m": runup_distance,
         "speed_by_offset": {offset: median(values) for offset, values in by_offset.items() if values},
     }
 
@@ -113,6 +120,8 @@ def motion_profile(windows: list[dict], fallback: dict | None = None) -> dict:
     aligned = [window for window in windows if window["aligned"]]
     align_seconds = median([window["slow_seconds"] for window in aligned]) if aligned else 1
     minimum_speed = median([window["minimum_pre_speed"] for window in aligned]) if aligned else 0.25
+    runup_values = [window["runup_distance_m"] for window in windows if window["runup_distance_m"] > 0]
+    learned_runup = median(runup_values) if runup_values else 1.4
     return {
         "samples": len(windows),
         "source_scope": "team_role" if fallback is not None else "global",
@@ -120,6 +129,8 @@ def motion_profile(windows: list[dict], fallback: dict | None = None) -> dict:
         "full_stop_probability": rounded(sum(window["stopped"] for window in windows) / max(1, len(windows))),
         "alignment_seconds": int(clamp(round(align_seconds), 1, 3)),
         "alignment_multiplier": rounded(clamp(minimum_speed / max(0.1, launch_speed), 0.05, 0.55), 3),
+        "straight_runup_m": rounded(clamp(learned_runup, 1.0, 2.8), 3),
+        "centerline_required": True,
         "acceleration_multipliers": acceleration,
         "cruise_multiplier": FLY_RAMP_CRUISE_MULTIPLIER,
         "observed_launch_speed_mps": rounded(launch_speed, 3),
@@ -295,7 +306,7 @@ def main() -> None:
             for role in GROUND_TYPES
         }
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "terrain_motion_priors",
         "method": {
             "label": "裁判事件类别=飞坡",
@@ -306,7 +317,8 @@ def main() -> None:
             "road_step_label": "B3/R3 轨迹完整从一侧穿越到另一侧",
             "road_step_directions": ["up", "down"],
             "road_step_straight_angle_threshold_deg": ROAD_STEP_STRAIGHT_ANGLE_DEG,
-            "note": "几何边界与通行资格不在此模型学习；此文件学习飞坡对位/停顿/加速，以及二级台阶跨越的横向偏移。",
+            "fly_ramp_runup_label": "终点为飞坡事件时刻的最后一个 1 Hz 位移段距离",
+            "note": "几何边界与通行资格不在此模型学习；此文件学习飞坡直线助跑/对位/停顿/加速，以及二级台阶跨越的横向偏移。",
         },
         "global": {"fly_ramp": global_profile, "road_step": global_step_profile},
         "teams": teams,

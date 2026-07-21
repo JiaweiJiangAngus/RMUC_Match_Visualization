@@ -163,6 +163,7 @@ console.log(JSON.stringify({
   around:plan([5,7.5],[23,7.5],'华南农业大学','步兵3'),
   blockedAscent:plan([6,7.5],[14,7.5],'未知学校','英雄'),
   reverseAllowed:plan([12,14.7],[16,14.7],'上海交通大学','步兵3'),
+  forwardCentered:plan([16,14.85],[12,14.55],'东北大学','步兵3'),
   reverseBlocked:plan([12,14.7],[16,14.7],'上海交通大学','英雄'),
   trapezoidBlocked:plan([24,1],[24,3],'未知学校','英雄'),
   trapezoidSlope:plan([24,1],[24,3],'五邑大学','英雄'),
@@ -181,7 +182,7 @@ console.log(JSON.stringify({
     return {
       up:router.terrainMotion(nav,up.route[1],up.route.slice(1),up.actions,2),
       down:router.terrainMotion(nav,down.route[1],down.route.slice(1),down.actions,2),
-      fly:router.terrainMotion(nav,fly.route[0],fly.route,fly.actions,2),
+      fly:router.terrainMotion(nav,fly.route[2],fly.route.slice(2),fly.actions,2),
     };
   })()
   ,motionProfile:nav.teams['东北大学']['步兵3'].terrain_motion_profiles.fly_ramp
@@ -211,9 +212,23 @@ console.log(JSON.stringify({
 
     def test_reverse_fly_ramp_is_role_specific(self):
         self.assertIn("B1反飞坡", self.result["reverseAllowed"]["passages"])
-        self.assertEqual(2, self.result["reverseAllowed"]["points"])
+        self.assertGreaterEqual(self.result["reverseAllowed"]["points"], 5)
+        route = self.result["reverseAllowed"]["route"]
+        self.assertAlmostEqual(route[1][1], route[2][1], places=6)
+        self.assertAlmostEqual(route[2][1], route[3][1], places=6)
+        self.assertLess(route[1][0], route[2][0])
         self.assertNotIn("B1反飞坡", self.result["reverseBlocked"]["passages"])
         self.assertGreater(self.result["reverseBlocked"]["points"], 2)
+
+    def test_fly_ramp_route_uses_only_channel_centre_after_straight_runup(self):
+        value = self.result["forwardCentered"]
+        self.assertIn("B1飞坡", value["passages"])
+        self.assertGreaterEqual(value["points"], 5)
+        runup, lip, exit_point = value["route"][1:4]
+        self.assertAlmostEqual(runup[1], lip[1], places=6)
+        self.assertAlmostEqual(lip[1], exit_point[1], places=6)
+        self.assertGreater(runup[0], lip[0])
+        self.assertGreater(lip[0], exit_point[0])
 
     def test_trapezoid_ascent_and_descent_are_not_equivalent(self):
         self.assertTrue(self.result["trapezoidBlocked"]["corrected"])
@@ -240,7 +255,17 @@ console.log(JSON.stringify({
             self.assertTrue(profile["directions"][direction]["route_alignment_enabled"])
 
     def test_confirmed_jump_can_use_non_step_highland_edge(self):
-        self.assertIn("400mm跳跃上高地", self.result["confirmedJump"]["passages"])
+        value = self.result["confirmedJump"]
+        self.assertIn("400mm跳跃上高地", value["passages"])
+        self.assertGreaterEqual(value["points"], 5)
+        runup, lip, landing = value["route"][1:4]
+        cross = ((lip[0] - runup[0]) * (landing[1] - lip[1])
+                 - (lip[1] - runup[1]) * (landing[0] - lip[0]))
+        self.assertAlmostEqual(0, cross, places=6)
+        self.assertGreater(
+            ((lip[0] - runup[0]) ** 2 + (lip[1] - runup[1]) ** 2) ** 0.5,
+            0.8,
+        )
 
     def test_neu_infantry_cannot_use_tunnel_but_confirmed_sentinel_can(self):
         infantry = self.result["neuInfantryTunnel"]
@@ -266,7 +291,7 @@ console.log(JSON.stringify({
 
     def test_every_terrain_gate_has_a_gap_free_routing_blocker(self):
         validation = self.result["routingBlockers"]
-        self.assertEqual(8, validation["schema"])
+        self.assertEqual(9, validation["schema"])
         self.assertEqual(16, validation["gates"])
         self.assertEqual([], validation["violations"])
 
@@ -298,6 +323,8 @@ console.log(JSON.stringify({
         self.assertEqual("team_role", profile["source_scope"])
         self.assertGreaterEqual(profile["samples"], 5)
         self.assertEqual(1, profile["alignment_probability"])
+        self.assertTrue(profile["centerline_required"])
+        self.assertGreaterEqual(profile["straight_runup_m"], 1)
         self.assertEqual(3, len(profile["acceleration_multipliers"]))
 
     def test_all_44_teams_and_roles_have_terrain_behavior_profiles(self):
@@ -312,6 +339,7 @@ console.log(JSON.stringify({
                 profiles = role["terrain_motion_profiles"]
                 self.assertEqual({"fly_ramp", "road_step"}, set(profiles))
                 self.assertIn(profiles["fly_ramp"]["source_scope"], {"team_role", "global_fallback"})
+                self.assertIn("straight_runup_m", profiles["fly_ramp"])
                 if profiles["fly_ramp"]["source_scope"] == "team_role":
                     team_specific["fly_ramp"] += 1
                 for direction in ("up", "down"):

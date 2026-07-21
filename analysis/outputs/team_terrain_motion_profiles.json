@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "kind": "terrain_motion_priors",
   "method": {
     "label": "裁判事件类别=飞坡",
@@ -16,7 +16,8 @@
       "down"
     ],
     "road_step_straight_angle_threshold_deg": 20.0,
-    "note": "几何边界与通行资格不在此模型学习；此文件学习飞坡对位/停顿/加速，以及二级台阶跨越的横向偏移。"
+    "fly_ramp_runup_label": "终点为飞坡事件时刻的最后一个 1 Hz 位移段距离",
+    "note": "几何边界与通行资格不在此模型学习；此文件学习飞坡直线助跑/对位/停顿/加速，以及二级台阶跨越的横向偏移。"
   },
   "global": {
     "fly_ramp": {
@@ -26,6 +27,8 @@
       "full_stop_probability": 0.4815,
       "alignment_seconds": 2,
       "alignment_multiplier": 0.116,
+      "straight_runup_m": 2.273,
+      "centerline_required": true,
       "acceleration_multipliers": [
         0.699,
         1.101,
@@ -74,6 +77,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -120,6 +125,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -166,6 +173,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -212,6 +221,8 @@
           "full_stop_probability": 0.4615,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.183,
+          "straight_runup_m": 2.151,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.763,
             1.13,
@@ -258,6 +269,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -306,6 +319,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -352,6 +367,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -398,6 +415,8 @@
           "full_stop_probability": 0.2727,
           "alignment_seconds": 1,
           "alignment_multiplier": 0.218,
+          "straight_runup_m": 1.996,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.72,
             1.134,
@@ -444,6 +463,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -490,6 +511,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -538,6 +561,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -584,6 +609,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -630,6 +657,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -676,6 +705,8 @@
           "full_stop_probability": 0.9167,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.055,
+          "straight_runup_m": 2.005,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.866,
             1.25,
@@ -722,6 +753,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -770,6 +803,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -816,6 +851,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -862,6 +899,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -908,6 +947,8 @@
           "full_stop_probability": 1,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.083,
+          "straight_runup_m": 2.619,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.232,
             1.07,
@@ -954,6 +995,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1002,6 +1045,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1048,6 +1093,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1094,6 +1141,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1140,6 +1189,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1186,6 +1237,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1234,6 +1287,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1280,6 +1335,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1326,6 +1383,8 @@
           "full_stop_probability": 0.5455,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.076,
+          "straight_runup_m": 2.293,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.53,
             1.107,
@@ -1372,6 +1431,8 @@
           "full_stop_probability": 0.4286,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.119,
+          "straight_runup_m": 2.159,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.609,
             1.085,
@@ -1418,6 +1479,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1466,6 +1529,8 @@
           "full_stop_probability": 0.5556,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.081,
+          "straight_runup_m": 2.132,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.56,
             1.016,
@@ -1512,6 +1577,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1558,6 +1625,8 @@
           "full_stop_probability": 0.3182,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.136,
+          "straight_runup_m": 2.563,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.535,
             0.977,
@@ -1604,6 +1673,8 @@
           "full_stop_probability": 0.35,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.179,
+          "straight_runup_m": 2.282,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.884,
             1.136,
@@ -1650,6 +1721,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1698,6 +1771,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1744,6 +1819,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1790,6 +1867,8 @@
           "full_stop_probability": 1,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.081,
+          "straight_runup_m": 2.161,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.784,
             1.114,
@@ -1836,6 +1915,8 @@
           "full_stop_probability": 0.4375,
           "alignment_seconds": 1,
           "alignment_multiplier": 0.172,
+          "straight_runup_m": 2.308,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.74,
             1.222,
@@ -1882,6 +1963,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1930,6 +2013,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -1976,6 +2061,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2022,6 +2109,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2068,6 +2157,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2114,6 +2205,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2162,6 +2255,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2208,6 +2303,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2254,6 +2351,8 @@
           "full_stop_probability": 0.5,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.128,
+          "straight_runup_m": 2.281,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.918,
             1.211,
@@ -2300,6 +2399,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2346,6 +2447,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2394,6 +2497,8 @@
           "full_stop_probability": 0,
           "alignment_seconds": 1,
           "alignment_multiplier": 0.478,
+          "straight_runup_m": 1.7,
+          "centerline_required": true,
           "acceleration_multipliers": [
             1.25,
             1.25,
@@ -2440,6 +2545,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2486,6 +2593,8 @@
           "full_stop_probability": 0.25,
           "alignment_seconds": 1,
           "alignment_multiplier": 0.214,
+          "straight_runup_m": 2.297,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.871,
             1.155,
@@ -2532,6 +2641,8 @@
           "full_stop_probability": 0.1042,
           "alignment_seconds": 1,
           "alignment_multiplier": 0.192,
+          "straight_runup_m": 2.643,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.559,
             1.066,
@@ -2578,6 +2689,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2626,6 +2739,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2672,6 +2787,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2718,6 +2835,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2764,6 +2883,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2810,6 +2931,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2858,6 +2981,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2904,6 +3029,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -2950,6 +3077,8 @@
           "full_stop_probability": 0.3333,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.432,
+          "straight_runup_m": 1,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.831,
             1.214,
@@ -2996,6 +3125,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3042,6 +3173,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3090,6 +3223,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3136,6 +3271,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3182,6 +3319,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3228,6 +3367,8 @@
           "full_stop_probability": 0.8,
           "alignment_seconds": 3,
           "alignment_multiplier": 0.057,
+          "straight_runup_m": 1.775,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.227,
             1.066,
@@ -3274,6 +3415,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3322,6 +3465,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3368,6 +3513,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3414,6 +3561,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3460,6 +3609,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3506,6 +3657,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3554,6 +3707,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3600,6 +3755,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3646,6 +3803,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3692,6 +3851,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3738,6 +3899,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3786,6 +3949,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3832,6 +3997,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -3878,6 +4045,8 @@
           "full_stop_probability": 0.3,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.171,
+          "straight_runup_m": 2.118,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.82,
             1.25,
@@ -3924,6 +4093,8 @@
           "full_stop_probability": 0.875,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.058,
+          "straight_runup_m": 2.413,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.652,
             1.149,
@@ -3970,6 +4141,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4018,6 +4191,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4064,6 +4239,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4110,6 +4287,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4156,6 +4335,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4202,6 +4383,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4250,6 +4433,8 @@
           "full_stop_probability": 0.5769,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.067,
+          "straight_runup_m": 2.512,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.582,
             0.895,
@@ -4296,6 +4481,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4342,6 +4529,8 @@
           "full_stop_probability": 0.75,
           "alignment_seconds": 3,
           "alignment_multiplier": 0.099,
+          "straight_runup_m": 2.387,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.21,
             1.042,
@@ -4388,6 +4577,8 @@
           "full_stop_probability": 0.7188,
           "alignment_seconds": 3,
           "alignment_multiplier": 0.086,
+          "straight_runup_m": 2.391,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.408,
             1.107,
@@ -4434,6 +4625,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4482,6 +4675,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4528,6 +4723,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4574,6 +4771,8 @@
           "full_stop_probability": 0.1667,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.155,
+          "straight_runup_m": 2.361,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.83,
             1.145,
@@ -4620,6 +4819,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4666,6 +4867,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4714,6 +4917,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4760,6 +4965,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4806,6 +5013,8 @@
           "full_stop_probability": 0.4286,
           "alignment_seconds": 1,
           "alignment_multiplier": 0.127,
+          "straight_runup_m": 2.497,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.537,
             1.016,
@@ -4852,6 +5061,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4898,6 +5109,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4946,6 +5159,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -4992,6 +5207,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5038,6 +5255,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5084,6 +5303,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5130,6 +5351,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5178,6 +5401,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5224,6 +5449,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5270,6 +5497,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5316,6 +5545,8 @@
           "full_stop_probability": 0.2,
           "alignment_seconds": 3,
           "alignment_multiplier": 0.55,
+          "straight_runup_m": 1,
+          "centerline_required": true,
           "acceleration_multipliers": [
             1.25,
             1.25,
@@ -5362,6 +5593,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5410,6 +5643,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5456,6 +5691,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5502,6 +5739,8 @@
           "full_stop_probability": 0.75,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.097,
+          "straight_runup_m": 2.324,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.897,
             1.25,
@@ -5548,6 +5787,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5594,6 +5835,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5642,6 +5885,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5688,6 +5933,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5734,6 +5981,8 @@
           "full_stop_probability": 0.8333,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.098,
+          "straight_runup_m": 2.577,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.55,
             1,
@@ -5780,6 +6029,8 @@
           "full_stop_probability": 0.5,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.156,
+          "straight_runup_m": 2.068,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.533,
             1.148,
@@ -5826,6 +6077,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5874,6 +6127,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5920,6 +6175,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -5966,6 +6223,8 @@
           "full_stop_probability": 0.1818,
           "alignment_seconds": 1,
           "alignment_multiplier": 0.228,
+          "straight_runup_m": 2.8,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.771,
             1.051,
@@ -6012,6 +6271,8 @@
           "full_stop_probability": 0.4545,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.096,
+          "straight_runup_m": 2.341,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.76,
             1.119,
@@ -6058,6 +6319,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6106,6 +6369,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6152,6 +6417,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6198,6 +6465,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6244,6 +6513,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6290,6 +6561,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6338,6 +6611,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6384,6 +6659,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6430,6 +6707,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6476,6 +6755,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6522,6 +6803,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6570,6 +6853,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6616,6 +6901,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6662,6 +6949,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6708,6 +6997,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6754,6 +7045,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6802,6 +7095,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6848,6 +7143,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6894,6 +7191,8 @@
           "full_stop_probability": 0.6364,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.104,
+          "straight_runup_m": 2.45,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.649,
             1.059,
@@ -6940,6 +7239,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -6986,6 +7287,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7034,6 +7337,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7080,6 +7385,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7126,6 +7433,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7172,6 +7481,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7218,6 +7529,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7266,6 +7579,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7312,6 +7627,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7358,6 +7675,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7404,6 +7723,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7450,6 +7771,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7498,6 +7821,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7544,6 +7869,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7590,6 +7917,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7636,6 +7965,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7682,6 +8013,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7730,6 +8063,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7776,6 +8111,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7822,6 +8159,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7868,6 +8207,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7914,6 +8255,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -7962,6 +8305,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8008,6 +8353,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8054,6 +8401,8 @@
           "full_stop_probability": 1,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.05,
+          "straight_runup_m": 2.488,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.304,
             1.042,
@@ -8100,6 +8449,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8146,6 +8497,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8194,6 +8547,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8240,6 +8595,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8286,6 +8643,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8332,6 +8691,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8378,6 +8739,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8426,6 +8789,8 @@
           "full_stop_probability": 0.2778,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.05,
+          "straight_runup_m": 2.023,
+          "centerline_required": true,
           "acceleration_multipliers": [
             1.01,
             1.192,
@@ -8472,6 +8837,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8518,6 +8885,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8564,6 +8933,8 @@
           "full_stop_probability": 0.6429,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.164,
+          "straight_runup_m": 1.932,
+          "centerline_required": true,
           "acceleration_multipliers": [
             1.016,
             1.219,
@@ -8610,6 +8981,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8658,6 +9031,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8704,6 +9079,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8750,6 +9127,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8796,6 +9175,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8842,6 +9223,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8890,6 +9273,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8936,6 +9321,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -8982,6 +9369,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9028,6 +9417,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9074,6 +9465,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9122,6 +9515,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9168,6 +9563,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9214,6 +9611,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9260,6 +9659,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9306,6 +9707,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9354,6 +9757,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9400,6 +9805,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9446,6 +9853,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9492,6 +9901,8 @@
           "full_stop_probability": 0.75,
           "alignment_seconds": 3,
           "alignment_multiplier": 0.062,
+          "straight_runup_m": 2.283,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.272,
             0.961,
@@ -9538,6 +9949,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9586,6 +9999,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9632,6 +10047,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9678,6 +10095,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9724,6 +10143,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9770,6 +10191,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9818,6 +10241,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9864,6 +10289,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -9910,6 +10337,8 @@
           "full_stop_probability": 0.8333,
           "alignment_seconds": 3,
           "alignment_multiplier": 0.066,
+          "straight_runup_m": 2.232,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.321,
             0.946,
@@ -9956,6 +10385,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -10002,6 +10433,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -10050,6 +10483,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -10096,6 +10531,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -10142,6 +10579,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -10188,6 +10627,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,
@@ -10234,6 +10675,8 @@
           "full_stop_probability": 0.4815,
           "alignment_seconds": 2,
           "alignment_multiplier": 0.116,
+          "straight_runup_m": 2.273,
+          "centerline_required": true,
           "acceleration_multipliers": [
             0.699,
             1.101,

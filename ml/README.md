@@ -130,7 +130,9 @@ python3 ml/build_full_simulation_data.py
 - **地形能力标签**：`analysis/manual_terrain_capabilities.csv` 只写“某校×某兵种会/不会过”的人工监督标签；其余样本由完整穿越轨迹自动标注。
 - **队伍行为标签**：`analysis/manual_team_behavior_labels.csv` 用于数据没有显式字段的监督信息，例如英雄整机类型、远/近程风格、确认的前哨任务角色。队名只出现在训练标签和模型中，不得在 JS 引擎写 `if (队名)` 特判。
 - **44 队覆盖门禁**：每次构建后测试会验证 44/44 都拥有上述画像与地形动作模型，并检查运行时引擎不包含任何学校名。当前 44 队行为签名全部不同；样本不足只能在单个维度上回退，不会把整支队替换成统一模板。
-- **可学习过程**：`ml/train_terrain_motion_profiles.py` 从裁判“飞坡”事件前后的 1 Hz 轨迹学习每校×兵种的对位概率、停顿概率/时长和三段加速曲线；同时检测完整从一侧穿到另一侧的 B3/R3 轨迹，将上台阶和下台阶分开学习入射偏角、横向偏移和直行概率。单个方向的样本少于 5 次时才回退到该方向的全局分布。
+- **可学习过程**：`ml/train_terrain_motion_profiles.py` 从裁判“飞坡”事件前后的 1 Hz 轨迹学习每校×兵种的直线助跑距离、对位概率、停顿概率/时长和三段加速曲线；助跑距离取终点为飞坡事件时刻的最后一个轨迹位移段并限制在 1.0–2.8 m。同时检测完整从一侧穿到另一侧的 B3/R3 轨迹，将上台阶和下台阶分开学习入射偏角、横向偏移和直行概率。单个方向的样本少于 5 次时才回退到该方向的全局分布。
+- **路径形状约束**：B1/R1 只能沿飞坡通道中心线通过，正飞坡和有反飞坡证据的兵种都按“助跑点→坡口中心→出口中心”生成共线航点；确认能直接跃上中央高地的兵种也必须沿所选边界的法线完成“直线助跑→坡唇→落点”。这些几何参数导出到 `terrain_navigation.json` 的 `routing.terrain_route_profiles`，快速宏观预测和完整沙盘共用同一个 `terrain-router.js`。
+- **补给撤退**：补弹不再按直线距离选择基地/前哨/补给区，而是比较实际可达路线长度；直达失败时先撤到己方半场中继点再规划第二段。若当前位置与己方区域在已确认能力图中确实不连通，模型不会再假装“正在回补给”却原地等待，而会就地转点 3 秒后重试。对应策略参数也在 `routing.terrain_route_profiles.service_return`。
 - **火力概率**：逐队发弹数与对手受击事件生成 `accuracy_models`；每局先在该队区间内抽样基础命中率，每一发再做伯努利随机判定。英雄对机器人/前哨/基地的 42mm 主模态分开统计，防御减伤后的小于 200 数值不会反向学成原始弹丸伤害。
 
 `manual_terrain_capabilities.csv` 的 `ability` 可填 `central_highland_step`、`road_step`、`fly_ramp`、`rough_road`、`road_tunnel`、`highland_tunnel`、`slope_43`、`trapezoid_highland_step` 或 `central_highland_400mm_jump`，`label` 只能是 `confirmed` / `rejected`。`manual_team_behavior_labels.csv` 当前支持 `outpost_assault_role`、`hero_archetype_default`、`engagement_style` 和 `robot/outpost/base_damage_per_hit`。每次改 CSV 后都必须重新运行下面的构建链。
@@ -145,7 +147,7 @@ python3 ml/build_full_simulation_data.py
 python3 -m unittest analysis.test_team_terrain_capabilities ml.test_browser_navigation ml.test_match_simulator
 ```
 
-想加新的跨地形属性时，先在 `terrain_crossing_points.py` 定义几何门，再在 `team_terrain_capabilities.py` 定义正负样本口径；如果它还包含“对位→停顿→加速→落地”时序或“入射角→横向漂移”轨迹特征，再给 `train_terrain_motion_profiles.py` 增加事件窗口，最后由 `export_browser_navigation.py` 导出到浏览器模型。
+想加新的跨地形属性时，先在 `terrain_crossing_points.py` 定义几何门，再在 `team_terrain_capabilities.py` 定义正负样本口径；如果它还包含“直线助跑→对位→停顿→加速→落地”时序或“入射角→横向漂移”轨迹特征，再给 `train_terrain_motion_profiles.py` 增加事件窗口，最后由 `export_browser_navigation.py` 导出到浏览器模型。中心线、边界法线等不能被概率违反的条件放进 `terrain_route_profiles`；从轨迹能估计的距离、概率和速度放进每校×兵种的 `terrain_motion_profiles`。
 
 ### 快速宏观推演
 
