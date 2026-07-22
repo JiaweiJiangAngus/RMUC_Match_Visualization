@@ -13,7 +13,6 @@ import torch
 
 from train_trajectory import (
     DEFAULT_DATA_DIR,
-    DEFAULT_OUTPUT,
     FEATURE_NAMES,
     FIELD_HEIGHT_M,
     FIELD_WIDTH_M,
@@ -28,6 +27,8 @@ from train_trajectory import (
     sample_features,
     valid_position,
 )
+from train_trajectory_transformer import DEFAULT_OUTPUT as DEFAULT_TRANSFORMER_OUTPUT
+from trajectory_transformer import TemporalBattlefieldTransformer
 
 
 def world_xy(normalized_xy: np.ndarray, side: str) -> tuple[float, float]:
@@ -40,7 +41,7 @@ def world_xy(normalized_xy: np.ndarray, side: str) -> tuple[float, float]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--model", type=Path, default=DEFAULT_TRANSFORMER_OUTPUT)
     parser.add_argument("--game-file", type=Path)
     parser.add_argument("--game-id", type=int)
     parser.add_argument("--second", type=int, default=200)
@@ -64,7 +65,11 @@ def main() -> None:
     checkpoint = torch.load(args.model, map_location="cpu", weights_only=True)
     if checkpoint["feature_names"] != FEATURE_NAMES:
         raise SystemExit("model feature schema does not match this code")
-    model = TrajectoryMLP(**checkpoint["model_kwargs"])
+    model = (
+        TemporalBattlefieldTransformer(**checkpoint["model_kwargs"])
+        if checkpoint.get("model_kind") == "temporal_battlefield_transformer"
+        else TrajectoryMLP(**checkpoint["model_kwargs"])
+    )
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     mean = checkpoint["feature_mean"].numpy()

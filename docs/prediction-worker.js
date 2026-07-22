@@ -21,7 +21,7 @@ const STRUCTURE_TYPES = ["基地", "前哨站"];
 const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
-const MODEL_URL = "./data/models/trajectory_mlp.json?v=16";
+const MODEL_URL = "./data/models/trajectory_transformer.json?v=1";
 const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=24";
 
 let modelPromise = null;
@@ -67,7 +67,7 @@ async function loadModel() {
       targetVx3: manifest.feature_names.indexOf("target.vx_3_norm_per_s"),
       targetVy3: manifest.feature_names.indexOf("target.vy_3_norm_per_s"),
     };
-    emit({type:"status", status:"ready", text:"预测已开启"});
+    emit({type:"status", status:"ready", text:"Temporal Transformer 预测已开启"});
     return model;
   })();
   return modelPromise;
@@ -181,9 +181,8 @@ function layerNorm(values,gamma,beta,epsilon) {
   for (let i=0;i<values.length;i++) out[i]=(values[i]-mean)*inverse*gamma[i]+beta[i];
   return out;
 }
-function forward(model,features) {
-  const t=name=>model.tensors.get(name), m=model.manifest, normalized=new Float32Array(m.input_dim);
-  for (let i=0;i<m.input_dim;i++) normalized[i]=(features[i]-model.mean[i])/model.std[i];
+function forwardMlp(model,normalized) {
+  const t=name=>model.tensors.get(name), m=model.manifest;
   let hidden=linear(normalized,t("backbone.0.weight"),t("backbone.0.bias"),256,m.input_dim);
   hidden=layerNorm(gelu(hidden),t("backbone.2.weight"),t("backbone.2.bias"),m.layer_norm_epsilon);
   hidden=linear(hidden,t("backbone.4.weight"),t("backbone.4.bias"),256,256);
@@ -191,6 +190,76 @@ function forward(model,features) {
   hidden=linear(hidden,t("backbone.8.weight"),t("backbone.8.bias"),128,256);
   hidden=layerNorm(gelu(hidden),t("backbone.10.weight"),t("backbone.10.bias"),m.layer_norm_epsilon);
   return linear(hidden,t("head.weight"),t("head.bias"),m.horizons.length*2,128);
+}
+
+function addResidual(left,right) {
+  const output=new Float32Array(left.length);
+  for(let i=0;i<left.length;i++)output[i]=left[i]+right[i];
+  return output;
+}
+
+function transformerAttention(tokens,model,prefix) {
+  const t=name=>model.tensors.get(name),m=model.manifest,d=m.d_model,heads=m.nhead,headDim=d/heads,count=tokens.length;
+  const normalized=tokens.map(token=>layerNorm(token,t(`${prefix}.norm1.weight`),t(`${prefix}.norm1.bias`),m.layer_norm_epsilon));
+  const projected=normalized.map(token=>linear(token,t(`${prefix}.self_attn.in_proj_weight`),t(`${prefix}.self_attn.in_proj_bias`),d*3,d));
+  const attended=Array.from({length:count},()=>new Float32Array(d));
+  const scale=1/Math.sqrt(headDim);
+  for(let head=0;head<heads;head++){
+    const base=head*headDim;
+    for(let query=0;query<count;query++){
+      const scores=new Float64Array(count);let maximum=-Infinity;
+      for(let key=0;key<count;key++){
+        let score=0;
+        for(let j=0;j<headDim;j++)score+=projected[query][base+j]*projected[key][d+base+j];
+        score*=scale;scores[key]=score;if(score>maximum)maximum=score;
+      }
+      let denominator=0;
+      for(let key=0;key<count;key++){scores[key]=Math.exp(scores[key]-maximum);denominator+=scores[key];}
+      for(let j=0;j<headDim;j++){
+        let value=0;
+        for(let key=0;key<count;key++)value+=scores[key]/denominator*projected[key][d*2+base+j];
+        attended[query][base+j]=value;
+      }
+    }
+  }
+  return attended.map((value,index)=>addResidual(
+    tokens[index],linear(value,t(`${prefix}.self_attn.out_proj.weight`),t(`${prefix}.self_attn.out_proj.bias`),d,d),
+  ));
+}
+
+function transformerLayer(tokens,model,index) {
+  const t=name=>model.tensors.get(name),m=model.manifest,d=m.d_model,ff=m.dim_feedforward,prefix=`encoder.layers.${index}`;
+  const attended=transformerAttention(tokens,model,prefix);
+  return attended.map(token=>{
+    const normalized=layerNorm(token,t(`${prefix}.norm2.weight`),t(`${prefix}.norm2.bias`),m.layer_norm_epsilon);
+    const hidden=gelu(linear(normalized,t(`${prefix}.linear1.weight`),t(`${prefix}.linear1.bias`),ff,d));
+    return addResidual(token,linear(hidden,t(`${prefix}.linear2.weight`),t(`${prefix}.linear2.bias`),d,ff));
+  });
+}
+
+function forwardTransformer(model,normalized) {
+  const t=name=>model.tensors.get(name),m=model.manifest,d=m.d_model,count=m.history_token_count,width=m.history_token_width;
+  const tokens=[];
+  for(let index=0;index<count;index++){
+    const input=normalized.subarray(index*width,(index+1)*width);
+    tokens.push(linear(input,t("history_projection.weight"),t("history_projection.bias"),d,width));
+  }
+  tokens.push(linear(
+    normalized.subarray(count*width),t("context_projection.weight"),t("context_projection.bias"),d,m.context_dim,
+  ));
+  const position=t("position_embedding");
+  for(let token=0;token<tokens.length;token++)for(let i=0;i<d;i++)tokens[token][i]+=position[token*d+i];
+  let encoded=tokens;
+  for(let layer=0;layer<m.num_layers;layer++)encoded=transformerLayer(encoded,model,layer);
+  const target=layerNorm(encoded.at(-1),t("norm.weight"),t("norm.bias"),m.layer_norm_epsilon);
+  return linear(target,t("head.weight"),t("head.bias"),m.horizons.length*2,d);
+}
+
+function forward(model,features) {
+  const m=model.manifest,normalized=new Float32Array(m.input_dim);
+  for(let i=0;i<m.input_dim;i++)normalized[i]=(features[i]-model.mean[i])/model.std[i];
+  return m.model_kind==="temporal_battlefield_transformer"
+    ? forwardTransformer(model,normalized) : forwardMlp(model,normalized);
 }
 
 function worldPoint(canonicalX,canonicalY,side) {

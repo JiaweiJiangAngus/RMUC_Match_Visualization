@@ -495,7 +495,7 @@ function probeServiceExit() {
   hero.goal=[...hero.position]; hero.route=[[...hero.position]];
   hero.mode='tactic'; hero.status='战术转点'; hero.ammo=hero.profile.magazine; hero.shotBudget=100;
   engine.resupplyRobots(state);
-  const passiveStatus=hero.status;
+  const passive={status:hero.status,pending:hero.serviceExitPending,nextDecisionAt:hero.nextDecisionAt};
 
   hero.mode='ammo'; hero.ammo=0; hero.serviceModeStartedAt=state.second;
   state.teamState.red.coins=1000;
@@ -512,7 +512,7 @@ function probeServiceExit() {
   waiting.shotBudget=100; waiting.serviceModeStartedAt=0; broke.second=7; broke.teamState.red.coins=0;
   engine.resupplyRobots(broke);
   const noCoins={pending:waiting.serviceExitPending,cooldown:waiting.ammoServiceCooldownUntil,status:waiting.status};
-  return {passiveStatus,purchased,departed,noCoins};
+  return {passive,purchased,departed,noCoins};
 }
 function probeEnemyHalfServiceReturn() {
   const state=engine.createMatch(model,nav,'东北大学','同济大学',20260721,router);
@@ -757,7 +757,9 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
 
     def test_supply_status_and_exit_match_actual_ammunition_state(self):
         probe = self.service_exit
-        self.assertEqual("战术转点", probe["passiveStatus"])
+        self.assertIn("立即离区", probe["passive"]["status"])
+        self.assertTrue(probe["passive"]["pending"])
+        self.assertEqual(0, probe["passive"]["nextDecisionAt"])
         self.assertIn("补弹完成", probe["purchased"]["status"])
         self.assertTrue(probe["purchased"]["pending"])
         self.assertGreater(probe["purchased"]["ammo"], 0)

@@ -205,8 +205,12 @@
     return null;
   }
 
-  function insideAnyServiceZone(model, side, point) {
-    return Object.values(model.service_zones?.[side] || {}).some((zone) => insideZone(point, zone));
+  function insideAnyServiceZone(model, side, point, radiusScale = 1) {
+    return Object.values(model.service_zones?.[side] || {}).some((zone) => {
+      const radius = zone.radius || [1, 1];
+      const expanded = { ...zone, radius: [radius[0] * radiusScale, radius[1] * radiusScale] };
+      return insideZone(point, expanded);
+    });
   }
 
   function teamTargetPrior(state, robot) {
@@ -251,7 +255,7 @@
       const candidate = [Number(point[0]), Number(point[1])];
       const worldCandidate = canonicalPoint(candidate, robot.side);
       return state.router.distance(candidate, objectivePoint) <= range * 0.82
-        && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", candidate))
+        && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", candidate, 1.25))
         && lineOfSightFrom(state, worldCandidate, objective.position, robot.role);
     });
     const preferredObserved = robot.profile.engagement_profile?.style === "long_range"
@@ -290,7 +294,7 @@
       const adjustedWeight = Number(edge[4] || 1) / (0.35 + sourceDistance * sourceDistance);
       return [...edge, adjustedWeight, sourceDistance];
     }).filter((edge) => edge[6] <= 3.2 && (
-      !forceServiceExit || !insideAnyServiceZone(state.model, "red", [Number(edge[2]), Number(edge[3])])
+      !forceServiceExit || !insideAnyServiceZone(state.model, "red", [Number(edge[2]), Number(edge[3])], 1.25)
     ));
     const transition = weightedItem(nearbyTransitions, 5, state.random);
     let target;
@@ -298,7 +302,7 @@
       target = [Number(transition[2]), Number(transition[3])];
     } else {
       const eligible = forceServiceExit
-        ? points.filter((point) => !insideAnyServiceZone(state.model, "red", [Number(point[0]), Number(point[1])]))
+        ? points.filter((point) => !insideAnyServiceZone(state.model, "red", [Number(point[0]), Number(point[1])], 1.25))
         : points;
       target = eligible.length ? weightedPoint(eligible, state.random) : [6.65, 7.5];
     }
@@ -1173,10 +1177,22 @@
         robot.nextDecisionAt = state.second;
         robot.status = "金币不足 · 先离开补弹区";
       }
-      if (!needsService(state, robot) && ["heal", "ammo"].includes(robot.mode)) {
+      // A service zone is an interaction point, not a tactical camping goal.
+      // Replan immediately for every ground robot once no service is needed,
+      // including robots that wandered into the zone while already in tactic
+      // mode.  Previously only heal/ammo modes were evicted, so a sampled
+      // historical goal could keep a full robot here for many decision cycles.
+      if (!needsService(state, robot)) {
         robot.serviceExitPending = true;
         robot.nextDecisionAt = state.second;
         robot.serviceModeStartedAt = null;
+        robot.status = waitedWithoutCoins
+          ? "金币不足 · 立即离开补弹区"
+          : purchasedAmmo
+            ? `${ammoZone[1].label}补弹完成 · 立即离区`
+            : healingZone && robot.hp > beforeHp + 0.5
+              ? "补给区回血完成 · 立即离区"
+              : "补给交互结束 · 立即离区";
       }
     });
   }

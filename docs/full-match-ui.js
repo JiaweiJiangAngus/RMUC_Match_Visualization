@@ -536,7 +536,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=11");
+      const worker = new Worker("./full-match-worker.js?v=12");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;

@@ -382,7 +382,7 @@ function ensurePredictionWorker() {
     setPredictionStatus("浏览器不支持后台预测","error");
     return false;
   }
-  const worker=new Worker("./prediction-worker.js?v=24");
+  const worker=new Worker("./prediction-worker.js?v=25");
   worker.onmessage=event=>{
     const message=event.data||{};
     if (message.type==="status") {
@@ -457,7 +457,7 @@ function togglePrediction() {
     setPredictionStatus("预测已关闭"); state.dirty=true;
     return;
   }
-  setPredictionStatus(state.predictionReady?"预测已开启":"模型加载中",state.predictionReady?"ready":"");
+  setPredictionStatus(state.predictionReady?"Transformer 预测已开启":"模型加载中",state.predictionReady?"ready":"");
   schedulePrediction(Math.floor(state.playhead));
 }
 
