@@ -27,7 +27,10 @@ from train_trajectory import (
     sample_features,
     valid_position,
 )
-from train_trajectory_transformer import DEFAULT_OUTPUT as DEFAULT_TRANSFORMER_OUTPUT
+from train_trajectory_transformer import (
+    DEFAULT_OUTPUT as DEFAULT_TRANSFORMER_OUTPUT,
+    transformer_sample_features,
+)
 from trajectory_transformer import TemporalBattlefieldTransformer
 
 
@@ -63,7 +66,9 @@ def main() -> None:
         raise SystemExit(f"game file does not exist: {game_path}")
 
     checkpoint = torch.load(args.model, map_location="cpu", weights_only=True)
-    if checkpoint["feature_names"] != FEATURE_NAMES:
+    school_names = tuple(checkpoint.get("school_names", ()))
+    is_team_conditioned = bool(school_names)
+    if not is_team_conditioned and checkpoint["feature_names"] != FEATURE_NAMES:
         raise SystemExit("model feature schema does not match this code")
     model = (
         TemporalBattlefieldTransformer(**checkpoint["model_kwargs"])
@@ -94,10 +99,16 @@ def main() -> None:
             if not valid_position(current):
                 continue
             try:
-                features = np.asarray(
-                    sample_features(frames, args.second, side, robot_type, duration),
-                    dtype=np.float32,
-                )
+                if is_team_conditioned:
+                    target_school = str(game["info"]["red" if side == "红" else "blue"])
+                    opponent_school = str(game["info"]["blue" if side == "红" else "red"])
+                    values = transformer_sample_features(
+                        frames, args.second, side, robot_type, duration,
+                        target_school, opponent_school, school_names,
+                    )
+                else:
+                    values = sample_features(frames, args.second, side, robot_type, duration)
+                features = np.asarray(values, dtype=np.float32)
             except KeyError:
                 continue
             inputs = torch.from_numpy(((features - mean) / std)[None])

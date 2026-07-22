@@ -21,7 +21,7 @@ const STRUCTURE_TYPES = ["基地", "前哨站"];
 const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
-const MODEL_URL = "./data/models/trajectory_transformer.json?v=1";
+const MODEL_URL = "./data/models/trajectory_transformer.json?v=2";
 const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=24";
 
 let modelPromise = null;
@@ -102,7 +102,7 @@ function normalizedCoins(frame,side) {
   return 0;
 }
 
-function buildFeatures(history, second, targetSide, targetType, duration) {
+function buildFeatures(history, second, targetSide, targetType, duration, schools=null, manifest=null) {
   const frames = new Map();
   for (const offset of [0,1,3,5]) frames.set(offset,indexFrame(history[String(offset)]||history[offset]));
   const enemy=otherSide(targetSide), values=[];
@@ -148,7 +148,20 @@ function buildFeatures(history, second, targetSide, targetType, duration) {
   const safeDuration=Math.max(1,Number(duration)||420);
   values.push(second/safeDuration,Math.max(0,safeDuration-second)/safeDuration);
   for (const type of MOBILE_TYPES) values.push(Number(type===targetType));
-  return values.length===240 ? Float32Array.from(values) : null;
+  const schoolNames=manifest?.school_names||[];
+  if (schoolNames.length) {
+    const currentHp=hpRatio(current);
+    for (const offset of [1,3,5]) {
+      const previous=rowAt(frames.get(offset),targetSide,targetType);
+      values.push(Math.max(0,hpRatio(previous)-currentHp));
+    }
+    const ownSchool=String(schools?.[targetSide]||"");
+    const opponentSchool=String(schools?.[enemy]||"");
+    for (const school of schoolNames) values.push(Number(school===ownSchool));
+    for (const school of schoolNames) values.push(Number(school===opponentSchool));
+  }
+  const expected=Number(manifest?.input_dim||240);
+  return values.length===expected ? Float32Array.from(values) : null;
 }
 
 function linear(input,weight,bias,outSize,inSize) {
@@ -572,7 +585,9 @@ async function predict(message) {
     for (const role of GROUND_TYPES) {
       const robot=rowAt(current,side,role);
       if (!validPosition(robot) || Number(robot[R.hp]||0)<=0) continue;
-      const features=buildFeatures(message.history,message.second,side,role,message.duration);
+      const features=buildFeatures(
+        message.history,message.second,side,role,message.duration,message.schools,model.manifest,
+      );
       if (!features) continue;
       const residuals=forward(model,features), rawPoints=[];
       for (let i=0;i<model.manifest.horizons.length;i++) {
@@ -607,7 +622,16 @@ async function predict(message) {
   });
 }
 
+const predictionCore = {
+  loadModel, buildFeatures, forward, linear, gelu, layerNorm,
+  terrainRoute, routeLength, regionAt,
+};
+
 if (typeof self !== "undefined") {
+  self.RMUCPredictionCore = predictionCore;
+}
+
+if (typeof self !== "undefined" && !self.RMUC_EMBEDDED_PREDICTION) {
   self.onmessage = event => {
     if (event.data?.type !== "predict") return;
     predict(event.data).catch(error=>emit({
@@ -617,6 +641,4 @@ if (typeof self !== "undefined") {
   };
 }
 
-if (typeof module !== "undefined") module.exports={
-  buildFeatures,forward,linear,gelu,layerNorm,terrainRoute,routeLength,regionAt,
-};
+if (typeof module !== "undefined") module.exports=predictionCore;

@@ -2,18 +2,40 @@
 
 // The 421-second simulation performs terrain-aware routing for twelve robots.
 // Keep that CPU work off the UI thread so loading and scrolling stay responsive.
-importScripts("./terrain-router.js?v=7", "./full-match-engine.js?v=18");
+self.RMUC_EMBEDDED_PREDICTION = true;
+importScripts(
+  "./terrain-router.js?v=7",
+  "./prediction-worker.js?v=26",
+  "./full-match-transformer-policy.js?v=1",
+  "./full-match-engine.js?v=19",
+);
+delete self.RMUC_EMBEDDED_PREDICTION;
 
 let model = null;
 let navigation = null;
 let activeRequestId = 0;
+let transformerModelPromise = null;
 
-function streamMatch(message) {
+function ensureTransformerModel() {
+  if (!transformerModelPromise) {
+    transformerModelPromise = self.RMUCPredictionCore.loadModel().catch(() => null);
+  }
+  return transformerModelPromise;
+}
+
+async function streamMatch(message) {
   const requestId = message.requestId;
   activeRequestId = requestId;
   const started = performance.now();
+  const transformerModel = await ensureTransformerModel();
+  if (requestId !== activeRequestId) return;
   let state;
   try {
+    const transformerPolicy = transformerModel
+      ? self.RMUCFullMatchTransformerPolicy.createPolicy(
+        transformerModel, self.RMUCPredictionCore,
+      )
+      : null;
     state = self.RMUCFullMatchEngine.createMatch(
       model,
       navigation,
@@ -21,7 +43,7 @@ function streamMatch(message) {
       message.blueSchool,
       message.seed,
       self.RMUCTerrainRouter,
-      message.matchOptions,
+      { ...message.matchOptions, transformerPolicy },
     );
   } catch (error) {
     self.postMessage({ type: "error", requestId, message: error?.message || String(error) });
@@ -32,7 +54,10 @@ function streamMatch(message) {
     type: "started",
     requestId,
     expectedFrames: state.duration + 1,
-    state: { codes: state.codes, duration: state.duration, seed: state.seed },
+    state: {
+      codes: state.codes, duration: state.duration, seed: state.seed,
+      policy: { ...state.policy },
+    },
     frame: self.RMUCFullMatchEngine.snapshot(state),
   });
 
@@ -55,6 +80,7 @@ function streamMatch(message) {
       events,
       complete: state.finished,
       latencyMs: performance.now() - started,
+      policy: { ...state.policy },
     });
     if (!state.finished) self.setTimeout(pump, 0);
   }
@@ -66,6 +92,7 @@ self.onmessage = (event) => {
   if (message.type === "initialize") {
     model = message.model;
     navigation = message.navigation;
+    ensureTransformerModel();
     self.postMessage({ type: "ready" });
     return;
   }
@@ -74,5 +101,7 @@ self.onmessage = (event) => {
     self.postMessage({ type: "error", requestId: message.requestId, message: "沙盘参数尚未加载" });
     return;
   }
-  streamMatch(message);
+  streamMatch(message).catch((error) => {
+    self.postMessage({ type: "error", requestId: message.requestId, message: error?.message || String(error) });
+  });
 };

@@ -75,6 +75,7 @@ def main() -> None:
         "dim_feedforward": int(kwargs["dim_feedforward"]),
         "field_size_m": list(checkpoint["field_size_m"]),
         "feature_names": list(checkpoint["feature_names"]),
+        "school_names": list(checkpoint.get("school_names", ())),
         "feature_mean": checkpoint["feature_mean"].numpy().astype(float).tolist(),
         "feature_std": checkpoint["feature_std"].numpy().astype(float).tolist(),
         "layer_norm_epsilon": 1e-5,

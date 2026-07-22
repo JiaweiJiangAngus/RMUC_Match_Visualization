@@ -8,8 +8,14 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ml.train_trajectory import FEATURE_NAMES, REGULATION_DURATION_S, index_frame, sample_features
-from ml.train_trajectory_transformer import sample_weights
+from ml.train_trajectory import (
+    DEFAULT_DATA_DIR, FEATURE_NAMES, REGULATION_DURATION_S,
+    index_frame, load_group_splits, sample_features,
+)
+from ml.train_trajectory_transformer import (
+    DAMAGE_FEATURE_NAMES, iter_transformer_samples,
+    sample_weights, transformer_sample_features,
+)
 from ml.trajectory_transformer import TemporalBattlefieldTransformer
 
 
@@ -42,6 +48,62 @@ class TrajectoryTransformerTests(unittest.TestCase):
         weights = sample_weights(x, y)
         self.assertLess(weights[0], weights[1])
 
+    @unittest.skipUnless(CHECKPOINT.exists(), "trained Transformer checkpoint is required")
+    def test_checkpoint_is_team_and_damage_conditioned(self):
+        checkpoint = torch.load(CHECKPOINT, map_location="cpu", weights_only=True)
+        self.assertIn("同济大学", checkpoint["school_names"])
+        self.assertIn("target.hp_loss_1", checkpoint["feature_names"])
+        self.assertIn("target.school.同济大学", checkpoint["feature_names"])
+        self.assertEqual(252_394, checkpoint["parameter_count"])
+
+    @unittest.skipUnless(CHECKPOINT.exists(), "trained Transformer checkpoint is required")
+    def test_tongji_hero_leaves_anchor_more_after_damage_on_held_out_games(self):
+        checkpoint = torch.load(CHECKPOINT, map_location="cpu", weights_only=True)
+        model = TemporalBattlefieldTransformer(**checkpoint["model_kwargs"])
+        model.load_state_dict(checkpoint["model_state"])
+        model.eval()
+        names = list(checkpoint["feature_names"])
+        school_names = tuple(checkpoint["school_names"])
+        school_index = names.index("target.school.同济大学")
+        hero_index = names.index("target.type.英雄")
+        damage_indices = [names.index(name) for name in DAMAGE_FEATURE_NAMES]
+        test_paths = []
+        for path in load_group_splits(
+            DEFAULT_DATA_DIR, checkpoint["config"]["split_seed"]
+        )["test"]:
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                info = json.load(handle)["info"]
+            if "同济大学" in (info["red"], info["blue"]):
+                test_paths.append(path)
+        rows = []
+        for path in test_paths:
+            for features, targets in iter_transformer_samples(
+                path, tuple(checkpoint["horizons"]), 5, 8.0, school_names
+            ):
+                if features[school_index] and features[hero_index]:
+                    rows.append((features, targets))
+        x = np.asarray([row[0] for row in rows], dtype=np.float32)
+        normalized = (
+            (x - checkpoint["feature_mean"].numpy())
+            / checkpoint["feature_std"].numpy()
+        )
+        with torch.inference_mode():
+            residual = model(torch.from_numpy(normalized)).numpy()
+        predicted_displacement = np.linalg.norm(
+            residual[:, 3] * np.asarray([28, 15]), axis=1
+        )
+        damaged = x[:, damage_indices].max(axis=1) > 0.005
+        self.assertGreater(int(damaged.sum()), 5)
+        self.assertGreater(int((~damaged).sum()), 100)
+        self.assertGreater(
+            float(predicted_displacement[damaged].mean()),
+            float(predicted_displacement[~damaged].mean()) * 1.5,
+        )
+        self.assertLess(
+            float((predicted_displacement[damaged] < 0.75).mean()),
+            float((predicted_displacement[~damaged] < 0.75).mean()),
+        )
+
     @unittest.skipUnless(
         shutil.which("node") and CHECKPOINT.exists() and MANIFEST.exists() and WEIGHTS.exists(),
         "trained/exported Transformer artifacts are required",
@@ -60,10 +122,17 @@ class TrajectoryTransformerTests(unittest.TestCase):
             key for key, row in frames[second].items()
             if key[1] in ("英雄", "步兵3", "步兵4", "哨兵") and row[5] is not None
         )
-        features = np.asarray(
-            sample_features(frames, second, side, role, REGULATION_DURATION_S),
-            dtype=np.float32,
-        )
+        school_names = tuple(checkpoint.get("school_names", ()))
+        if school_names:
+            target_school = str(game["info"]["red" if side == "红" else "blue"])
+            opponent_school = str(game["info"]["blue" if side == "红" else "red"])
+            values = transformer_sample_features(
+                frames, second, side, role, REGULATION_DURATION_S,
+                target_school, opponent_school, school_names,
+            )
+        else:
+            values = sample_features(frames, second, side, role, REGULATION_DURATION_S)
+        features = np.asarray(values, dtype=np.float32)
         normalized = (features - checkpoint["feature_mean"].numpy()) / checkpoint["feature_std"].numpy()
         with torch.inference_mode():
             expected = model(torch.from_numpy(normalized[None]))[0].numpy().reshape(-1)

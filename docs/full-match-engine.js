@@ -372,6 +372,7 @@
       terrainSpeedMultiplier: 1,
       terrainAction: null,
       terrainMotionState: null,
+      policySource: "rules",
       nextDecisionAt: 1,
       targetKey: null,
       objectiveKey: null,
@@ -651,6 +652,15 @@
       },
       robots: [],
       events: [],
+      policy: {
+        active: Boolean(matchOptions?.transformerPolicy),
+        modelKind: matchOptions?.transformerPolicy?.metadata?.modelKind || "statistical_fallback",
+        parameterCount: Number(matchOptions?.transformerPolicy?.metadata?.parameterCount || 0),
+        horizon: Number(matchOptions?.transformerPolicy?.metadata?.horizon || 0),
+        decisions: 0,
+        fallbacks: 0,
+        constrained: 0,
+      },
       finished: false,
       winner: null,
       reason: null,
@@ -734,6 +744,9 @@
       const committedCount = armedRobots.filter((robot) => robot.outpostAssaultCommitted).length;
       state.teamState[side].outpostAssaultCount = committedCount;
     });
+    if (typeof state.options.transformerPolicy?.record === "function") {
+      state.options.transformerPolicy.record(state);
+    }
     event(state, "system", "start", `${state.codes.red} vs ${state.codes.blue} 完整沙盘开局`);
     return state;
   }
@@ -855,6 +868,7 @@
       return;
     }
     robot.objectiveKey = null;
+    robot.policySource = "rules";
     let target;
     let preplanned = null;
     let serviceRouteFailed = false;
@@ -906,12 +920,50 @@
     if (!target) {
       robot.serviceTarget = null;
       robot.mode = "tactic";
+      const forceServiceExit = Boolean(robot.serviceExitPending);
       const canonical = tacticalCanonicalGoal(state, robot);
-      target = canonicalPoint(canonical, robot.side);
+      const rulesTarget = canonicalPoint(canonical, robot.side);
+      let learned = null;
+      const policy = state.options.transformerPolicy;
+      // Confirmed structure missions and service exits remain constraints.
+      // Ordinary tactical positioning is selected by the trained Transformer.
+      if (typeof policy === "function" && !robot.tacticalIntent) {
+        try {
+          learned = policy(state, robot);
+        } catch (_error) {
+          learned = null;
+        }
+      }
+      const learnedTarget = learned?.target;
+      const learnedValid = Array.isArray(learnedTarget)
+        && learnedTarget.length === 2
+        && learnedTarget.every(Number.isFinite)
+        // A learned tactical destination may approach a service point but may
+        // never turn the interaction ellipse itself into a camping goal.
+        && !insideAnyServiceZone(
+          state.model, robot.side, learnedTarget, forceServiceExit ? 1.25 : 1.05,
+        );
+      if (learnedValid) {
+        target = [
+          clamp(Number(learnedTarget[0]), 0.1, 27.9),
+          clamp(Number(learnedTarget[1]), 0.1, 14.9),
+        ];
+        robot.policySource = "transformer";
+        state.policy.decisions += 1;
+      } else {
+        target = rulesTarget;
+        if (state.policy.active && state.second >= 5) {
+          if (robot.tacticalIntent || forceServiceExit) state.policy.constrained += 1;
+          else state.policy.fallbacks += 1;
+        }
+      }
       robot.status = robot.role === "工程"
-        ? `工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
+        ? robot.policySource === "transformer"
+          ? `Transformer 工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
+          : `工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
         : robot.tacticalIntent === "outpost" ? "前哨压制转点"
-          : robot.tacticalIntent === "base" ? "基地压制转点" : "战术转点";
+          : robot.tacticalIntent === "base" ? "基地压制转点"
+            : robot.policySource === "transformer" ? `Transformer ${Number(learned?.horizon || 10)}s 战术选点` : "战术转点";
     }
     const assembly = robot.mode === "technology_core" ? state.model.assembly_zones?.[robot.side] : null;
     const planned = assembly
@@ -1625,6 +1677,13 @@
         .map((robot) => [robot.key, [...robot.position]]),
     );
     updateUavSupport(state);
+    if (typeof state.options.transformerPolicy?.record === "function") {
+      try {
+        state.options.transformerPolicy.record(state);
+      } catch (_error) {
+        state.policy.fallbacks += 1;
+      }
+    }
     moveRobots(state);
     separateRobots(state);
     // The UI interpolates between per-second snapshots.  Although each route
@@ -1683,6 +1742,7 @@
           technologyCoreEarnedCoins: state.teamState.blue.technologyCore.earnedCoins,
         },
       },
+      policy: { ...state.policy },
       robots: state.robots.map((robot) => {
         const core = state.teamState[robot.side].technologyCore;
         const nextCore = nextTechnologyCoreTask(state, robot.side);
@@ -1715,6 +1775,7 @@
           technologyCoreNextLevel: nextCore?.level || null,
           technologyCorePlannedIn: nextCore ? Math.max(0, technologyCoreReadySecond(state, robot.side, nextCore) - state.second) : null,
           status: robot.status, targetKey: robot.targetKey, objectiveKey: robot.objectiveKey,
+          policySource: robot.policySource || "rules",
           terrainAction: robot.terrainAction,
           terrainSpeedMultiplier: robot.terrainSpeedMultiplier,
           serviceZone: robot.role === "空中" ? "" : (serviceZoneAt(state, robot, "heal") || serviceZoneAt(state, robot, "ammo"))?.[1]?.label || "",

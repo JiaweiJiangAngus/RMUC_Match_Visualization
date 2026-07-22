@@ -128,7 +128,7 @@
 
       <section class="full-sim-panel" aria-labelledby="full-sim-title">
         <div class="full-sim-heading">
-          <div><h3 id="full-sim-title">完整机器人沙盘</h3><p>每 1 秒完整结算 · 44 队分阶段实战先验 · 5 秒连续移动 · 地形约束寻路 · 交火、补给、科技核心与复活 · <a href="https://github.com/JiaweiJiangAngus/RMUC_Match_Visualization/blob/main/ml/README.md#怎么训练和修正沙盘行为" target="_blank" rel="noreferrer">训练/地形参数说明</a></p></div>
+          <div><h3 id="full-sim-title">完整机器人沙盘 · Temporal Transformer</h3><p>Transformer 10 秒战术选点 · 队伍/对手身份与受击响应 token · 地形规则约束寻路 · 交火、补给、科技核心与复活 · <a href="https://github.com/JiaweiJiangAngus/RMUC_Match_Visualization/blob/main/ml/README.md#怎么训练和修正沙盘行为" target="_blank" rel="noreferrer">训练/地形参数说明</a></p></div>
           <span id="full-sim-status">载入逐车参数…</span>
         </div>
         <div class="full-sim-toolbar">
@@ -227,10 +227,10 @@
   <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
-  <script src="./app.js?v=24"></script>
+  <script src="./app.js?v=25"></script>
   <script src="./terrain-router.js?v=7"></script>
-  <script src="./full-match-engine.js?v=18"></script>
-  <script src="./full-match-ui.js?v=22"></script>
+  <script src="./full-match-engine.js?v=19"></script>
+  <script src="./full-match-ui.js?v=23"></script>
   <script src="./match-simulator.js?v=3"></script>
 </body>
 </html>

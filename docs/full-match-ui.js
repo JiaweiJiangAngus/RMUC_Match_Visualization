@@ -429,6 +429,7 @@
           <div><span>复活状态</span><b>${robot.role === "空中" ? "不适用" : robot.respawnIn ? `${robot.respawnIn}s` : robot.weak ? "虚弱" : robot.invulnerable ? "无敌" : "正常"}</b></div>
           <div><span>所在补给区域</span><b>${robot.role === "空中" ? "不适用" : escapeHtml(robot.serviceZone || "无")}</b></div>
           <div><span>复活决策</span><b>${robot.role === "空中" ? "不适用" : robot.respawnMode === "reading" ? `读条 ${robot.respawnProgress}/${robot.respawnRequired}` : `买活 ${robot.buybacks} 次`}</b></div>
+          <div><span>当前选点控制器</span><b>${robot.role === "空中" ? "无人机状态机" : robot.policySource === "transformer" ? "Temporal Transformer" : "规则/任务约束"}</b></div>
           <div><span>无人机反制</span><b>${robot.role === "空中" ? `${robot.radarCounterCount}/5 · 剩 ${robot.radarCounteredIn}s` : "—"}</b></div>
           ${weaponModel}
           ${coreDetails}
@@ -504,7 +505,10 @@
       selectedKey = "red:英雄";
       elements.slider.max = "0";
       elements.seed.textContent = `seed ${seed}`;
-      elements.status.textContent = `实时推演已启动 · 1/${expectedSimulationFrames} 帧`;
+      const policyText = message.state.policy?.active
+        ? `Transformer ${formatNumber(message.state.policy.parameterCount)} 参数已接管战术选点`
+        : "Transformer 不可用 · 统计策略回退";
+      elements.status.textContent = `${policyText} · 1/${expectedSimulationFrames} 帧`;
       elements.status.className = "ready";
       elements.create.disabled = false;
       renderUi(true);
@@ -516,12 +520,14 @@
       if (!simulation) return;
       if (message.frames?.length) simulation.frames.push(...message.frames);
       if (message.events?.length) simulation.events.push(...message.events);
+      if (message.policy) simulation.state.policy = message.policy;
       simulationComplete = Boolean(message.complete);
       elements.slider.max = String(simulation.frames.length - 1);
       if (simulationComplete) {
-        elements.status.textContent = `${simulation.frames.length} 帧 · ${simulation.events.length} 事件 · 后台 ${Math.round(Number(message.latencyMs) || 0)}ms · 已生成`;
+        const policy = simulation.state.policy || {};
+        elements.status.textContent = `${simulation.frames.length} 帧 · Transformer 选点 ${formatNumber(policy.decisions || 0)} 次 · 规则约束 ${formatNumber(policy.constrained || 0)} 次 · 后台 ${Math.round(Number(message.latencyMs) || 0)}ms · 已生成`;
       } else {
-        elements.status.textContent = `实时推演中 · ${simulation.frames.length}/${expectedSimulationFrames} 帧 · 页面可操作`;
+        elements.status.textContent = `Transformer 实时推演 · ${simulation.frames.length}/${expectedSimulationFrames} 帧 · 已选点 ${formatNumber(simulation.state.policy?.decisions || 0)} 次`;
       }
       elements.status.className = "ready";
     }
@@ -536,7 +542,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=12");
+      const worker = new Worker("./full-match-worker.js?v=13");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;

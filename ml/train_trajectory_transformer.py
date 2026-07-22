@@ -5,11 +5,14 @@ from __future__ import annotations
 
 import argparse
 import copy
+import gzip
 import json
+import math
 import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Iterable, Iterator, Sequence
 
 import numpy as np
 import torch
@@ -24,13 +27,23 @@ try:
         FEATURE_NAMES,
         FIELD_HEIGHT_M,
         FIELD_WIDTH_M,
+        HISTORY_OFFSETS,
+        HP,
+        MOBILE_TYPES,
+        REGULATION_DURATION_S,
+        SIDES,
         TARGET_VX3_INDEX,
         TARGET_VY3_INDEX,
         TARGET_X_INDEX,
         TARGET_Y_INDEX,
-        build_split,
+        capped_rows,
+        canonical_xy,
         evaluate,
+        hp_ratio,
+        index_frame,
         load_group_splits,
+        sample_features,
+        valid_position,
     )
     from .trajectory_transformer import TemporalBattlefieldTransformer
 except ImportError:
@@ -40,19 +53,30 @@ except ImportError:
         FEATURE_NAMES,
         FIELD_HEIGHT_M,
         FIELD_WIDTH_M,
+        HISTORY_OFFSETS,
+        HP,
+        MOBILE_TYPES,
+        REGULATION_DURATION_S,
+        SIDES,
         TARGET_VX3_INDEX,
         TARGET_VY3_INDEX,
         TARGET_X_INDEX,
         TARGET_Y_INDEX,
-        build_split,
+        capped_rows,
+        canonical_xy,
         evaluate,
+        hp_ratio,
+        index_frame,
         load_group_splits,
+        sample_features,
+        valid_position,
     )
     from trajectory_transformer import TemporalBattlefieldTransformer  # type: ignore[no-redef]
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "ml" / "artifacts" / "trajectory_transformer.pt"
+DAMAGE_FEATURE_NAMES = tuple(f"target.hp_loss_{offset}" for offset in HISTORY_OFFSETS[1:])
 
 
 @dataclass(frozen=True)
@@ -62,6 +86,7 @@ class TransformerTrainConfig:
     horizons: tuple[int, ...]
     stride: int
     seed: int
+    split_seed: int
     max_train_samples: int
     max_val_samples: int
     max_test_samples: int
@@ -86,6 +111,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--horizons", type=int, nargs="+", default=DEFAULT_HORIZONS)
     parser.add_argument("--stride", type=int, default=5)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument(
+        "--split-seed", type=int, default=7803,
+        help="fixed match-group split selected for broader per-team validation/test coverage",
+    )
     parser.add_argument("--max-train-samples", type=int, default=300_000)
     parser.add_argument("--max-val-samples", type=int, default=60_000)
     parser.add_argument("--max-test-samples", type=int, default=80_000)
@@ -99,15 +128,151 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--max-step-m", type=float, default=8.0)
-    parser.add_argument("--d-model", type=int, default=64)
+    parser.add_argument("--d-model", type=int, default=96)
     parser.add_argument("--nhead", type=int, default=4)
-    parser.add_argument("--num-layers", type=int, default=2)
-    parser.add_argument("--dim-feedforward", type=int, default=128)
+    parser.add_argument("--num-layers", type=int, default=3)
+    parser.add_argument("--dim-feedforward", type=int, default=192)
     parser.add_argument("--dropout", type=float, default=0.10)
     return parser.parse_args()
 
 
-def sample_weights(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
+def collect_school_names(data_dir: Path) -> tuple[str, ...]:
+    catalog_path = data_dir.parent / "catalog.json"
+    with catalog_path.open(encoding="utf-8") as handle:
+        catalog = json.load(handle)
+    schools = {
+        str(item[side])
+        for rounds in catalog["rounds"].values()
+        for item in rounds
+        for side in ("red", "blue")
+    }
+    return tuple(sorted(schools))
+
+
+def transformer_feature_names(school_names: Sequence[str]) -> list[str]:
+    return [
+        *FEATURE_NAMES,
+        *DAMAGE_FEATURE_NAMES,
+        *(f"target.school.{school}" for school in school_names),
+        *(f"opponent.school.{school}" for school in school_names),
+    ]
+
+
+def transformer_sample_features(
+    frames: dict[int, dict[tuple[str, str], list]],
+    second: int,
+    target_side: str,
+    target_type: str,
+    duration: int,
+    target_school: str,
+    opponent_school: str,
+    school_names: Sequence[str],
+) -> list[float]:
+    values = sample_features(frames, second, target_side, target_type, duration)
+    current = frames[second][(target_side, target_type)]
+    current_hp = hp_ratio(current)
+    for offset in HISTORY_OFFSETS[1:]:
+        previous = frames[second - offset].get((target_side, target_type))
+        values.append(max(0.0, hp_ratio(previous) - current_hp))
+    values.extend(float(target_school == school) for school in school_names)
+    values.extend(float(opponent_school == school) for school in school_names)
+    return values
+
+
+def iter_transformer_samples(
+    path: Path,
+    horizons: Sequence[int],
+    stride: int,
+    max_step_m: float,
+    school_names: Sequence[str],
+) -> Iterator[tuple[list[float], list[tuple[float, float]]]]:
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        game = json.load(handle)
+    frames = {int(second): index_frame(rows) for second, rows in game["frames"].items()}
+    if not frames:
+        return
+    min_second, max_second = min(frames), max(frames)
+    max_history, max_horizon = max(HISTORY_OFFSETS), max(horizons)
+    start = min_second + max_history
+    stop = max_second - max_horizon
+    for second in range(start, stop + 1, stride):
+        required = [second - offset for offset in HISTORY_OFFSETS]
+        required.extend(second + horizon for horizon in horizons)
+        if any(value not in frames for value in required):
+            continue
+        for target_side in SIDES:
+            target_school = str(game["info"]["red" if target_side == "红" else "blue"])
+            opponent_school = str(game["info"]["blue" if target_side == "红" else "red"])
+            for target_type in MOBILE_TYPES:
+                key = (target_side, target_type)
+                target_rows = [
+                    frames[value].get(key)
+                    for value in range(second - max_history, second + max_horizon + 1)
+                ]
+                if any(not valid_position(row) or float(row[HP] or 0) <= 0 for row in target_rows):
+                    continue
+                positions = [canonical_xy(row, target_side) for row in target_rows]
+                if any(
+                    math.hypot(
+                        (right[0] - left[0]) * FIELD_WIDTH_M,
+                        (right[1] - left[1]) * FIELD_HEIGHT_M,
+                    ) > max_step_m
+                    for left, right in zip(positions, positions[1:])
+                ):
+                    continue
+                try:
+                    features = transformer_sample_features(
+                        frames, second, target_side, target_type,
+                        REGULATION_DURATION_S, target_school, opponent_school,
+                        school_names,
+                    )
+                except KeyError:
+                    continue
+                targets = [
+                    canonical_xy(frames[second + horizon][key], target_side)
+                    for horizon in horizons
+                ]
+                yield features, targets
+
+
+def build_transformer_split(
+    paths: Iterable[Path],
+    split: str,
+    horizons: Sequence[int],
+    stride: int,
+    max_step_m: float,
+    limit: int,
+    rng: np.random.Generator,
+    school_names: Sequence[str],
+) -> tuple[np.ndarray, np.ndarray]:
+    path_list = list(paths)
+    x_parts: list[np.ndarray] = []
+    y_parts: list[np.ndarray] = []
+    started = time.monotonic()
+    for index, path in enumerate(path_list, 1):
+        samples = list(iter_transformer_samples(
+            path, horizons, stride, max_step_m, school_names,
+        ))
+        if samples:
+            x_parts.append(np.asarray([item[0] for item in samples], dtype=np.float32))
+            y_parts.append(np.asarray([item[1] for item in samples], dtype=np.float32))
+        if index == 1 or index % 50 == 0 or index == len(path_list):
+            count = sum(len(part) for part in x_parts)
+            print(
+                f"[{split}] games {index}/{len(path_list)}, usable samples {count:,}, "
+                f"{time.monotonic() - started:.1f}s",
+                flush=True,
+            )
+    if not x_parts:
+        raise RuntimeError(f"split {split!r} contains no usable samples")
+    return capped_rows(np.concatenate(x_parts), np.concatenate(y_parts), limit, rng)
+
+
+def sample_weights(
+    features: np.ndarray,
+    targets: np.ndarray,
+    feature_names: Sequence[str] = FEATURE_NAMES,
+) -> np.ndarray:
     """Reduce stationary/service-zone domination without deleting evidence."""
     velocity = np.linalg.norm(
         features[:, [TARGET_VX3_INDEX, TARGET_VY3_INDEX]]
@@ -133,9 +298,19 @@ def sample_weights(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
         dy = (current_m[:, 1] - center[1]) / radius[1]
         service |= dx * dx + dy * dy <= 1
 
-    weights = np.where(velocity >= 0.15, 1.0, 0.38).astype(np.float32)
+    # Keep valid firing-position holds learnable.  Only stationary service-zone
+    # occupancy is strongly suppressed; this preserves behaviours such as a
+    # long-range hero holding an anchor until incoming damage forces movement.
+    weights = np.where(velocity >= 0.15, 1.0, 0.70).astype(np.float32)
     stationary_service = service & (final_displacement < 0.75)
-    weights[stationary_service] *= 0.20
+    weights[stationary_service] *= 0.10
+    damage_columns = [
+        feature_names.index(name) for name in DAMAGE_FEATURE_NAMES
+        if name in feature_names
+    ]
+    if damage_columns:
+        recently_damaged = features[:, damage_columns].max(axis=1) > 0.005
+        weights[recently_damaged] *= 1.50
     # Preserve a stable average learning rate after weighting.
     weights /= max(1e-6, float(weights.mean()))
     return weights
@@ -170,6 +345,7 @@ def main() -> None:
     config = TransformerTrainConfig(
         data_dir=str(args.data_dir.resolve()), output=str(args.output.resolve()),
         horizons=horizons, stride=args.stride, seed=args.seed,
+        split_seed=args.split_seed,
         max_train_samples=args.max_train_samples,
         max_val_samples=args.max_val_samples,
         max_test_samples=args.max_test_samples,
@@ -186,7 +362,9 @@ def main() -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
     rng = np.random.default_rng(args.seed)
-    splits = load_group_splits(args.data_dir, args.seed)
+    splits = load_group_splits(args.data_dir, args.split_seed)
+    school_names = collect_school_names(args.data_dir)
+    feature_names = transformer_feature_names(school_names)
     if args.max_games_per_split > 0:
         splits = {
             name: paths[:args.max_games_per_split]
@@ -203,9 +381,9 @@ def main() -> None:
         "test": args.max_test_samples,
     }
     arrays = {
-        split: build_split(
+        split: build_transformer_split(
             paths, split, horizons, args.stride, args.max_step_m,
-            limits[split], rng,
+            limits[split], rng, school_names,
         )
         for split, paths in splits.items()
     }
@@ -224,8 +402,8 @@ def main() -> None:
     val_target = y_val - x_val[:, [TARGET_X_INDEX, TARGET_Y_INDEX]][:, None]
     normalized_train = ((x_train - mean) / std).astype(np.float32, copy=False)
     normalized_val = ((x_val - mean) / std).astype(np.float32, copy=False)
-    train_weight = sample_weights(x_train, y_train)
-    val_weight = sample_weights(x_val, y_val)
+    train_weight = sample_weights(x_train, y_train, feature_names)
+    val_weight = sample_weights(x_val, y_val, feature_names)
     print(
         f"sample weighting: mean={train_weight.mean():.3f}, "
         f"min={train_weight.min():.3f}, max={train_weight.max():.3f}",
@@ -233,7 +411,7 @@ def main() -> None:
     )
 
     model_kwargs = {
-        "input_dim": len(FEATURE_NAMES), "horizon_count": len(horizons),
+        "input_dim": len(feature_names), "horizon_count": len(horizons),
         "d_model": args.d_model, "nhead": args.nhead,
         "num_layers": args.num_layers,
         "dim_feedforward": args.dim_feedforward, "dropout": args.dropout,
@@ -311,7 +489,8 @@ def main() -> None:
         "model_kind": "temporal_battlefield_transformer",
         "model_state": {key: value.cpu() for key, value in model.state_dict().items()},
         "model_kwargs": model_kwargs,
-        "feature_names": FEATURE_NAMES,
+        "feature_names": feature_names,
+        "school_names": school_names,
         "feature_mean": torch.from_numpy(mean),
         "feature_std": torch.from_numpy(std),
         "horizons": horizons,
@@ -323,8 +502,9 @@ def main() -> None:
         "parameter_count": parameter_count,
         "sample_counts": {split: len(value[0]) for split, value in arrays.items()},
         "sample_weighting": {
-            "stationary_weight": 0.38,
-            "stationary_service_multiplier": 0.20,
+            "stationary_weight": 0.70,
+            "stationary_service_multiplier": 0.10,
+            "recent_damage_multiplier": 1.50,
             "moving_threshold_mps": 0.15,
         },
         "test_metrics": metrics,
