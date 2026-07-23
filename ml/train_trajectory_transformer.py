@@ -77,6 +77,24 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "ml" / "artifacts" / "trajectory_transformer.pt"
 DAMAGE_FEATURE_NAMES = tuple(f"target.hp_loss_{offset}" for offset in HISTORY_OFFSETS[1:])
+CANONICAL_SERVICE_ZONES = (
+    {
+        "shape": "rectangle",
+        "center": (2.0, 1.65),
+        "radius": (1.85, 1.45),
+    },
+    {
+        "shape": "ellipse",
+        "center": (2.66, 7.5),
+        "radius": (1.8, 1.55),
+    },
+    {
+        "shape": "half_ellipse",
+        "center": (11.0, 3.25),
+        "radius": (1.55, 1.35),
+        "direction": (0.576, 0.817),
+    },
+)
 
 
 @dataclass(frozen=True)
@@ -286,17 +304,24 @@ def sample_weights(
         axis=1,
     )
     current_m = current * np.asarray([FIELD_WIDTH_M, FIELD_HEIGHT_M], dtype=np.float32)
-    # Canonical red-side service ellipses from the exported rules model.
-    zones = (
-        ((1.8, 1.55), (1.65, 1.3)),
-        ((2.66, 7.5), (1.25, 1.05)),
-        ((11.0, 3.25), (1.15, 0.9)),
-    )
     service = np.zeros(len(features), dtype=bool)
-    for center, radius in zones:
+    for zone in CANONICAL_SERVICE_ZONES:
+        center = zone["center"]
+        radius = zone["radius"]
         dx = (current_m[:, 0] - center[0]) / radius[0]
         dy = (current_m[:, 1] - center[1]) / radius[1]
-        service |= dx * dx + dy * dy <= 1
+        if zone["shape"] == "rectangle":
+            inside = (np.abs(dx) <= 1) & (np.abs(dy) <= 1)
+        else:
+            inside = dx * dx + dy * dy <= 1
+        if zone["shape"] == "half_ellipse":
+            direction = zone["direction"]
+            inside &= (
+                (current_m[:, 0] - center[0]) * direction[0]
+                + (current_m[:, 1] - center[1]) * direction[1]
+                >= 0
+            )
+        service |= inside
 
     # Keep valid firing-position holds learnable.  Only stationary service-zone
     # occupancy is strongly suppressed; this preserves behaviours such as a

@@ -35,18 +35,25 @@ class TrajectoryTransformerTests(unittest.TestCase):
         self.assertGreater(attention.in_proj_weight.numel(), 0)
 
     def test_stationary_service_samples_are_downweighted(self):
-        x = np.zeros((2, len(FEATURE_NAMES)), dtype=np.float32)
+        x = np.zeros((3, len(FEATURE_NAMES)), dtype=np.float32)
         target_x = FEATURE_NAMES.index("target.x")
         target_y = FEATURE_NAMES.index("target.y")
         velocity_x = FEATURE_NAMES.index("target.vx_3_norm_per_s")
-        x[0, target_x] = 1.8 / 28
-        x[0, target_y] = 1.55 / 15
-        x[1, target_x] = 14 / 28
-        x[1, target_y] = 7.5 / 15
-        x[1, velocity_x] = 1 / 28
+        # This corner is inside the rectangular supply zone but outside the
+        # old ellipse, so it protects the trained mask from regressing.
+        x[0, target_x] = 3.6 / 28
+        x[0, target_y] = 2.9 / 15
+        # This point is inside the full outpost ellipse but on the side facing
+        # away from the central highland, so it must not count as service.
+        x[1, target_x] = 10.2 / 28
+        x[1, target_y] = 2.2 / 15
+        x[2, target_x] = 14 / 28
+        x[2, target_y] = 7.5 / 15
+        x[2, velocity_x] = 1 / 28
         y = np.repeat(x[:, [target_x, target_y]][:, None], 5, axis=1)
         weights = sample_weights(x, y)
         self.assertLess(weights[0], weights[1])
+        self.assertLess(weights[0], weights[2])
 
     @unittest.skipUnless(CHECKPOINT.exists(), "trained Transformer checkpoint is required")
     def test_checkpoint_is_team_and_damage_conditioned(self):

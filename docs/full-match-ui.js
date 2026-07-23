@@ -200,7 +200,28 @@
       const radiusY = zone.radius[1] * FIELD_Y_SPAN * height / 15;
       const isSupply = Boolean(zone.heal);
       context.beginPath();
-      context.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
+      if (zone.shape === "rectangle") {
+        context.rect(x - radiusX, y - radiusY, radiusX * 2, radiusY * 2);
+      } else if (zone.shape === "half_ellipse") {
+        const direction = zone.direction || [1, 0];
+        const phase = Math.atan2(
+          zone.radius[1] * Number(direction[1]),
+          zone.radius[0] * Number(direction[0]),
+        );
+        context.moveTo(x, y);
+        for (let index = 0; index <= 32; index += 1) {
+          const angle = phase - Math.PI / 2 + Math.PI * index / 32;
+          const point = [
+            zone.center[0] + Math.cos(angle) * zone.radius[0],
+            zone.center[1] + Math.sin(angle) * zone.radius[1],
+          ];
+          const mapped = mapPoint(point[0], point[1], width, height);
+          context.lineTo(mapped[0], mapped[1]);
+        }
+        context.closePath();
+      } else {
+        context.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
+      }
       context.fillStyle = isSupply ? "rgba(56,211,159,.16)" : side === "red" ? "rgba(255,82,108,.11)" : "rgba(72,160,255,.11)";
       context.fill();
       context.setLineDash(isSupply ? [] : [4 * scale, 3 * scale]);
@@ -212,7 +233,7 @@
       context.font = `800 ${Math.max(7, 8 * scale)}px sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "bottom";
-      const label = isSupply ? "补血·补弹" : name === "base" ? "基地补弹" : "前哨下补弹";
+      const label = isSupply ? "整区补血·补弹" : name === "base" ? "基地区补弹" : "前哨高地侧补弹";
       context.fillText(label, x, y - radiusY - 2 * scale);
     }
 
@@ -363,7 +384,9 @@
         if (!profile) return "暂无队伍画像";
         const hero = profile.hero;
         const roles = profile.outpost.primary_roles.length ? profile.outpost.primary_roles.join("/") : "无固定兵种";
-        return `${HERO_ARCHETYPE_LABEL[hero.archetype] || hero.archetype}·${ENGAGEMENT_LABEL[hero.engagement_style] || hero.engagement_style} ${Number(hero.preferred_range_m).toFixed(1)}m·命中 ${(hero.accuracy_42mm * 100).toFixed(1)}%·前哨 ${roles}·空中份额 ${(profile.outpost.uav_attributed_share * 100).toFixed(1)}%`;
+        const baseMedian = profile.base?.first_any_damage_second?.median;
+        const baseTiming = baseMedian == null ? "基地首伤样本不足" : `基地首伤中位 ${formatNumber(baseMedian)}s`;
+        return `${HERO_ARCHETYPE_LABEL[hero.archetype] || hero.archetype}·${ENGAGEMENT_LABEL[hero.engagement_style] || hero.engagement_style} ${Number(hero.preferred_range_m).toFixed(1)}m·命中 ${(hero.accuracy_42mm * 100).toFixed(1)}%·前哨 ${roles}·空中份额 ${(profile.outpost.uav_attributed_share * 100).toFixed(1)}%·${baseTiming}`;
       };
       elements.stats.innerHTML = `
         <div class="full-stat-score"><div><strong>${escapeHtml(sideCode("red"))}</strong><span>红方</span></div><b>${formatNumber(frame.structures.red.base)} : ${formatNumber(frame.structures.blue.base)}</b><div class="blue"><strong>${escapeHtml(sideCode("blue"))}</strong><span>蓝方</span></div></div>
@@ -542,7 +565,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=13");
+      const worker = new Worker("./full-match-worker.js?v=14");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -678,7 +701,7 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=12").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=13").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
         fetch("./data/models/terrain_navigation.json?v=24").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;

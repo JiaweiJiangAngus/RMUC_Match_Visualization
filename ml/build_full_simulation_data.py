@@ -35,6 +35,8 @@ ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵", "空中")
 GROUND_ROLES = ROLES[:-1]
 PHASES = 7
 TARGET_PHASES = 14
+BASE_DAMAGE_BIN_SECONDS = 15
+BASE_DAMAGE_BINS = 420 // BASE_DAMAGE_BIN_SECONDS
 CORE_UNLOCK_SECONDS = (0, 60, 120, 180)
 CORE_FIRST_INCOME_PER_10 = (50, 25, 25, 50)
 # Total recurring core income after first completing Lv.1-Lv.4.  A little
@@ -490,6 +492,132 @@ def build_target_priors(
     return payload, destroy_seconds, attack_windows, role_evidence
 
 
+def build_base_damage_timing(
+    db: sqlite3.Connection,
+    schools: tuple[str, ...],
+    game_counts: dict[str, int],
+) -> dict[str, dict]:
+    """Learn when each team deals base damage, separated by damage source.
+
+    This is an empirical event-time model rather than scripted damage.  The
+    browser uses the direct-fire intensity only to weight legal in-range target
+    selection, while the dart intensity adjusts only legal dart windows.
+    """
+    allowed = set(schools)
+    events: dict[str, list[tuple[str, int, float, float, str]]] = {
+        "all_sources": [],
+        "direct_fire": [],
+        "dart": [],
+    }
+    for row in db.execute(
+        """
+        SELECT e.game_id,e.时刻秒,e.类别,ABS(e.数值) damage,
+               CASE
+                 WHEN e.学校名=m.红方学校 THEN m.蓝方学校
+                 WHEN e.学校名=m.蓝方学校 THEN m.红方学校
+               END attacker
+        FROM events e JOIN matches m USING(game_id)
+        WHERE e.事件类型='受击' AND e.机器人类型='基地'
+          AND e.类别 IN ('17mm','42mm','飞镖')
+        ORDER BY e.game_id,e.时刻秒
+        """
+    ):
+        school = row["attacker"]
+        if school not in allowed:
+            continue
+        second = clamp(float(row["时刻秒"] or 0), 0, 419.999)
+        item = (
+            school,
+            int(row["game_id"]),
+            second,
+            float(row["damage"] or 0),
+            row["类别"],
+        )
+        events["all_sources"].append(item)
+        events["dart" if row["类别"] == "飞镖" else "direct_fire"].append(item)
+
+    total_games = max(1, sum(int(game_counts.get(school, 0)) for school in schools))
+    payload: dict[str, dict] = {
+        school: {
+            "source": "区域赛基地受击事件；按对手学校反推攻击方，15 秒窗按参赛局数归一化",
+            "bin_seconds": BASE_DAMAGE_BIN_SECONDS,
+            "games": int(game_counts.get(school, 0)),
+        }
+        for school in schools
+    }
+
+    for source, source_events in events.items():
+        global_games_by_bin = [set() for _ in range(BASE_DAMAGE_BINS)]
+        for school, game_id, second, _, _ in source_events:
+            bin_index = min(BASE_DAMAGE_BINS - 1, int(second // BASE_DAMAGE_BIN_SECONDS))
+            global_games_by_bin[bin_index].add((school, game_id))
+        global_rates = [len(values) / total_games for values in global_games_by_bin]
+        global_mean_rate = max(1e-6, sum(global_rates) / BASE_DAMAGE_BINS)
+
+        by_school: dict[str, list[tuple[int, float, float, str]]] = defaultdict(list)
+        for school, game_id, second, damage, category in source_events:
+            by_school[school].append((game_id, second, damage, category))
+
+        for school in schools:
+            team_games = max(1, int(game_counts.get(school, 0)))
+            first_by_game: dict[int, float] = {}
+            games_by_bin = [set() for _ in range(BASE_DAMAGE_BINS)]
+            damage_by_bin = [0.0] * BASE_DAMAGE_BINS
+            hits_by_bin = [0] * BASE_DAMAGE_BINS
+            category_damage: Counter = Counter()
+            for game_id, second, damage, category in by_school.get(school, []):
+                first_by_game[game_id] = min(first_by_game.get(game_id, second), second)
+                bin_index = min(BASE_DAMAGE_BINS - 1, int(second // BASE_DAMAGE_BIN_SECONDS))
+                games_by_bin[bin_index].add(game_id)
+                damage_by_bin[bin_index] += damage
+                hits_by_bin[bin_index] += 1
+                category_damage[category] += damage
+            total_damage = sum(damage_by_bin)
+            first_seconds = list(first_by_game.values())
+            bins = []
+            for bin_index in range(BASE_DAMAGE_BINS):
+                observed_games = len(games_by_bin[bin_index])
+                observed_rate = observed_games / team_games
+                # Two global-equivalent games keep sparse teams distinct
+                # without making a single observed hit a deterministic script.
+                smoothed_rate = (
+                    observed_games + 2 * global_rates[bin_index]
+                ) / (team_games + 2)
+                bins.append({
+                    "start_second": bin_index * BASE_DAMAGE_BIN_SECONDS,
+                    "end_second": (bin_index + 1) * BASE_DAMAGE_BIN_SECONDS - 1,
+                    "attack_games": observed_games,
+                    "attack_game_rate": rounded(observed_rate, 4),
+                    "hit_events": hits_by_bin[bin_index],
+                    "damage": rounded(damage_by_bin[bin_index]),
+                    "damage_share": rounded(
+                        damage_by_bin[bin_index] / total_damage if total_damage else 0,
+                        4,
+                    ),
+                    "relative_intensity": rounded(
+                        clamp(smoothed_rate / global_mean_rate, 0.12, 4.0),
+                        4,
+                    ),
+                })
+            payload[school][source] = {
+                "attack_games": len(first_by_game),
+                "attack_game_rate": rounded(len(first_by_game) / team_games, 4),
+                "first_damage_second": {
+                    "samples": len(first_seconds),
+                    "p25": rounded(percentile(first_seconds, 0.25)) if first_seconds else None,
+                    "median": rounded(percentile(first_seconds, 0.5)) if first_seconds else None,
+                    "p75": rounded(percentile(first_seconds, 0.75)) if first_seconds else None,
+                },
+                "total_damage": rounded(total_damage),
+                "damage_share_by_weapon": {
+                    category: rounded(value / total_damage, 4)
+                    for category, value in sorted(category_damage.items())
+                } if total_damage else {},
+                "bins_15s": bins,
+            }
+    return payload
+
+
 def infer_hero_archetype_priors(
     db: sqlite3.Connection,
     schools: tuple[str, ...],
@@ -825,6 +953,7 @@ def main() -> None:
     target_priors, outpost_destroy_seconds, outpost_attack_windows, outpost_attack_roles = build_target_priors(
         db, schools, behavior_labels,
     )
+    base_damage_timing = build_base_damage_timing(db, schools, games)
 
     spawns: dict[tuple[str, str], list[float]] = {}
     for row in db.execute(
@@ -1028,6 +1157,12 @@ def main() -> None:
                 "uav_attributed_share": assault_roles["空中"]["share"],
                 "uav_commitment_probability": assault_roles["空中"]["commitment_probability"],
             },
+            "base": {
+                "direct_fire_game_rate": base_damage_timing[school]["direct_fire"]["attack_game_rate"],
+                "first_direct_damage_second": base_damage_timing[school]["direct_fire"]["first_damage_second"],
+                "all_source_game_rate": base_damage_timing[school]["all_sources"]["attack_game_rate"],
+                "first_any_damage_second": base_damage_timing[school]["all_sources"]["first_damage_second"],
+            },
             "movement": {
                 "speed_mps_by_role": {
                     role: role_payload[role]["speed_mps"] for role in ROLES
@@ -1039,6 +1174,7 @@ def main() -> None:
                 "games": games[school],
                 "hero_firing_seconds": hero_archetype_priors[school]["firing_seconds"],
                 "outpost_attack_games": outpost_attack_roles[school]["attack_games"],
+                "base_damage_games": base_damage_timing[school]["all_sources"]["attack_games"],
                 "uav_navigation_samples": uav_navigation[school]["samples"],
             },
         }
@@ -1056,6 +1192,7 @@ def main() -> None:
             "uav_counters_received_per_game": rounded(uav_counters_received[school] / max(1, games[school]), 3),
             "economy_prior": economy_priors[school],
             "target_prior_by_30s": target_priors[school],
+            "base_damage_timing": base_damage_timing[school],
             "outpost_destroy_seconds": outpost_destroy_seconds[school],
             "outpost_attack_windows": outpost_attack_windows[school],
             "outpost_attack_roles": outpost_attack_roles[school],
@@ -1066,7 +1203,7 @@ def main() -> None:
     db.close()
 
     payload = {
-        "schema_version": 11,
+        "schema_version": 12,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -1086,6 +1223,7 @@ def main() -> None:
                 "hero_archetype_and_engagement_range",
                 "weapon_accuracy_and_target_damage",
                 "outpost_role_attribution_and_commitment",
+                "team_base_damage_timing_by_source",
                 "ground_and_uav_movement",
                 "terrain_capability_and_motion_in_navigation_model",
             ],
@@ -1129,14 +1267,14 @@ def main() -> None:
         },
         "service_zones": {
             "red": {
-                "supply": {"center": [1.8, 1.55], "radius": [1.65, 1.3], "ammo": True, "heal": True, "label": "补给区"},
-                "base": {"center": [2.66, 7.5], "radius": [1.35, 1.35], "ammo": True, "heal": False, "label": "基地区"},
-                "outpost": {"center": [11.0, 3.25], "radius": [1.15, 1.0], "ammo": True, "heal": False, "label": "前哨站下"},
+                "supply": {"shape": "rectangle", "center": [2.0, 1.65], "radius": [1.85, 1.45], "target_inset_ratio": 0.82, "ammo": True, "heal": True, "label": "补给区整块区域"},
+                "base": {"shape": "ellipse", "center": [2.66, 7.5], "radius": [1.8, 1.55], "target_inset_ratio": 0.82, "target_inner_radius_ratio": 0.3, "ammo": True, "heal": False, "label": "基地区"},
+                "outpost": {"shape": "half_ellipse", "center": [11.0, 3.25], "radius": [1.55, 1.35], "direction": [0.576, 0.817], "target_inset_ratio": 0.82, "ammo": True, "heal": False, "label": "前哨高地侧半圆"},
             },
             "blue": {
-                "supply": {"center": [26.2, 13.45], "radius": [1.65, 1.3], "ammo": True, "heal": True, "label": "补给区"},
-                "base": {"center": [25.34, 7.5], "radius": [1.35, 1.35], "ammo": True, "heal": False, "label": "基地区"},
-                "outpost": {"center": [17.0, 11.75], "radius": [1.15, 1.0], "ammo": True, "heal": False, "label": "前哨站下"},
+                "supply": {"shape": "rectangle", "center": [26.0, 13.35], "radius": [1.85, 1.45], "target_inset_ratio": 0.82, "ammo": True, "heal": True, "label": "补给区整块区域"},
+                "base": {"shape": "ellipse", "center": [25.34, 7.5], "radius": [1.8, 1.55], "target_inset_ratio": 0.82, "target_inner_radius_ratio": 0.3, "ammo": True, "heal": False, "label": "基地区"},
+                "outpost": {"shape": "half_ellipse", "center": [17.0, 11.75], "radius": [1.55, 1.35], "direction": [-0.576, -0.817], "target_inset_ratio": 0.82, "ammo": True, "heal": False, "label": "前哨高地侧半圆"},
             },
         },
         "assembly_zones": {
@@ -1227,6 +1365,7 @@ def main() -> None:
             "structure-hit attacker roles are attributed from same-game, same-second, same-calibre shot events; simultaneous shooters share damage in proportion to shots",
             "ground goals are per-game-balanced 0.5 m position modes with stationary service dwell down-weighted; five-second transitions preserve local tactical continuity",
             "team target priorities are learned in 30-second phases; visible outpost assignments additionally require repeated role-level shot attribution evidence",
+            "base damage timing is learned per team in 15-second windows and separated into direct-fire and dart sources; it weights legal attacks but never applies scripted damage",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
             "fly-ramp alignment/stop/acceleration comes from official event windows; complete B3/R3 trajectories learn ascent/descent angles separately per school-role, with documented direction-specific global fallbacks",
             "navigation hard-blocks the user-annotated elevated regions and 16 terrain gates, but a full CAD-derived occupancy mask for every static wall and structure is not yet available",

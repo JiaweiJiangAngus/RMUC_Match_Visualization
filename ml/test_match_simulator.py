@@ -43,7 +43,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(11, self.model["schema_version"])
+        self.assertEqual(12, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -127,6 +127,34 @@ class FullSimulationDataTests(unittest.TestCase):
         self.assertLess(roles["步兵3"]["share"], 0.04)
         self.assertLess(roles["步兵4"]["share"], 0.08)
 
+    def test_every_team_has_learned_base_damage_timing_by_source(self):
+        signatures = set()
+        for team in self.model["teams"].values():
+            timing = team["base_damage_timing"]
+            self.assertEqual(15, timing["bin_seconds"])
+            self.assertEqual(team["games"], timing["games"])
+            for source in ("all_sources", "direct_fire", "dart"):
+                profile = timing[source]
+                self.assertEqual(28, len(profile["bins_15s"]))
+                self.assertEqual(
+                    profile["attack_games"],
+                    profile["first_damage_second"]["samples"],
+                )
+                self.assertGreaterEqual(profile["attack_game_rate"], 0)
+                self.assertLessEqual(profile["attack_game_rate"], 1)
+                for index, window in enumerate(profile["bins_15s"]):
+                    self.assertEqual(index * 15, window["start_second"])
+                    self.assertEqual(index * 15 + 14, window["end_second"])
+                    self.assertGreaterEqual(window["relative_intensity"], 0.12)
+                    self.assertLessEqual(window["relative_intensity"], 4)
+            direct = timing["direct_fire"]
+            signatures.add((
+                direct["attack_games"],
+                direct["first_damage_second"]["median"],
+                tuple(item["relative_intensity"] for item in direct["bins_15s"]),
+            ))
+        self.assertGreaterEqual(len(signatures), 40)
+
     def test_rule_parameters_cover_agent_state_transitions(self):
         rules = self.model["rules"]
         self.assertEqual("V2.1.0", self.model["ruleset"]["version"])
@@ -184,11 +212,23 @@ class FullSimulationDataTests(unittest.TestCase):
         for side in ("red", "blue"):
             zones = self.model["service_zones"][side]
             self.assertEqual({"supply", "base", "outpost"}, set(zones))
+            self.assertEqual("rectangle", zones["supply"]["shape"])
+            self.assertEqual("ellipse", zones["base"]["shape"])
+            self.assertEqual("half_ellipse", zones["outpost"]["shape"])
             self.assertTrue(zones["supply"]["ammo"])
             self.assertTrue(zones["supply"]["heal"])
             for name in ("base", "outpost"):
                 self.assertTrue(zones[name]["ammo"])
                 self.assertFalse(zones[name]["heal"])
+            outpost = zones["outpost"]
+            toward_center = [
+                14 - outpost["center"][0],
+                7.5 - outpost["center"][1],
+            ]
+            self.assertGreater(
+                sum(a * b for a, b in zip(toward_center, outpost["direction"])),
+                0,
+            )
 
     def test_national_economy_and_technology_core_rules_are_exact(self):
         rules = self.model["rules"]
@@ -369,6 +409,52 @@ function probeZone(name) {
   state.teamState.red.coins=1000;
   engine.resupplyRobots(state);
   return {hp:robot.hp,ammo:robot.ammo,weak:robot.weak};
+}
+function probeServiceGeometry() {
+  const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',20260723,router);
+  const zones=model.service_zones.red;
+  const supplyCorner=[
+    zones.supply.center[0]+zones.supply.radius[0]*0.88,
+    zones.supply.center[1]+zones.supply.radius[1]*0.88,
+  ];
+  const direction=zones.outpost.direction;
+  const directionLength=Math.hypot(...direction);
+  const unit=direction.map(value=>value/directionLength);
+  const toward=[
+    zones.outpost.center[0]+unit[0]*zones.outpost.radius[0]*0.65,
+    zones.outpost.center[1]+unit[1]*zones.outpost.radius[1]*0.65,
+  ];
+  const away=[
+    zones.outpost.center[0]-unit[0]*zones.outpost.radius[0]*0.65,
+    zones.outpost.center[1]-unit[1]*zones.outpost.radius[1]*0.65,
+  ];
+  const samples=Object.fromEntries(Object.entries(zones).map(([name,zone])=>{
+    const points=Array.from({length:32},()=>engine.sampleServicePoint(zone,state.random));
+    return [name,{
+      points,
+      allInside:points.every(point=>engine.insideZone(point,zone)),
+      unique:new Set(points.map(point=>point.map(value=>value.toFixed(4)).join(','))).size,
+      exactCenter:points.filter(point=>Math.hypot(point[0]-zone.center[0],point[1]-zone.center[1])<1e-6).length,
+    }];
+  }));
+  const hero=state.robots.find(item=>item.key==='red:英雄');
+  hero.position=[6,7.5];
+  const plans=Array.from({length:16},()=>engine.planServiceRoute(state,hero,'ammo'))
+    .filter(plan=>plan?.reachable)
+    .map(plan=>({
+      name:plan.service.name,
+      target:plan.interactionPoint,
+      inside:engine.insideZone(plan.interactionPoint,plan.service.zone),
+    }));
+  return {
+    shapes:Object.fromEntries(Object.entries(zones).map(([name,zone])=>[name,zone.shape])),
+    supplyCornerInside:engine.insideZone(supplyCorner,zones.supply),
+    outpostTowardInside:engine.insideZone(toward,zones.outpost),
+    outpostAwayInside:engine.insideZone(away,zones.outpost),
+    samples,
+    plans,
+    uniquePlanTargets:new Set(plans.map(plan=>plan.target.map(value=>value.toFixed(4)).join(','))).size,
+  };
 }
 function probeV210() {
   const heroState=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',1,router,{heroArchetypes:{red:'melee',blue:'ranged'}});
@@ -603,6 +689,27 @@ function probeBaseRules() {
     armorOpen:fortress.structures.blue.base.armorOpen,
   };
 }
+function probeBaseDamageTiming() {
+  const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',14,router);
+  const robot=state.robots.find(item=>item.key==='red:英雄');
+  state.structures.blue.outpost.hp=0;
+  state.teamState.red.baseTimingVariation=1;
+  const profile=model.teams[robot.school].base_damage_timing.direct_fire;
+  const targetPriors=model.teams[robot.school].target_prior_by_30s;
+  const saved=profile.bins_15s;
+  const savedOpening=targetPriors[0];
+  profile.bins_15s=Array.from({length:28},(_,index)=>({
+    relative_intensity:index===0 ? 0.12 : index===1 ? 4 : 1,
+  }));
+  targetPriors[0]={outpost_alive:{robot:.5,outpost:.5,base:0},outpost_down:{robot:.75,outpost:0,base:.25}};
+  state.second=5;
+  const low=engine.teamTargetPrior(state,robot);
+  state.second=20;
+  const high=engine.teamTargetPrior(state,robot);
+  profile.bins_15s=saved;
+  targetPriors[0]=savedOpening;
+  return {low,high};
+}
 function probeLearnedFlyRamp() {
   const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',31,router);
   state.robots.forEach(robot=>{if(robot.key!=='red:步兵3')robot.hp=0;});
@@ -686,7 +793,7 @@ function probeWallSeeds() {
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),enemyHalfServiceReturn:probeEnemyHalfServiceReturn(),baseRules:probeBaseRules(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,serviceGeometry:probeServiceGeometry(),v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),enemyHalfServiceReturn:probeEnemyHalfServiceReturn(),baseRules:probeBaseRules(),baseDamageTiming:probeBaseDamageTiming(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -696,6 +803,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.result = payload["first"]
         cls.deterministic = payload["deterministic"]
         cls.zones = payload["zones"]
+        cls.service_geometry = payload["serviceGeometry"]
         cls.v210 = payload["v210"]
         cls.uav_rules = payload["uavRules"]
         cls.technology_core = payload["technologyCore"]
@@ -703,6 +811,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.service_exit = payload["serviceExit"]
         cls.enemy_half_service_return = payload["enemyHalfServiceReturn"]
         cls.base_rules = payload["baseRules"]
+        cls.base_damage_timing = payload["baseDamageTiming"]
         cls.dart_rules = payload["dartRules"]
         cls.learned_fly_ramp = payload["learnedFlyRamp"]
         cls.wall_layers = payload["wallLayers"]
@@ -747,6 +856,12 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         self.assertEqual(0, probe["beforeUnlock"])
         self.assertEqual(20, probe["fortressSeconds"])
         self.assertTrue(probe["armorOpen"])
+
+    def test_learned_team_timing_changes_base_target_weight_without_scripted_damage(self):
+        probe = self.base_damage_timing
+        for prior in (probe["low"], probe["high"]):
+            self.assertAlmostEqual(1, sum(prior.values()), places=6)
+        self.assertGreater(probe["high"]["base"], probe["low"]["base"] * 10)
 
     def test_full_simulator_uses_exact_v210_dart_damage(self):
         for damage in (200, 300, 625, 1000):
@@ -834,6 +949,23 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         self.assertGreater(self.zones["supply"]["hp"], 100)
         self.assertGreater(self.zones["supply"]["ammo"], 0)
         self.assertFalse(self.zones["supply"]["weak"])
+
+    def test_service_regions_use_real_shapes_and_random_reachable_targets(self):
+        probe = self.service_geometry
+        self.assertEqual(
+            {"supply": "rectangle", "base": "ellipse", "outpost": "half_ellipse"},
+            probe["shapes"],
+        )
+        self.assertTrue(probe["supplyCornerInside"])
+        self.assertTrue(probe["outpostTowardInside"])
+        self.assertFalse(probe["outpostAwayInside"])
+        for sample in probe["samples"].values():
+            self.assertTrue(sample["allInside"])
+            self.assertGreaterEqual(sample["unique"], 24)
+            self.assertEqual(0, sample["exactCenter"])
+        self.assertGreaterEqual(len(probe["plans"]), 12)
+        self.assertTrue(all(plan["inside"] for plan in probe["plans"]))
+        self.assertGreaterEqual(probe["uniquePlanTargets"], 10)
 
     def test_v210_hero_modes_change_level_one_health(self):
         self.assertEqual({"melee": 260, "ranged": 200}, self.v210["heroHp"])

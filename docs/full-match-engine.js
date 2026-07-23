@@ -119,7 +119,44 @@
     const radius = zone.radius || [1, 1];
     const dx = (position[0] - zone.center[0]) / Math.max(0.01, radius[0]);
     const dy = (position[1] - zone.center[1]) / Math.max(0.01, radius[1]);
-    return dx * dx + dy * dy <= 1;
+    if (zone.shape === "rectangle") return Math.abs(dx) <= 1 && Math.abs(dy) <= 1;
+    const insideEllipse = dx * dx + dy * dy <= 1;
+    if (!insideEllipse || zone.shape !== "half_ellipse") return insideEllipse;
+    const direction = zone.direction || [1, 0];
+    const worldDx = position[0] - zone.center[0];
+    const worldDy = position[1] - zone.center[1];
+    return worldDx * Number(direction[0]) + worldDy * Number(direction[1]) >= -1e-6;
+  }
+
+  function sampleServicePoint(zone, random) {
+    const radius = zone.radius || [1, 1];
+    const inset = clamp(Number(zone.target_inset_ratio || 0.78), 0.2, 0.95);
+    const minimumRadius = clamp(Number(zone.target_inner_radius_ratio || 0), 0, inset * 0.9);
+    for (let attempt = 0; attempt < 48; attempt += 1) {
+      let x;
+      let y;
+      if (zone.shape === "rectangle") {
+        x = zone.center[0] + (random() * 2 - 1) * radius[0] * inset;
+        y = zone.center[1] + (random() * 2 - 1) * radius[1] * inset;
+      } else {
+        const radial = Math.sqrt(minimumRadius * minimumRadius
+          + random() * (inset * inset - minimumRadius * minimumRadius));
+        const angle = random() * Math.PI * 2;
+        x = zone.center[0] + Math.cos(angle) * radius[0] * radial;
+        y = zone.center[1] + Math.sin(angle) * radius[1] * radial;
+      }
+      const point = [x, y];
+      if (insideZone(point, zone)) return point;
+    }
+    if (zone.shape === "half_ellipse") {
+      const direction = zone.direction || [1, 0];
+      const length = Math.hypot(Number(direction[0]), Number(direction[1])) || 1;
+      return [
+        zone.center[0] + Number(direction[0]) / length * radius[0] * 0.45,
+        zone.center[1] + Number(direction[1]) / length * radius[1] * 0.45,
+      ];
+    }
+    return [...zone.center];
   }
 
   function serviceZoneAt(state, robot, capability) {
@@ -164,14 +201,18 @@
   }
 
   function planServiceRoute(state, robot, kind) {
-    const candidates = serviceCandidates(state, robot, kind);
+    const candidates = serviceCandidates(state, robot, kind).map((service) => ({
+      ...service,
+      interactionPoint: sampleServicePoint(service.zone, state.random),
+    }));
     const direct = candidates.map((service) => {
       const planned = state.router.terrainRoute(
-        state.navigation, robot.position, service.zone.center, robot.school, robot.role,
+        state.navigation, robot.position, service.interactionPoint, robot.school, robot.role,
       );
       return {
         service, planned,
-        reachable: routePlanReached(state, planned, service.zone.center),
+        interactionPoint: service.interactionPoint,
+        reachable: routePlanReached(state, planned, service.interactionPoint),
         length: routePlanLength(state, planned),
       };
     });
@@ -190,12 +231,13 @@
     if (routePlanReached(state, retreat, staging)) {
       const staged = candidates.map((service) => {
         const finalLeg = state.router.terrainRoute(
-          state.navigation, staging, service.zone.center, robot.school, robot.role,
+          state.navigation, staging, service.interactionPoint, robot.school, robot.role,
         );
         const planned = combineRoutePlans(retreat, finalLeg);
         return {
           service, planned,
-          reachable: routePlanReached(state, finalLeg, service.zone.center),
+          interactionPoint: service.interactionPoint,
+          reachable: routePlanReached(state, finalLeg, service.interactionPoint),
           length: routePlanLength(state, planned),
         };
       }).filter((item) => item.reachable)
@@ -213,6 +255,33 @@
     });
   }
 
+  function baseDamageTimingMultiplier(state, school, source = "direct_fire", side = null) {
+    const profile = state.model.teams[school]?.base_damage_timing?.[source];
+    const bins = profile?.bins_15s || [];
+    if (!bins.length) return 1;
+    const binSeconds = Math.max(1, Number(state.model.teams[school]?.base_damage_timing?.bin_seconds || 15));
+    const phase = Math.min(bins.length - 1, Math.floor(state.second / binSeconds));
+    const teamSide = side || SIDES.find((item) => state.schools?.[item] === school);
+    const variation = Number(
+      state.teamState?.[teamSide]?.baseTimingVariation || 1,
+    );
+    return clamp(Number(bins[Math.max(0, phase)]?.relative_intensity || 0.12) * variation, 0.12, 4);
+  }
+
+  function normalizedTargetPrior(prior) {
+    const values = {
+      robot: Math.max(0.0001, Number(prior.robot || 0)),
+      outpost: Math.max(0, Number(prior.outpost || 0)),
+      base: Math.max(0, Number(prior.base || 0)),
+    };
+    const total = values.robot + values.outpost + values.base || 1;
+    return {
+      robot: values.robot / total,
+      outpost: values.outpost / total,
+      base: values.base / total,
+    };
+  }
+
   function teamTargetPrior(state, robot) {
     const teamProfile = state.model.teams[robot.school];
     const priors = teamProfile.target_prior_by_30s || [];
@@ -222,18 +291,23 @@
     const basePrior = (outpostAlive ? entry.outpost_alive : entry.outpost_down)
       || entry
       || (outpostAlive ? { robot: 0.45, outpost: 0.55, base: 0 } : { robot: 0.75, outpost: 0, base: 0.25 });
-    if (!outpostAlive) return basePrior;
+    if (!outpostAlive) {
+      return normalizedTargetPrior({
+        ...basePrior,
+        base: Number(basePrior.base || 0) * baseDamageTimingMultiplier(state, robot.school, "direct_fire", robot.side),
+      });
+    }
     const roleEvidence = teamProfile.outpost_attack_roles?.roles?.[robot.role];
     if (!roleEvidence) return basePrior;
     // Keep rare observed attacks possible, but do not turn a team-level
     // outpost style into an equal scripted assignment for every infantry.
     const preference = clamp(Number(roleEvidence.outpost_preference || 0.02), 0.02, 1);
     const adjustedOutpost = Number(basePrior.outpost || 0) * preference * preference;
-    return {
+    return normalizedTargetPrior({
       robot: Number(basePrior.robot || 0) + Number(basePrior.outpost || 0) - adjustedOutpost,
       outpost: adjustedOutpost,
       base: Number(basePrior.base || 0),
-    };
+    });
   }
 
   function outpostAssaultActive(state, robot) {
@@ -679,6 +753,7 @@
         : null);
       const outpostObjectiveSecond = Number(sampledDestroy || 150);
       const outpostFirstHitObjectiveSecond = Number(sampledWindow?.first_hit_second || Math.min(30, outpostObjectiveSecond * 0.3));
+      const baseTimingRandom = mulberry32(hashSeed(`${seedValue}:${side}:${school}:base-timing`));
       state.teamState[side] = {
         coins: initialCoins,
         totalCoins: initialCoins,
@@ -691,6 +766,7 @@
         outpostAssaultStartSecond: Math.max(1, Math.round(outpostFirstHitObjectiveSecond - 8)),
         outpostAssaultCount: 0,
         outpostAssaultAnnounced: false,
+        baseTimingVariation: 0.86 + baseTimingRandom() * 0.28,
         weaponAccuracy: {
           "17mm": sampleMatchAccuracy(teamProfile, "17mm", state.random),
           "42mm": sampleMatchAccuracy(teamProfile, "42mm", state.random),
@@ -893,7 +969,7 @@
       } else {
         const service = servicePlan.service;
         robot.serviceRouteBlockedUntil = 0;
-        target = service.zone.center;
+        target = servicePlan.interactionPoint;
         preplanned = servicePlan.planned;
         if (!['heal', 'ammo'].includes(robot.mode) || robot.mode !== (healing ? "heal" : "ammo")) {
           robot.serviceModeStartedAt = state.second;
@@ -1587,10 +1663,13 @@
       const teamProfile = state.model.teams[state.schools[side]];
       const enemy = otherSide(side);
       state.teamState[side].dartWindows += 1;
-      const perWindow = clamp(Number(teamProfile.dart_hits_per_game || 0) / 4, 0, 0.95);
+      const target = state.structures[enemy].outpost.hp > 0 ? state.structures[enemy].outpost : state.structures[enemy].base;
+      const timingMultiplier = target.kind === "base"
+        ? baseDamageTimingMultiplier(state, state.schools[side], "dart", side)
+        : 1;
+      const perWindow = clamp(Number(teamProfile.dart_hits_per_game || 0) / 4 * timingMultiplier, 0, 0.95);
       event(state, side, "dart", "飞镖闸门开启");
       if (state.random() >= perWindow) return;
-      const target = state.structures[enemy].outpost.hp > 0 ? state.structures[enemy].outpost : state.structures[enemy].base;
       let nominal;
       let dartMode = null;
       if (target.kind === "outpost") {
@@ -1801,8 +1880,8 @@
 
   return {
     ROLE_ORDER, hashSeed, mulberry32, canonicalPoint, robotLevel, roleMaxHp,
-    insideZone, serviceZoneAt, planServiceRoute, reviveReadRequired, immediateReviveCost,
-    createMatch, stepMatch, chooseGoal, tacticalCanonicalGoal, targetCandidates,
+    insideZone, sampleServicePoint, serviceZoneAt, planServiceRoute, reviveReadRequired, immediateReviveCost,
+    createMatch, stepMatch, chooseGoal, tacticalCanonicalGoal, targetCandidates, teamTargetPrior,
     moveRobots, resupplyRobots, killRobot, respawnRobots,
     canShelterInAssembly, serviceRequiredForDecision,
     applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,
