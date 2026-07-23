@@ -221,14 +221,21 @@ class FullSimulationDataTests(unittest.TestCase):
                 self.assertTrue(zones[name]["ammo"])
                 self.assertFalse(zones[name]["heal"])
             outpost = zones["outpost"]
-            toward_center = [
-                14 - outpost["center"][0],
-                7.5 - outpost["center"][1],
+            enemy_base = self.model["structures"]["blue" if side == "red" else "red"]["base"]
+            toward_opponent = [
+                enemy_base[0] - outpost["center"][0],
+                enemy_base[1] - outpost["center"][1],
             ]
             self.assertGreater(
-                sum(a * b for a, b in zip(toward_center, outpost["direction"])),
+                sum(a * b for a, b in zip(toward_opponent, outpost["direction"])),
                 0,
             )
+            direction_length = sum(value * value for value in outpost["direction"]) ** 0.5
+            opponent_length = sum(value * value for value in toward_opponent) ** 0.5
+            cosine = sum(a * b for a, b in zip(toward_opponent, outpost["direction"])) / (
+                direction_length * opponent_length
+            )
+            self.assertGreater(cosine, 0.999)
 
     def test_national_economy_and_technology_core_rules_are_exact(self):
         rules = self.model["rules"]
@@ -524,7 +531,22 @@ function probeUavRules() {
   state.second=11;
   engine.updateUavSupport(state);
   const paid={support:uav.uavSupportSeconds,coins:state.teamState.red.coins,paidSeconds:uav.uavPaidSupportSeconds};
-  return {initial,excluded,free,paid};
+  const target=state.robots.find(item=>item.key==='blue:步兵3');
+  target.hp=target.maxHp;
+  uav.uavFlightState='parked';uav.uavSupportActive=false;
+  const beforeParked=target.hp;
+  engine.applyDamage(state,[{attacker:uav,target,hits:1,weapon:'17mm',damage:20}]);
+  const parkedDamage=beforeParked-target.hp;
+  uav.uavFlightState='airborne';uav.uavSupportActive=true;
+  engine.applyDamage(state,[{attacker:uav,target,hits:1,weapon:'17mm',damage:20}]);
+  const airborneDamage=beforeParked-target.hp;
+  uav.uavSupportSeconds=0;state.teamState.red.coins=0;state.second=12;
+  engine.updateUavSupport(state);
+  const beforeReturning=target.hp;
+  engine.applyDamage(state,[{attacker:uav,target,hits:1,weapon:'17mm',damage:20}]);
+  const returningDamage=beforeReturning-target.hp;
+  const returning={flight:uav.uavFlightState,support:uav.uavSupportActive};
+  return {initial,excluded,free,paid,parkedDamage,airborneDamage,returningDamage,returning};
 }
 function probeTechnologyCore() {
   const state=engine.createMatch(model,nav,'华南农业大学','中国石油大学（华东）',5,router);
@@ -719,8 +741,16 @@ function probeLearnedFlyRamp() {
   robot.ammo=100; robot.shotBudget=100; robot.shots=0; robot.mode='tactic';
   robot.terrainActions=planned.actions; robot.nextDecisionAt=999;
   const values=[];
-  for(let second=1;second<=12;second+=1){state.second=second;engine.moveRobots(state);values.push({multiplier:robot.terrainSpeedMultiplier,action:robot.terrainAction,x:robot.position[0]});}
-  return {profile:nav.teams['东北大学']['步兵3'].terrain_motion_profiles.fly_ramp,values};
+  let committedGoal=null;
+  let committedGoalPreserved=true;
+  for(let second=1;second<=12;second+=1){
+    state.second=second;
+    if(second===5){committedGoal=[...robot.goal];robot.nextDecisionAt=second;}
+    engine.moveRobots(state);
+    if(second===5)committedGoalPreserved=router.distance(committedGoal,robot.goal)<.001;
+    values.push({multiplier:robot.terrainSpeedMultiplier,action:robot.terrainAction,x:robot.position[0]});
+  }
+  return {profile:nav.teams['东北大学']['步兵3'].terrain_motion_profiles.fly_ramp,values,committedGoalPreserved};
 }
 function probeDartRules() {
   const schools=['东北大学','中国石油大学（华东）'];
@@ -844,6 +874,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         align_index = next(index for index, item in enumerate(values) if "起点对位" in (item["action"] or ""))
         accelerate_index = next(index for index, item in enumerate(values) if "加速" in (item["action"] or ""))
         self.assertLess(align_index, accelerate_index)
+        self.assertTrue(self.learned_fly_ramp["committedGoalPreserved"])
 
     def test_base_armor_damage_point_blank_targeting_and_fortress_unlock_follow_v210(self):
         probe = self.base_rules
@@ -1000,6 +1031,10 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         self.assertEqual({"hp": 1, "ammo": 123, "deaths": 0, "respawnMode": None}, rules["excluded"])
         self.assertEqual({"support": 0, "coins": 7}, rules["free"])
         self.assertEqual({"support": 0, "coins": 6, "paidSeconds": 1}, rules["paid"])
+        self.assertEqual(0, rules["parkedDamage"])
+        self.assertEqual(20, rules["airborneDamage"])
+        self.assertEqual(0, rules["returningDamage"])
+        self.assertEqual({"flight": "returning", "support": False}, rules["returning"])
 
     def test_technology_core_starts_from_equal_400_and_pays_every_ten_seconds(self):
         core = self.technology_core

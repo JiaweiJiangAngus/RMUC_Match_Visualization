@@ -21,7 +21,7 @@ const STRUCTURE_TYPES = ["基地", "前哨站"];
 const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
-const MODEL_URL = "./data/models/trajectory_transformer.json?v=3";
+const MODEL_URL = "./data/models/trajectory_transformer.json?v=4";
 const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=24";
 
 let modelPromise = null;

@@ -92,7 +92,9 @@ CANONICAL_SERVICE_ZONES = (
         "shape": "half_ellipse",
         "center": (11.0, 3.25),
         "radius": (1.55, 1.35),
-        "direction": (0.576, 0.817),
+        # The ammunition half faces the opposing base along the red/blue
+        # attack axis; it does not face the central highland.
+        "direction": (0.958778, 0.284157),
     },
 )
 

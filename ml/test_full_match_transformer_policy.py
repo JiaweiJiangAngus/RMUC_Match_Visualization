@@ -56,6 +56,42 @@ process.stdout.write(JSON.stringify({policy:state.policy,observed}));
         self.assertGreater(output["policy"]["decisions"], 20)
         self.assertGreater(output["observed"], 0)
 
+    def test_stationary_prediction_is_rejected_after_idle_but_long_range_anchor_is_preserved(self):
+        script = r"""
+const fs=require('fs');
+const engine=require('./docs/full-match-engine.js');
+const router=require('./docs/terrain-router.js');
+const simulation=JSON.parse(fs.readFileSync('./docs/data/models/full_simulation.json','utf8'));
+const navigation=JSON.parse(fs.readFileSync('./docs/data/models/terrain_navigation.json','utf8'));
+const stationary=(state,robot)=>({target:[...robot.position],horizon:10});
+stationary.metadata={modelKind:'test_transformer',parameterCount:1,horizon:10};
+const state=engine.createMatch(simulation,navigation,'东北大学','同济大学',71,router,{transformerPolicy:stationary});
+state.second=40;
+const infantry=state.robots.find(robot=>robot.key==='red:步兵3');
+infantry.position=[8,7.5];infantry.goal=[...infantry.position];infantry.route=[[...infantry.position]];
+infantry.hp=infantry.maxHp;infantry.weak=false;infantry.ammo=infantry.profile.magazine;infantry.shotBudget=999;
+infantry.lastMovedAt=0;infantry.lastFiredAt=-999;infantry.lastDamageAt=-999;
+engine.chooseGoal(state,infantry);
+const infantryResult={source:infantry.policySource,distance:router.distance(infantry.position,infantry.goal),status:infantry.status};
+const hero=state.robots.find(robot=>robot.key==='blue:英雄');
+hero.position=[20,7.5];hero.goal=[...hero.position];hero.route=[[...hero.position]];
+hero.hp=hero.maxHp;hero.weak=false;hero.ammo=hero.profile.magazine;hero.shotBudget=999;
+hero.lastMovedAt=0;hero.lastFiredAt=-999;hero.lastDamageAt=-999;
+engine.chooseGoal(state,hero);
+const heroResult={source:hero.policySource,distance:router.distance(hero.position,hero.goal),status:hero.status};
+process.stdout.write(JSON.stringify({infantryResult,heroResult}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=ROOT, text=True,
+            capture_output=True, check=True,
+        )
+        output = json.loads(result.stdout)
+        self.assertEqual("rules", output["infantryResult"]["source"])
+        self.assertGreater(output["infantryResult"]["distance"], 0.75)
+        self.assertIn("脱离静止收敛", output["infantryResult"]["status"])
+        self.assertEqual("transformer", output["heroResult"]["source"])
+        self.assertLess(output["heroResult"]["distance"], 0.01)
+
 
 if __name__ == "__main__":
     unittest.main()

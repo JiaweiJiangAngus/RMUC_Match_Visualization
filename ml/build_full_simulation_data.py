@@ -1269,12 +1269,12 @@ def main() -> None:
             "red": {
                 "supply": {"shape": "rectangle", "center": [2.0, 1.65], "radius": [1.85, 1.45], "target_inset_ratio": 0.82, "ammo": True, "heal": True, "label": "补给区整块区域"},
                 "base": {"shape": "ellipse", "center": [2.66, 7.5], "radius": [1.8, 1.55], "target_inset_ratio": 0.82, "target_inner_radius_ratio": 0.3, "ammo": True, "heal": False, "label": "基地区"},
-                "outpost": {"shape": "half_ellipse", "center": [11.0, 3.25], "radius": [1.55, 1.35], "direction": [0.576, 0.817], "target_inset_ratio": 0.82, "ammo": True, "heal": False, "label": "前哨高地侧半圆"},
+                "outpost": {"shape": "half_ellipse", "center": [11.0, 3.25], "radius": [1.55, 1.35], "direction": [0.958778, 0.284157], "target_inset_ratio": 0.82, "ammo": True, "heal": False, "label": "前哨对方侧半圆"},
             },
             "blue": {
                 "supply": {"shape": "rectangle", "center": [26.0, 13.35], "radius": [1.85, 1.45], "target_inset_ratio": 0.82, "ammo": True, "heal": True, "label": "补给区整块区域"},
                 "base": {"shape": "ellipse", "center": [25.34, 7.5], "radius": [1.8, 1.55], "target_inset_ratio": 0.82, "target_inner_radius_ratio": 0.3, "ammo": True, "heal": False, "label": "基地区"},
-                "outpost": {"shape": "half_ellipse", "center": [17.0, 11.75], "radius": [1.55, 1.35], "direction": [-0.576, -0.817], "target_inset_ratio": 0.82, "ammo": True, "heal": False, "label": "前哨高地侧半圆"},
+                "outpost": {"shape": "half_ellipse", "center": [17.0, 11.75], "radius": [1.55, 1.35], "direction": [-0.958778, -0.284157], "target_inset_ratio": 0.82, "ammo": True, "heal": False, "label": "前哨对方侧半圆"},
             },
         },
         "assembly_zones": {

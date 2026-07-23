@@ -342,6 +342,56 @@
     ];
   }
 
+  function purposefulTacticalHold(state, robot) {
+    if (state.second - Number(robot.lastFiredAt ?? -999) <= 8) return true;
+    // Tongji-style long-range heroes deliberately keep their firing anchor
+    // until hit.  Their stationary state is tactical, not model collapse.
+    return robot.role === "英雄"
+      && robot.profile.engagement_profile?.style === "long_range"
+      && state.second - Number(robot.lastDamageAt ?? -999) > 10;
+  }
+
+  function shouldEscapeTacticalIdle(state, robot) {
+    if (purposefulTacticalHold(state, robot)) return false;
+    const idleLimit = robot.role === "哨兵" ? 24 : 16;
+    const motionless = state.second - Number(robot.lastMovedAt ?? 0) >= idleLimit;
+    const routeBlocked = state.second - Number(robot.routeBlockedAt ?? -999) <= 3;
+    return motionless || routeBlocked;
+  }
+
+  function escapeCanonicalGoal(state, robot, forceServiceExit) {
+    const phase = Math.min(6, Math.floor(state.second / 60));
+    const current = canonicalPoint(robot.position, robot.side);
+    const transitions = robot.profile.transitions_by_minute?.[phase] || [];
+    const movingTransitions = transitions.map((edge) => {
+      const sourceDistance = state.router.distance(current, [Number(edge[0]), Number(edge[1])]);
+      const targetDistance = state.router.distance(current, [Number(edge[2]), Number(edge[3])]);
+      const adjustedWeight = Number(edge[4] || 1) / (0.35 + sourceDistance * sourceDistance);
+      return [...edge, adjustedWeight, sourceDistance, targetDistance];
+    }).filter((edge) => edge[6] <= 4.2 && edge[7] >= 1.15 && (
+      !forceServiceExit || !insideAnyServiceZone(state.model, "red", [Number(edge[2]), Number(edge[3])], 1.25)
+    ));
+    const transition = weightedItem(movingTransitions, 5, state.random);
+    const points = robot.profile.goals_by_minute[phase] || robot.profile.goals_by_minute.at(-1) || [];
+    const movingPoints = points.filter((point) => (
+      state.router.distance(current, [Number(point[0]), Number(point[1])]) >= 1.35
+      && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", [Number(point[0]), Number(point[1])], 1.25))
+    ));
+    let target = transition
+      ? [Number(transition[2]), Number(transition[3])]
+      : movingPoints.length
+        ? weightedPoint(movingPoints, state.random)
+        : [clamp(current[0] + (current[0] < 26 ? 2 : -2), 0.1, 27.9), clamp(current[1] + (state.random() - 0.5) * 2.4, 0.1, 14.9)];
+    target = [
+      clamp(target[0] + (state.random() - 0.5) * 0.34, 0.1, 27.9),
+      clamp(target[1] + (state.random() - 0.5) * 0.34, 0.1, 14.9),
+    ];
+    robot.tacticalIntent = null;
+    robot.objectiveKey = null;
+    robot.serviceExitPending = false;
+    return target;
+  }
+
   function tacticalCanonicalGoal(state, robot) {
     const phase = Math.min(6, Math.floor(state.second / 60));
     const current = canonicalPoint(robot.position, robot.side);
@@ -428,6 +478,9 @@
       weakUntil: 0,
       boostUntil: 0,
       lastDamageAt: -999,
+      lastMovedAt: 0,
+      lastFiredAt: -999,
+      routeBlockedAt: -999,
       radarCounterCount: 0,
       radarCounteredUntil: 0,
       radarCounterBuyouts: 0,
@@ -619,6 +672,9 @@
 
   function returnUav(state, robot, reason) {
     robot.uavFlightState = "returning";
+    // Returning is no longer active air support.  Disable it at the state
+    // transition, not only after the aircraft reaches the pad.
+    robot.uavSupportActive = false;
     robot.goal = uavHome(robot);
     robot.route = [[...robot.position], [...robot.goal]];
     robot.passages = ["无人机返航"];
@@ -640,7 +696,7 @@
         robot.uavSupportSeconds += grant;
         event(state, robot.side, "uav_support", `停机坪免费支援时间 +${grant}s，现有 ${Math.floor(robot.uavSupportSeconds)}s`);
       }
-      if (!robot.uavSupportActive || !["airborne", "returning"].includes(robot.uavFlightState)) return;
+      if (!robot.uavSupportActive || robot.uavFlightState !== "airborne") return;
       if (robot.uavSupportSeconds > 0) {
         robot.uavSupportSeconds = Math.max(0, robot.uavSupportSeconds - 1);
         return;
@@ -997,7 +1053,11 @@
       robot.serviceTarget = null;
       robot.mode = "tactic";
       const forceServiceExit = Boolean(robot.serviceExitPending);
-      const canonical = tacticalCanonicalGoal(state, robot);
+      const escapeIdle = shouldEscapeTacticalIdle(state, robot);
+      const routeWasBlocked = state.second - Number(robot.routeBlockedAt ?? -999) <= 3;
+      const canonical = escapeIdle
+        ? escapeCanonicalGoal(state, robot, forceServiceExit)
+        : tacticalCanonicalGoal(state, robot);
       const rulesTarget = canonicalPoint(canonical, robot.side);
       let learned = null;
       const policy = state.options.transformerPolicy;
@@ -1011,6 +1071,9 @@
         }
       }
       const learnedTarget = learned?.target;
+      const learnedDistance = Array.isArray(learnedTarget) && learnedTarget.length === 2
+        ? state.router.distance(robot.position, learnedTarget)
+        : 0;
       const learnedValid = Array.isArray(learnedTarget)
         && learnedTarget.length === 2
         && learnedTarget.every(Number.isFinite)
@@ -1018,7 +1081,10 @@
         // never turn the interaction ellipse itself into a camping goal.
         && !insideAnyServiceZone(
           state.model, robot.side, learnedTarget, forceServiceExit ? 1.25 : 1.05,
-        );
+        )
+        // A temporal model is allowed to hold a real firing anchor, but an
+        // inactive robot cannot repeatedly accept a near-zero displacement.
+        && (!escapeIdle || (!routeWasBlocked && learnedDistance >= 0.75));
       if (learnedValid) {
         target = [
           clamp(Number(learnedTarget[0]), 0.1, 27.9),
@@ -1029,7 +1095,7 @@
       } else {
         target = rulesTarget;
         if (state.policy.active && state.second >= 5) {
-          if (robot.tacticalIntent || forceServiceExit) state.policy.constrained += 1;
+          if (robot.tacticalIntent || forceServiceExit || escapeIdle) state.policy.constrained += 1;
           else state.policy.fallbacks += 1;
         }
       }
@@ -1037,7 +1103,8 @@
         ? robot.policySource === "transformer"
           ? `Transformer 工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
           : `工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
-        : robot.tacticalIntent === "outpost" ? "前哨压制转点"
+        : escapeIdle ? "脱离静止收敛 · 重新转点"
+          : robot.tacticalIntent === "outpost" ? "前哨压制转点"
           : robot.tacticalIntent === "base" ? "基地压制转点"
             : robot.policySource === "transformer" ? `Transformer ${Number(learned?.horizon || 10)}s 战术选点` : "战术转点";
     }
@@ -1155,6 +1222,8 @@
       if (!start || !crossesForbiddenTerrainGate(state, robot, start, robot.position)) return;
       robot.position = [...start];
       robot.route = [[...start]];
+      robot.lastMovedAt = Number(robot.movementClockBeforeStep ?? robot.lastMovedAt ?? 0);
+      robot.routeBlockedAt = state.second;
       robot.nextDecisionAt = state.second;
       robot.terrainAction = null;
       robot.terrainSpeedMultiplier = 1;
@@ -1211,13 +1280,22 @@
       }
       updateRobotLevel(state, robot);
       if (robot.hp <= 0) return;
+      robot.movementClockBeforeStep = Number(robot.lastMovedAt ?? 0);
       const requiresService = serviceRequiredForDecision(state, robot);
       const serviceChanged = requiresService && !["heal", "ammo"].includes(robot.mode);
       const recovered = !requiresService && ["heal", "ammo"].includes(robot.mode);
       const serviceInvalid = ["heal", "ammo"].includes(robot.mode)
         && robot.serviceTarget === "outpost"
         && state.structures[robot.side].outpost.hp <= 0;
-      if (state.second >= robot.nextDecisionAt || !robot.route?.length || serviceChanged || recovered || serviceInvalid) chooseGoal(state, robot);
+      // Do not replace a route while the chassis is physically inside a
+      // directional terrain manoeuvre.  Replanning halfway across a fly ramp
+      // can ask the robot to leave through the forbidden reverse direction
+      // and permanently pin it at the ramp lip.
+      const committedTerrainTraversal = Boolean(robot.terrainAction && robot.route?.length > 1);
+      if (!committedTerrainTraversal
+        && (state.second >= robot.nextDecisionAt || !robot.route?.length || serviceChanged || recovered || serviceInvalid)) {
+        chooseGoal(state, robot);
+      }
       const nominalSpeed = Number(robot.profile.speed_mps) * (robot.weak ? 0.88 : 1) * (robot.hp / robot.maxHp < 0.25 ? 0.9 : 1);
       const previousTerrainAction = robot.terrainAction;
       const rawTerrain = state.router.terrainMotion
@@ -1239,6 +1317,7 @@
       const previous = robot.position;
       if (crossesForbiddenSymmetricGate(state, robot, previous, moved.position)) {
         robot.route = [[...previous]];
+        robot.routeBlockedAt = state.second;
         robot.nextDecisionAt = state.second;
         robot.status = "围挡/地形门禁阻止 · 重新规划";
       } else {
@@ -1246,6 +1325,7 @@
         robot.route = moved.route;
       }
       if (state.router.distance(previous, robot.position) > 0.01) {
+        robot.lastMovedAt = state.second;
         robot.yaw = Math.atan2(robot.position[1] - previous[1], robot.position[0] - previous[0]) * 180 / Math.PI;
       }
     });
@@ -1441,6 +1521,7 @@
       robot.ammo -= shots;
       robot.heat += shots * heatPerShot;
       robot.shots += shots;
+      robot.lastFiredAt = state.second;
       robot.hits += hits;
       robot.targetKey = target.entity.key;
       robot.status = target.type === "robot" ? `对枪 ${target.entity.role}` : `攻击${target.entity.kind === "base" ? "基地" : "前哨"}`;
@@ -1459,6 +1540,14 @@
 
   function applyDamage(state, pending) {
     pending.forEach((hit) => {
+      // Keep the flight-state invariant at settlement too.  This prevents a
+      // stale/deferred hit (or another caller) from attributing ground damage
+      // to an aircraft that is parked, returning, out of support or locked.
+      if (hit.attacker?.role === "空中" && (
+        hit.attacker.uavFlightState !== "airborne"
+        || !hit.attacker.uavSupportActive
+        || state.second < Number(hit.attacker.radarCounteredUntil || 0)
+      )) return;
       // V2.1.0: 空中机器人不适用攻击伤害和撞击伤害。
       if (hit.target.role === "空中") return;
       if (hit.target.invulnerableUntil > state.second || hit.target.assemblyProtected) return;
@@ -1483,7 +1572,10 @@
       else stats.robotDamage += actual;
       if (actual >= 80 || hit.target.hp <= 0) {
         const targetName = hit.target.role || (hit.target.kind === "base" ? "基地" : "前哨站");
-        event(state, hit.attacker.side, "hit", `${hit.attacker.role} ${hit.hits} 发${hit.weapon}命中${targetName}，伤害 ${Math.round(actual)}`);
+        event(state, hit.attacker.side, "hit", `${hit.attacker.role} ${hit.hits} 发${hit.weapon}命中${targetName}，伤害 ${Math.round(actual)}`, {
+          attacker: hit.attacker.key,
+          attackerUavFlightState: hit.attacker.role === "空中" ? hit.attacker.uavFlightState : null,
+        });
       }
       if (hit.target.hp <= 0) {
         if (hit.target.role) killRobot(state, hit.target, hit.attacker);
@@ -1520,6 +1612,7 @@
     robot.respawnMode = "buyback";
     robot.respawnProgress = 0;
     robot.respawnedAt = state.second;
+    robot.lastMovedAt = state.second;
     robot.weak = true;
     robot.weakKind = "buyback";
     robot.weakUntil = state.second + Number(rules.buyback_weak_seconds || 3);
@@ -1563,6 +1656,7 @@
     robot.respawnAt = null;
     robot.respawnMode = "timed";
     robot.respawnedAt = state.second;
+    robot.lastMovedAt = state.second;
     robot.invulnerableUntil = state.second + Number(rules.timed_invulnerable_seconds || 30);
     robot.weak = true;
     robot.weakKind = "timed";

@@ -233,7 +233,7 @@
       context.font = `800 ${Math.max(7, 8 * scale)}px sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "bottom";
-      const label = isSupply ? "整区补血·补弹" : name === "base" ? "基地区补弹" : "前哨高地侧补弹";
+      const label = isSupply ? "整区补血·补弹" : name === "base" ? "基地区补弹" : "前哨对方侧补弹";
       context.fillText(label, x, y - radiusY - 2 * scale);
     }
 
@@ -565,7 +565,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=14");
+      const worker = new Worker("./full-match-worker.js?v=15");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -701,7 +701,7 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=13").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=14").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
         fetch("./data/models/terrain_navigation.json?v=24").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
