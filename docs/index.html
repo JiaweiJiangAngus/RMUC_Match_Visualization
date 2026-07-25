@@ -13,7 +13,7 @@
       document.documentElement.dataset.background = background === "simple" ? "simple" : "fancy";
     })();
   </script>
-  <link rel="stylesheet" href="./app.css?v=23">
+  <link rel="stylesheet" href="./app.css?v=24">
 </head>
 <body>
   <div class="animated-backdrop" aria-hidden="true">
@@ -34,6 +34,7 @@
         <button class="dataset-tab" type="button" data-scroll-target="status"><b>02</b> 双方状态</button>
         <button class="dataset-tab" type="button" data-scroll-target="events"><b>03</b> 比赛事件</button>
         <button class="dataset-tab" type="button" data-scroll-target="simulator"><b>04</b> 对局模拟</button>
+        <a class="dataset-tab" href="./heatmap.html"><b>05</b> 战队热图</a>
       </nav>
       <div class="display-controls" aria-label="显示设置">
         <button id="memory-toggle" class="display-button" type="button">记忆 开</button>
@@ -79,21 +80,13 @@
         <section class="map-stage panel">
           <div class="map-heading">
             <div><h2>实时战场 · 俯视图</h2><p>TDT Client 2026 战场地图 · 中央 15m 坐标区 · 最近 5 秒轨迹</p></div>
-            <div class="map-actions"><span id="map-match-label"></span><button id="heatmap-toggle" type="button" aria-pressed="false">热图模式</button><button id="map-fullscreen" type="button">全屏地图</button></div>
-          </div>
-          <div class="heatmap-toolbar" aria-label="机器人热图设置" hidden>
-            <label><span>热图范围</span><select id="heatmap-mode"><option value="full">整局热图</option><option value="window">当前 15s 热图</option></select></label>
-            <label><span>队伍</span><select id="heatmap-team"><option value="both">双方</option><option value="red">红方</option><option value="blue">蓝方</option></select></label>
-            <label><span>机器人</span><select id="heatmap-role"><option value="all">全部机器人</option><option value="英雄">英雄</option><option value="工程">工程</option><option value="步兵3">步兵3</option><option value="步兵4">步兵4</option><option value="哨兵">哨兵</option><option value="空中">空中</option></select></label>
-            <button id="heatmap-canonical" type="button" aria-pressed="false">统一红方 关</button>
-            <button id="heatmap-play" type="button">▶ 15s 热图</button>
-            <span id="heatmap-status">整局热图</span>
+            <div class="map-actions"><span id="map-match-label"></span><button id="map-fullscreen" type="button">全屏地图</button></div>
           </div>
           <div class="map-wrap"><canvas id="map-canvas" aria-label="战场地图"></canvas></div>
           <div class="map-legend">
             <span class="red-dot"></span><span id="red-legend">红方</span>
             <span class="blue-dot"></span><span id="blue-legend">蓝方</span>
-            <span id="map-mode-note" class="map-note">预测虚线与箭头：未来 10 秒可达路径　地形方向与队伍能力已纳入寻路</span>
+            <span class="map-note">预测虚线与箭头：未来 10 秒可达路径　地形方向与队伍能力已纳入寻路</span>
             <b id="map-time">T + 001s</b>
           </div>
         </section>
@@ -230,12 +223,13 @@
     <button type="button" data-scroll-target="status"><b>▤</b><span>状态</span></button>
     <button type="button" data-scroll-target="events"><b>≋</b><span>事件</span></button>
     <button type="button" data-scroll-target="simulator"><b>♟</b><span>模拟</span></button>
+    <a href="./heatmap.html"><b>▦</b><span>热图</span></a>
   </nav>
 
   <div id="loading" class="loading"><div class="spinner"></div><strong>正在读取比赛数据…</strong></div>
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
-  <script src="./app.js?v=29"></script>
+  <script src="./app.js?v=30"></script>
   <script src="./terrain-router.js?v=8"></script>
   <script src="./full-match-engine.js?v=22"></script>
   <script src="./full-match-ui.js?v=26"></script>
