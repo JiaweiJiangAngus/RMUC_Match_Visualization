@@ -201,6 +201,13 @@ def main() -> None:
                     "exit_clearance_m": 0.18,
                     "straight_runup_source": "team_role_terrain_motion_profile",
                 },
+                "road_step": {
+                    "low_side_approach_m": 0.75,
+                    "high_side_clearance_m": 0.28,
+                    "high_side_depth_m": 0.55,
+                    "centerward_terminal_shift_m": 1.15,
+                    "source": "field_geometry_and_user_corrected_B3_R3_staging_depth",
+                },
                 "central_highland_400mm_jump": {
                     "perpendicular_entry_required": True,
                     "straight_runup_m": 1.35,

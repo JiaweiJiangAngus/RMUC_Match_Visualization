@@ -352,7 +352,7 @@
     return allowed[0] || null;
   }
 
-  function straightRoadStepSegment(gate, start, end) {
+  function straightRoadStepSegment(navigation, gate, start, end) {
     const blocker = gateRoutingBlocker(gate);
     const xs = gate.polygon.map((point) => point[0]);
     const ys = blocker.map((point) => point[1]);
@@ -365,9 +365,31 @@
       ? (crossingY - start[1]) / (end[1] - start[1]) : 0.5;
     const crossingX = clamp(start[0] + (end[0] - start[0]) * ratio, minX, maxX);
     const positiveY = end[1] > start[1];
-    const entry = [crossingX, positiveY ? minY - 0.08 : maxY + 0.08];
-    const exit = [crossingX, positiveY ? maxY + 0.08 : minY - 0.08];
-    return [start, entry, exit, end];
+    const profile = navigation.routing?.terrain_route_profiles?.road_step || {};
+    const lowApproach = clamp(Number(profile.low_side_approach_m || 0.75), 0.25, 1.2);
+    const highClearance = clamp(Number(profile.high_side_clearance_m || 0.28), 0.12, 0.7);
+    const highDepth = clamp(Number(profile.high_side_depth_m || 0.55), 0.35, 1.2);
+    const centerward = clamp(Number(profile.centerward_terminal_shift_m || 1.15), 0.3, 1.5);
+    const highPositiveY = gate.high_direction === "positive_y";
+    const low = [
+      crossingX,
+      highPositiveY ? minY - lowApproach : maxY + lowApproach,
+    ];
+    const highLip = [
+      crossingX,
+      highPositiveY ? maxY + highClearance : minY - highClearance,
+    ];
+    // The B3/R3 high-side staging point is not glued to the lip.  It extends
+    // further across the broad second-level step and shifts toward midfield;
+    // the same point is the final point after ascent and the run-up point
+    // before descent.
+    const highTerminal = [
+      crossingX + Math.sign(14 - crossingX) * centerward,
+      clamp(highPositiveY ? maxY + highDepth : minY - highDepth, 0.18, 14.82),
+    ];
+    return positiveY === highPositiveY
+      ? [start, low, highLip, highTerminal, end]
+      : [start, highTerminal, highLip, low, end];
   }
 
   function straightFlyRampSegment(navigation, gate, start, end, capabilities) {
@@ -444,7 +466,7 @@
       const segment = blockers.length
         ? routeAvoiding(navigation, start, end, blockers)
         : alignedFlyRamp ? straightFlyRampSegment(navigation, alignedFlyRamp, start, end, capabilities)
-          : alignedRoadStep ? straightRoadStepSegment(alignedRoadStep, start, end) : [start, end];
+          : alignedRoadStep ? straightRoadStepSegment(navigation, alignedRoadStep, start, end) : [start, end];
       // routeAvoiding returns only the start when no legal path exists.  Never
       // append the forbidden endpoint in that case; doing so turned a failed
       // detour into a straight traversal through the obstacle.

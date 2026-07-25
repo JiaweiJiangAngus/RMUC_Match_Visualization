@@ -43,7 +43,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(12, self.model["schema_version"])
+        self.assertEqual(13, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -51,6 +51,19 @@ class FullSimulationDataTests(unittest.TestCase):
                 self.assertEqual(7, len(role["goals_by_minute"]))
                 self.assertEqual(7, len(role["hp_by_minute"]))
                 self.assertGreater(role["speed_mps"], 0)
+
+    def test_contextual_target_classifier_is_embedded_for_all_published_teams(self):
+        target = self.model["target_selection_model"]
+        self.assertEqual("contextual_target_mlp", target["model_kind"])
+        self.assertEqual(set(self.model["teams"]), set(target["teams"]))
+        self.assertEqual(["英雄", "步兵3", "步兵4", "哨兵", "空中"], target["roles"])
+        self.assertEqual(["robot", "outpost", "base"], target["targets"])
+        self.assertEqual(44, target["input_layout"]["team_one_hot"])
+        self.assertEqual(220, target["input_layout"]["team_role_one_hot"])
+        self.assertGreater(target["parameter_count"], 10000)
+        self.assertGreater(target["metrics"]["test"]["weighted_accuracy"], 0.75)
+        for kind in ("robot", "outpost", "base"):
+            self.assertGreater(target["metrics"]["test"]["per_target"][kind]["samples"], 0)
 
     def test_all_44_teams_have_distinct_data_driven_behavior_profiles(self):
         coverage = self.model["team_behavior_coverage"]
@@ -720,6 +733,8 @@ function probeBaseDamageTiming() {
   const targetPriors=model.teams[robot.school].target_prior_by_30s;
   const saved=profile.bins_15s;
   const savedOpening=targetPriors[0];
+  const savedContextual=model.target_selection_model;
+  model.target_selection_model=null;
   profile.bins_15s=Array.from({length:28},(_,index)=>({
     relative_intensity:index===0 ? 0.12 : index===1 ? 4 : 1,
   }));
@@ -730,7 +745,38 @@ function probeBaseDamageTiming() {
   const high=engine.teamTargetPrior(state,robot);
   profile.bins_15s=saved;
   targetPriors[0]=savedOpening;
+  model.target_selection_model=savedContextual;
   return {low,high};
+}
+function probeContextualTargetPolicy() {
+  const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',20260725,router);
+  const robot=state.robots.find(item=>item.key==='red:英雄');
+  state.second=20;
+  robot.position=[14,7.5];
+  robot.hp=robot.maxHp;
+  robot.weak=false;
+  robot.recentDamage=[];
+  state.teamState.red.coins=1200;
+  const opening=engine.teamTargetPrior(state,robot);
+  const openingSource=robot.targetPolicySource;
+
+  state.second=405;
+  robot.position=[24.3,7.5];
+  robot.hp=robot.maxHp*.22;
+  robot.weak=true;
+  robot.recentDamage=[[403,robot.maxHp*.35]];
+  state.teamState.red.coins=40;
+  state.structures.red.base.hp=state.structures.red.base.maxHp*.12;
+  state.structures.red.outpost.hp=0;
+  state.structures.blue.base.hp=state.structures.blue.base.maxHp*.24;
+  state.structures.blue.outpost.hp=0;
+  state.robots.filter(item=>item.side==='blue'&&item.role!=='空中').forEach((item,index)=>{
+    if(index>0)item.hp=0;
+  });
+  const endgame=engine.teamTargetPrior(state,robot);
+  const endgameSource=robot.targetPolicySource;
+  const delta=['robot','outpost','base'].reduce((sum,key)=>sum+Math.abs(opening[key]-endgame[key]),0);
+  return {opening,endgame,openingSource,endgameSource,delta};
 }
 function probeLearnedFlyRamp() {
   const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',31,router);
@@ -823,7 +869,7 @@ function probeWallSeeds() {
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,serviceGeometry:probeServiceGeometry(),v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),enemyHalfServiceReturn:probeEnemyHalfServiceReturn(),baseRules:probeBaseRules(),baseDamageTiming:probeBaseDamageTiming(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,serviceGeometry:probeServiceGeometry(),v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),enemyHalfServiceReturn:probeEnemyHalfServiceReturn(),baseRules:probeBaseRules(),baseDamageTiming:probeBaseDamageTiming(),contextualTargetPolicy:probeContextualTargetPolicy(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -842,6 +888,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.enemy_half_service_return = payload["enemyHalfServiceReturn"]
         cls.base_rules = payload["baseRules"]
         cls.base_damage_timing = payload["baseDamageTiming"]
+        cls.contextual_target_policy = payload["contextualTargetPolicy"]
         cls.dart_rules = payload["dartRules"]
         cls.learned_fly_ramp = payload["learnedFlyRamp"]
         cls.wall_layers = payload["wallLayers"]
@@ -893,6 +940,15 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         for prior in (probe["low"], probe["high"]):
             self.assertAlmostEqual(1, sum(prior.values()), places=6)
         self.assertGreater(probe["high"]["base"], probe["low"]["base"] * 10)
+
+    def test_contextual_target_policy_reacts_to_live_match_state(self):
+        probe = self.contextual_target_policy
+        self.assertEqual("contextual_target_mlp", probe["openingSource"])
+        self.assertEqual("contextual_target_mlp", probe["endgameSource"])
+        for prior in (probe["opening"], probe["endgame"]):
+            self.assertAlmostEqual(1, sum(prior.values()), places=6)
+        self.assertEqual(0, probe["endgame"]["outpost"])
+        self.assertGreater(probe["delta"], 0.05)
 
     def test_full_simulator_uses_exact_v210_dart_damage(self):
         for damage in (200, 300, 625, 1000):

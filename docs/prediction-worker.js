@@ -6,7 +6,7 @@
 // for old cached pages.
 let sharedTerrainRouter = globalThis.RMUCTerrainRouter || null;
 if (!sharedTerrainRouter && typeof importScripts === "function") {
-  importScripts("./terrain-router.js?v=7");
+  importScripts("./terrain-router.js?v=8");
   sharedTerrainRouter = globalThis.RMUCTerrainRouter || null;
 }
 if (!sharedTerrainRouter && typeof module === "object" && module.exports) {
@@ -22,7 +22,7 @@ const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
 const MODEL_URL = "./data/models/trajectory_transformer.json?v=4";
-const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=24";
+const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=25";
 
 let modelPromise = null;
 
@@ -476,12 +476,21 @@ function bestGate(candidates,start,end,abilities,ascending) {
   allowed.sort((a,b)=>distance(start,a.outside)+distance(a.inside,end)-distance(start,b.outside)-distance(b.inside,end));
   return allowed[0]||null;
 }
-function straightRoadStepSegment(gate,start,end) {
+function straightRoadStepSegment(navigation,gate,start,end) {
   const blocker=gateRoutingBlocker(gate),xs=gate.polygon.map(point=>point[0]),ys=blocker.map(point=>point[1]);
   const minX=Math.min(...xs)+.1,maxX=Math.max(...xs)-.1,minY=Math.min(...ys),maxY=Math.max(...ys),crossingY=(minY+maxY)/2;
   const ratio=Math.abs(end[1]-start[1])>1e-6?(crossingY-start[1])/(end[1]-start[1]):.5;
   const crossingX=clamp(start[0]+(end[0]-start[0])*ratio,minX,maxX),positiveY=end[1]>start[1];
-  return [start,[crossingX,positiveY?minY-.08:maxY+.08],[crossingX,positiveY?maxY+.08:minY-.08],end];
+  const profile=navigation.routing?.terrain_route_profiles?.road_step||{};
+  const lowApproach=clamp(Number(profile.low_side_approach_m||.75),.25,1.2);
+  const highClearance=clamp(Number(profile.high_side_clearance_m||.28),.12,.7);
+  const highDepth=clamp(Number(profile.high_side_depth_m||.55),.35,1.2);
+  const centerward=clamp(Number(profile.centerward_terminal_shift_m||1.15),.3,1.5);
+  const highPositiveY=gate.high_direction==="positive_y";
+  const low=[crossingX,highPositiveY?minY-lowApproach:maxY+lowApproach];
+  const highLip=[crossingX,highPositiveY?maxY+highClearance:minY-highClearance];
+  const highTerminal=[crossingX+Math.sign(14-crossingX)*centerward,clamp(highPositiveY?maxY+highDepth:minY-highDepth,.18,14.82)];
+  return positiveY===highPositiveY?[start,low,highLip,highTerminal,end]:[start,highTerminal,highLip,low,end];
 }
 function applyDirectionalGates(navigation,route,capabilities,passages) {
   const watched=navigation.gates.filter(gate=>["fly_ramp","road_step","rough_road","road_tunnel","highland_tunnel"].includes(gate.category));
@@ -508,7 +517,7 @@ function applyDirectionalGates(navigation,route,capabilities,passages) {
       }
     }
     for(const polygon of blockers)if(!encounteredBlockers.includes(polygon))encounteredBlockers.push(polygon);
-    const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):alignedRoadStep?straightRoadStepSegment(alignedRoadStep,start,end):[start,end];
+    const segment=blockers.length?routeAvoiding(navigation,start,end,blockers):alignedRoadStep?straightRoadStepSegment(navigation,alignedRoadStep,start,end):[start,end];
     if(segment.length>1)for(const point of segment.slice(1))pushPoint(output,point);
   }
   return {route:output,blockers:encounteredBlockers};

@@ -181,7 +181,7 @@ console.log(JSON.stringify({
     const fly=router.terrainRoute(nav,[16,14.7],[12,14.7],'东北大学','步兵3');
     return {
       up:router.terrainMotion(nav,up.route[1],up.route.slice(1),up.actions,2),
-      down:router.terrainMotion(nav,down.route[1],down.route.slice(1),down.actions,2),
+      down:router.terrainMotion(nav,down.route[2],down.route.slice(2),down.actions,2),
       fly:router.terrainMotion(nav,fly.route[2],fly.route.slice(2),fly.actions,2),
     };
   })()
@@ -240,11 +240,23 @@ console.log(JSON.stringify({
         self.assertIn("B3下公路台阶", self.result["roadStepDescent"]["passages"])
 
     def test_road_step_model_aligns_ascent_and_descent_straight_through_gate(self):
-        for key in ("alignedRoadStepAscent", "alignedRoadStepDescent"):
-            value = self.result[key]
+        ascent = self.result["alignedRoadStepAscent"]
+        descent = self.result["alignedRoadStepDescent"]
+        for value in (ascent, descent):
             self.assertFalse(value["corrected"])
-            self.assertEqual(4, value["points"])
-            self.assertAlmostEqual(value["route"][1][0], value["route"][2][0], places=6)
+            self.assertEqual(5, value["points"])
+            self.assertTrue(all(0 <= point[0] <= 28 and 0 <= point[1] <= 15 for point in value["route"]))
+        ascent_low, ascent_lip, ascent_terminal = ascent["route"][1:4]
+        descent_terminal, descent_lip, descent_low = descent["route"][1:4]
+        self.assertAlmostEqual(ascent_low[0], ascent_lip[0], places=6)
+        self.assertAlmostEqual(descent_lip[0], descent_low[0], places=6)
+        self.assertLess(abs(ascent_terminal[0] - 14), abs(ascent_lip[0] - 14))
+        self.assertLess(abs(descent_terminal[0] - 14), abs(descent_lip[0] - 14))
+        self.assertGreater(
+            ((ascent_terminal[0] - ascent_low[0]) ** 2 + (ascent_terminal[1] - ascent_low[1]) ** 2) ** .5,
+            3.0,
+        )
+        self.assertAlmostEqual(ascent_terminal[0], descent_terminal[0], places=2)
         profile = self.result["roadStepMotionProfile"]
         self.assertEqual("team_role", profile["source_scope"])
         self.assertGreaterEqual(profile["samples"], 5)

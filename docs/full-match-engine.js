@@ -282,7 +282,7 @@
     };
   }
 
-  function teamTargetPrior(state, robot) {
+  function fallbackTargetPrior(state, robot) {
     const teamProfile = state.model.teams[robot.school];
     const priors = teamProfile.target_prior_by_30s || [];
     const phase = Math.min(priors.length - 1, Math.floor(state.second / 30));
@@ -308,6 +308,101 @@
       outpost: adjustedOutpost,
       base: Number(basePrior.base || 0),
     });
+  }
+
+  function targetSelectionFeatures(state, robot) {
+    const enemySide = otherSide(robot.side);
+    const ownStructures = state.structures[robot.side];
+    const enemyStructures = state.structures[enemySide];
+    const enemyGround = state.robots.filter((target) => (
+      target.side === enemySide && target.role !== "空中" && target.hp > 0
+    ));
+    const nearestEnemy = enemyGround.length
+      ? Math.min(...enemyGround.map((target) => state.router.distance(robot.position, target.position)))
+      : Math.hypot(28, 15);
+    const recentDamage = (robot.recentDamage || [])
+      .filter((item) => state.second - item[0] <= 5)
+      .reduce((sum, item) => sum + Number(item[1] || 0), 0);
+    const fieldDiagonal = Math.hypot(28, 15);
+    return [
+      clamp(state.second / 420, 0, 1),
+      clamp(1 - state.second / 420, 0, 1),
+      clamp(robot.hp / Math.max(1, robot.maxHp), 0, 1.25),
+      clamp(recentDamage / Math.max(1, robot.maxHp), 0, 1),
+      clamp(ownStructures.base.hp / Math.max(1, ownStructures.base.maxHp), 0, 1.25),
+      clamp(ownStructures.outpost.hp / Math.max(1, ownStructures.outpost.maxHp), 0, 1.25),
+      clamp(enemyStructures.base.hp / Math.max(1, enemyStructures.base.maxHp), 0, 1.25),
+      clamp(enemyStructures.outpost.hp / Math.max(1, enemyStructures.outpost.maxHp), 0, 1.25),
+      enemyGround.length / 5,
+      clamp(state.router.distance(robot.position, enemyStructures.base.position) / fieldDiagonal, 0, 1),
+      clamp(state.router.distance(robot.position, enemyStructures.outpost.position) / fieldDiagonal, 0, 1),
+      clamp(nearestEnemy / fieldDiagonal, 0, 1),
+      clamp(Number(state.teamState[robot.side].coins || 0) / 2000, 0, 1),
+      robot.weak ? 1 : 0,
+    ];
+  }
+
+  function contextualTargetPrior(state, robot) {
+    const model = state.model.target_selection_model;
+    if (!model?.layers?.length || !robot.profile.weapon) return null;
+    const teamIndex = model.teams?.indexOf(robot.school);
+    const roleIndex = model.roles?.indexOf(robot.role);
+    if (teamIndex < 0 || roleIndex < 0) return null;
+    const numeric = targetSelectionFeatures(state, robot).map((value, index) => (
+      (value - Number(model.feature_mean[index] || 0)) / Math.max(1e-4, Number(model.feature_std[index] || 1))
+    ));
+    const input = [
+      ...numeric,
+      ...model.teams.map((_, index) => index === teamIndex ? 1 : 0),
+      ...model.roles.map((_, index) => index === roleIndex ? 1 : 0),
+      ...Array.from(
+        { length: model.teams.length * model.roles.length },
+        (_, index) => index === teamIndex * model.roles.length + roleIndex ? 1 : 0,
+      ),
+    ];
+    const hiddenLayer = model.layers[0];
+    const hidden = hiddenLayer.weight.map((weights, row) => Math.max(
+      0,
+      weights.reduce((sum, weight, index) => sum + Number(weight) * input[index], Number(hiddenLayer.bias[row] || 0)),
+    ));
+    const outputLayer = model.layers[1];
+    const logits = outputLayer.weight.map((weights, row) => weights.reduce(
+      (sum, weight, index) => sum + Number(weight) * hidden[index],
+      Number(outputLayer.bias[row] || 0),
+    ));
+    const peak = Math.max(...logits);
+    const exponentials = logits.map((value) => Math.exp(value - peak));
+    const total = exponentials.reduce((sum, value) => sum + value, 0) || 1;
+    const probabilities = Object.fromEntries(
+      model.targets.map((target, index) => [target, exponentials[index] / total]),
+    );
+    if (state.structures[otherSide(robot.side)].outpost.hp <= 0) probabilities.outpost = 0;
+    return normalizedTargetPrior(probabilities);
+  }
+
+  function teamTargetPrior(state, robot) {
+    const fallback = fallbackTargetPrior(state, robot);
+    const learned = contextualTargetPrior(state, robot);
+    if (!learned) {
+      robot.targetPolicySource = "phase_fallback";
+      robot.targetPolicyPrior = fallback;
+      return fallback;
+    }
+    const samples = Number(
+      state.model.target_selection_model.team_role_samples?.[robot.school]?.[robot.role] || 0,
+    );
+    const learnedWeight = clamp(0.58 + Math.log10(1 + samples) * 0.075, 0.58, 0.88);
+    let result = normalizedTargetPrior({
+      robot: learned.robot * learnedWeight + fallback.robot * (1 - learnedWeight),
+      outpost: learned.outpost * learnedWeight + fallback.outpost * (1 - learnedWeight),
+      base: learned.base * learnedWeight + fallback.base * (1 - learnedWeight),
+    });
+    if (state.structures[otherSide(robot.side)].outpost.hp <= 0) {
+      result = normalizedTargetPrior({ ...result, outpost: 0 });
+    }
+    robot.targetPolicySource = "contextual_target_mlp";
+    robot.targetPolicyPrior = result;
+    return result;
   }
 
   function outpostAssaultActive(state, robot) {
@@ -404,7 +499,13 @@
     robot.tacticalIntent = null;
     robot.objectiveKey = null;
     const committedAssault = objectiveType === "outpost" && outpostAssaultActive(state, robot);
-    if (robot.profile.weapon && (
+    const campaign = state.teamState[robot.side];
+    const observedOpeningCampaign = objectiveType === "outpost"
+      && Number(campaign.outpostAssaultCount || 0) > 0
+      && state.second >= Math.max(1, Number(campaign.outpostAssaultStartSecond || 1) - 8)
+      && state.second <= Number(campaign.outpostObjectiveSecond || 150) + 35;
+    const reservedForObservedRoles = observedOpeningCampaign && !robot.outpostAssaultCommitted;
+    if (robot.profile.weapon && !reservedForObservedRoles && (
       committedAssault || state.random() < Math.min(0.92, Number(prior[objectiveType] || 0) * 0.95)
     )) {
       robot.serviceExitPending = false;
@@ -478,6 +579,7 @@
       weakUntil: 0,
       boostUntil: 0,
       lastDamageAt: -999,
+      recentDamage: [],
       lastMovedAt: 0,
       lastFiredAt: -999,
       routeBlockedAt: -999,
@@ -500,6 +602,8 @@
       terrainAction: null,
       terrainMotionState: null,
       policySource: "rules",
+      targetPolicySource: "phase_fallback",
+      targetPolicyPrior: { robot: 1, outpost: 0, base: 0 },
       nextDecisionAt: 1,
       targetKey: null,
       objectiveKey: null,
@@ -1564,6 +1668,11 @@
       const actual = Math.min(hit.target.hp, damage);
       hit.target.hp = Math.max(0, hit.target.hp - actual);
       if (hit.target.role) hit.target.lastDamageAt = state.second;
+      if (hit.target.role) {
+        hit.target.recentDamage = (hit.target.recentDamage || [])
+          .filter((item) => state.second - item[0] <= 5);
+        hit.target.recentDamage.push([state.second, actual]);
+      }
       hit.attacker.damage += actual;
       const stats = state.stats[hit.attacker.side];
       stats.damage += actual;
@@ -1949,6 +2058,8 @@
           technologyCorePlannedIn: nextCore ? Math.max(0, technologyCoreReadySecond(state, robot.side, nextCore) - state.second) : null,
           status: robot.status, targetKey: robot.targetKey, objectiveKey: robot.objectiveKey,
           policySource: robot.policySource || "rules",
+          targetPolicySource: robot.targetPolicySource || "phase_fallback",
+          targetPolicyPrior: { ...(robot.targetPolicyPrior || { robot: 1, outpost: 0, base: 0 }) },
           terrainAction: robot.terrainAction,
           terrainSpeedMultiplier: robot.terrainSpeedMultiplier,
           serviceZone: robot.role === "空中" ? "" : (serviceZoneAt(state, robot, "heal") || serviceZoneAt(state, robot, "ammo"))?.[1]?.label || "",

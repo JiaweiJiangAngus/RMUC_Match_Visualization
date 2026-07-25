@@ -31,6 +31,7 @@ DEFAULT_MACRO = ROOT / "docs" / "data" / "models" / "match_simulation.json"
 DEFAULT_OUTPUT = ROOT / "docs" / "data" / "models" / "full_simulation.json"
 DEFAULT_GAMES_DIR = ROOT / "docs" / "data" / "games"
 DEFAULT_BEHAVIOR_LABELS = ROOT / "analysis" / "manual_team_behavior_labels.csv"
+DEFAULT_TARGET_MODEL = ROOT / "ml" / "artifacts" / "target_selection_model.json"
 ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵", "空中")
 GROUND_ROLES = ROLES[:-1]
 PHASES = 7
@@ -75,6 +76,7 @@ def args() -> argparse.Namespace:
     parser.add_argument("--macro", type=Path, default=DEFAULT_MACRO)
     parser.add_argument("--games-dir", type=Path, default=DEFAULT_GAMES_DIR)
     parser.add_argument("--behavior-labels", type=Path, default=DEFAULT_BEHAVIOR_LABELS)
+    parser.add_argument("--target-model", type=Path, default=DEFAULT_TARGET_MODEL)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -873,6 +875,16 @@ def build_uav_navigation(db: sqlite3.Connection, schools: tuple[str, ...]) -> di
 def main() -> None:
     options = args()
     schools = tuple(entry.school for entry in TEAMS)
+    if not options.target_model.exists():
+        raise FileNotFoundError(
+            f"missing contextual target model: {options.target_model}; "
+            "run python3 ml/train_target_selection_model.py first"
+        )
+    target_selection_model = json.loads(options.target_model.read_text(encoding="utf-8"))
+    if target_selection_model.get("model_kind") != "contextual_target_mlp":
+        raise ValueError("target-selection artifact is not a contextual_target_mlp")
+    if set(target_selection_model.get("teams", ())) != set(schools):
+        raise ValueError("target-selection artifact does not cover the same 44 schools")
     entries = {entry.school: entry for entry in TEAMS}
     placeholders = ",".join("?" for _ in schools)
     macro = json.loads(options.macro.read_text(encoding="utf-8"))
@@ -1203,7 +1215,7 @@ def main() -> None:
     db.close()
 
     payload = {
-        "schema_version": 12,
+        "schema_version": 13,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -1224,6 +1236,7 @@ def main() -> None:
                 "weapon_accuracy_and_target_damage",
                 "outpost_role_attribution_and_commitment",
                 "team_base_damage_timing_by_source",
+                "contextual_target_choice_by_team_role_and_live_state",
                 "ground_and_uav_movement",
                 "terrain_capability_and_motion_in_navigation_model",
             ],
@@ -1259,8 +1272,10 @@ def main() -> None:
             "decision_labels": {
                 "respawn_choice": ["timed_in_place", "immediate_buyback"],
                 "uav_counter_choice": ["wait_45_seconds", "double_cost_buyout"],
+                "attack_target": ["robot", "outpost", "base"],
             },
         },
+        "target_selection_model": target_selection_model,
         "structures": {
             "red": {"base": [2.66, 7.5], "outpost": [11.0, 3.25], "fortress": [6.65, 7.5]},
             "blue": {"base": [25.34, 7.5], "outpost": [17.0, 11.75], "fortress": [21.35, 7.5]},
@@ -1364,7 +1379,7 @@ def main() -> None:
             "remaining ammunition and explicit supply completion are not present in the referee export",
             "structure-hit attacker roles are attributed from same-game, same-second, same-calibre shot events; simultaneous shooters share damage in proportion to shots",
             "ground goals are per-game-balanced 0.5 m position modes with stationary service dwell down-weighted; five-second transitions preserve local tactical continuity",
-            "team target priorities are learned in 30-second phases; visible outpost assignments additionally require repeated role-level shot attribution evidence",
+            "attack target kind is inferred from same-second firing attribution and learned from team, role, time, live HP, recent HP loss, structures, alive opponents, distance, coins and vulnerability; target identity still requires legal range and line of sight",
             "base damage timing is learned per team in 15-second windows and separated into direct-fire and dart sources; it weights legal attacks but never applies scripted damage",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
             "fly-ramp alignment/stop/acceleration comes from official event windows; complete B3/R3 trajectories learn ascent/descent angles separately per school-role, with documented direction-specific global fallbacks",

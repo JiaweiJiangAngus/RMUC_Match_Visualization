@@ -79,6 +79,9 @@ function rememberPlayhead(immediate=false) {
 const state = {
   game: null, playhead: 1, speed: 1, playing: false, lastSecond: -1,
   lastAnimation: performance.now(), lastDraw: 0, dirty: true, tracks: new Map(),
+  heatmapMode: "off", heatmapTeam: "both", heatmapRole: "all",
+  heatmapCanonical: false, heatmapPlaying: false, heatmapBin: 0,
+  heatmapLastStep: 0,
   uavCounterWindows: new Map(),
   predictionEnabled: false, predictionWorker: null, predictionReady: false,
   predictionPending: false, predictionRequestId: 0, predictionActiveRequest: 0,
@@ -220,6 +223,8 @@ async function loadGame() {
     state.predictionSecond = -1;
     state.predictions = [];
     buildTracks();
+    syncHeatmapTeamLabels();
+    stopHeatmapPlayback();
     const seconds = Object.keys(state.game.frames).map(Number);
     const firstSecond = seconds.length ? Math.min(...seconds) : 0;
     const rememberedSecond = Number(memory.positions[String(gameId)]?.second);
@@ -244,9 +249,13 @@ function buildTracks() {
       if (["基地","前哨站"].includes(robot[R.type]) || robot[R.x] == null || robot[R.y] == null) continue;
       const key = robotKey(robot);
       if (!state.tracks.has(key)) state.tracks.set(key, []);
-      state.tracks.get(key).push([Number(second), Number(robot[R.x]), Number(robot[R.y]), robot[R.side]]);
+      state.tracks.get(key).push([
+        Number(second), Number(robot[R.x]), Number(robot[R.y]),
+        robot[R.side], robot[R.type], robot[R.id],
+      ]);
     }
   }
+  for (const points of state.tracks.values()) points.sort((left, right) => left[0] - right[0]);
   for (const event of state.game.events) {
     if (event[E.type] !== "雷达反制UAV" || !state.uavCounterWindows.has(event[E.side])) continue;
     const second = Number(event[E.sec]);
@@ -382,7 +391,7 @@ function ensurePredictionWorker() {
     setPredictionStatus("浏览器不支持后台预测","error");
     return false;
   }
-  const worker=new Worker("./prediction-worker.js?v=28");
+  const worker=new Worker("./prediction-worker.js?v=29");
   worker.onmessage=event=>{
     const message=event.data||{};
     if (message.type==="status") {
@@ -478,6 +487,62 @@ function mapPoint(x,y,width,height) {
 }
 function uvPoint(u,v,width,height) { return [u*width,v*height]; }
 
+function heatmapWindow() {
+  if (!state.game) return [0, 0];
+  if (state.heatmapMode === "full") return [0, state.game.info.duration];
+  const start = Math.floor(state.playhead / 15) * 15;
+  return [start, Math.min(Number(state.game.info.duration), start + 15)];
+}
+
+function selectedHeatmapPoints() {
+  if (!state.game || state.heatmapMode === "off") return [];
+  const [start, end] = heatmapWindow();
+  const result = [];
+  for (const points of state.tracks.values()) {
+    for (const point of points) {
+      const afterWindow = state.heatmapMode === "full" ? point[0] > end : point[0] >= end;
+      if (point[0] < start || afterWindow) continue;
+      const sideKey = point[3] === "红" ? "red" : "blue";
+      if (state.heatmapTeam !== "both" && state.heatmapTeam !== sideKey) continue;
+      if (state.heatmapRole !== "all" && state.heatmapRole !== point[4]) continue;
+      const canonical = state.heatmapCanonical && point[3] === "蓝";
+      result.push({
+        x: canonical ? FIELD_WIDTH_METERS - point[1] : point[1],
+        y: canonical ? FIELD_HEIGHT_METERS - point[2] : point[2],
+        side: point[3],
+      });
+    }
+  }
+  return result;
+}
+
+function drawHeatmap(width,height,scale) {
+  if (state.heatmapMode === "off") {
+    $("#heatmap-status").textContent = "点云未开启";
+    return;
+  }
+  const points = selectedHeatmapPoints();
+  mapCtx.save();
+  mapCtx.globalCompositeOperation = "lighter";
+  for (const point of points) {
+    const [x,y] = mapPoint(point.x,point.y,width,height);
+    const red = point.side === "红";
+    mapCtx.beginPath();
+    mapCtx.arc(x,y,4.8*scale,0,Math.PI*2);
+    mapCtx.fillStyle = red ? "rgba(255,49,81,.055)" : "rgba(45,139,255,.055)";
+    mapCtx.fill();
+    mapCtx.beginPath();
+    mapCtx.arc(x,y,1.65*scale,0,Math.PI*2);
+    mapCtx.fillStyle = red ? "rgba(255,100,120,.31)" : "rgba(91,175,255,.31)";
+    mapCtx.fill();
+  }
+  mapCtx.restore();
+  const [start,end] = heatmapWindow();
+  const range = state.heatmapMode === "full" ? "整局" : `${fmtTime(start)}–${fmtTime(end)}`;
+  const aligned = state.heatmapCanonical ? " · 蓝方已旋转至红方视角" : "";
+  $("#heatmap-status").textContent = `${range} · ${points.length.toLocaleString()} 点${aligned}`;
+}
+
 function drawMap() {
   if (!state.game || !mapImage.complete) return;
   const ratio = mapImage.naturalWidth / mapImage.naturalHeight;
@@ -487,6 +552,8 @@ function drawMap() {
   const second = Math.floor(state.playhead), alpha = state.playhead-second;
   const robots = frameAt(second), next = new Map(frameAt(second+1).map(robot => [robotKey(robot),robot]));
   const scale = clamp(width/850,.78,1.7);
+
+  drawHeatmap(width,height,scale);
 
   for (const points of state.tracks.values()) {
     const trailSecond=Math.floor(state.playhead);
@@ -598,14 +665,54 @@ function drawTimeline() {
   const cursor=chart.x+chart.w*state.playhead/duration;timelineCtx.strokeStyle="#fff";timelineCtx.lineWidth=1.5;timelineCtx.beginPath();timelineCtx.moveTo(cursor,chart.y-2);timelineCtx.lineTo(cursor,chart.y+chart.h+2);timelineCtx.stroke();
 }
 
+function syncHeatmapTeamLabels() {
+  if (!state.game) return;
+  const select = $("#heatmap-team");
+  const red = select.querySelector('option[value="red"]');
+  const blue = select.querySelector('option[value="blue"]');
+  if (red) red.textContent = `红方 · ${state.game.info.red}`;
+  if (blue) blue.textContent = `蓝方 · ${state.game.info.blue}`;
+}
+
+function stopHeatmapPlayback() {
+  state.heatmapPlaying = false;
+  const button = $("#heatmap-play");
+  if (button) button.textContent = "▶ 15s 点云";
+}
+
+function toggleHeatmapPlayback() {
+  if (!state.game) {
+    showToast("比赛数据尚未载入，请稍候再播放");
+    return;
+  }
+  if (state.heatmapPlaying) {
+    stopHeatmapPlayback();
+    return;
+  }
+  stopPlayback();
+  state.heatmapMode = "window";
+  $("#heatmap-mode").value = "window";
+  const duration = Number(state.game.info.duration);
+  state.heatmapBin = Math.floor(Math.min(state.playhead, Math.max(0,duration-1)) / 15);
+  state.playhead = state.heatmapBin * 15;
+  state.lastSecond = -1;
+  renderState(Math.floor(state.playhead));
+  state.heatmapPlaying = true;
+  state.heatmapLastStep = performance.now();
+  $("#heatmap-play").textContent = "Ⅱ 停止点云";
+  state.dirty = true;
+}
+
 function seek(second) {
   if (!state.game) return;
+  stopHeatmapPlayback();
   state.playhead=clamp(Number(second),0,state.game.info.duration);state.lastSecond=-1;renderState(Math.floor(state.playhead));state.dirty=true;
   rememberPlayhead();
 }
 function stopPlayback(){state.playing=false;$("#play-button").textContent="▶ 播放";}
 function togglePlayback(){
   if(!state.game){showToast("比赛数据尚未载入，请稍候再播放");return;}
+  stopHeatmapPlayback();
   if(state.playhead>=state.game.info.duration)seek(0);
   state.playing=!state.playing;
   $("#play-button").textContent=state.playing?"Ⅱ 暂停":"▶ 播放";
@@ -614,6 +721,20 @@ function togglePlayback(){
 function animation(now){
   const dt=Math.min(.2,(now-state.lastAnimation)/1000);state.lastAnimation=now;
   if(state.playing&&state.game){state.playhead+=dt*state.speed;if(state.playhead>=state.game.info.duration){state.playhead=state.game.info.duration;stopPlayback();}const second=Math.floor(state.playhead);if(second!==state.lastSecond){renderState(second);rememberPlayhead();}state.dirty=true;}
+  if(state.heatmapPlaying&&state.game&&now-state.heatmapLastStep>=900){
+    const bins=Math.max(1,Math.ceil(Number(state.game.info.duration)/15));
+    state.heatmapBin+=1;
+    state.heatmapLastStep=now;
+    if(state.heatmapBin>=bins){
+      state.heatmapBin=bins-1;
+      stopHeatmapPlayback();
+    }
+    state.playhead=state.heatmapBin*15;
+    state.lastSecond=-1;
+    renderState(Math.floor(state.playhead));
+    rememberPlayhead();
+    state.dirty=true;
+  }
   if(state.dirty&&now-state.lastDraw>30){drawMap();drawTimeline();state.lastDraw=now;}
   requestAnimationFrame(animation);
 }
@@ -643,6 +764,27 @@ $("#forward-button").addEventListener("click",()=>seek(state.playhead+5));
 $("#time-slider").addEventListener("input",event=>seek(event.target.value));
 $("#speed-select").addEventListener("change",event=>{state.speed=Number(event.target.value);memory.speed=state.speed;persistMemory();});
 $("#prediction-button")?.addEventListener("click",togglePrediction);
+$("#heatmap-mode")?.addEventListener("change",event=>{
+  state.heatmapMode=event.target.value;
+  stopHeatmapPlayback();
+  state.dirty=true;
+});
+$("#heatmap-team")?.addEventListener("change",event=>{
+  state.heatmapTeam=event.target.value;
+  state.dirty=true;
+});
+$("#heatmap-role")?.addEventListener("change",event=>{
+  state.heatmapRole=event.target.value;
+  state.dirty=true;
+});
+$("#heatmap-canonical")?.addEventListener("click",event=>{
+  state.heatmapCanonical=!state.heatmapCanonical;
+  event.currentTarget.setAttribute("aria-pressed",String(state.heatmapCanonical));
+  event.currentTarget.classList.toggle("active",state.heatmapCanonical);
+  event.currentTarget.textContent=state.heatmapCanonical?"统一红方 开":"统一红方 关";
+  state.dirty=true;
+});
+$("#heatmap-play")?.addEventListener("click",toggleHeatmapPlayback);
 timelineCanvas.addEventListener("pointerdown",event=>{if(!state.game)return;const rect=timelineCanvas.getBoundingClientRect(),x=clamp(event.clientX-rect.left-34,0,rect.width-44);seek(x/(rect.width-44)*state.game.info.duration);});
 $("#map-fullscreen")?.addEventListener("click",async()=>{
   try {

@@ -439,6 +439,10 @@
       const weaponModel = robot.sampledWeaponAccuracy ? `
           <div><span>本局基础命中率</span><b>${(robot.sampledWeaponAccuracy * 100).toFixed(1)}% · 每发随机</b></div>
           ${robot.role === "英雄" ? `<div><span>42mm 单发模型</span><b>机器人 ${formatNumber(robot.damagePerHitByTarget?.robot?.mode_damage || 200)} / 前哨 ${formatNumber(robot.damagePerHitByTarget?.outpost?.mode_damage || 200)} / 基地 ${formatNumber(robot.damagePerHitByTarget?.base?.mode_damage || 200)}</b></div>` : ""}` : "";
+      const targetPrior = robot.targetPolicyPrior || {};
+      const targetModel = robot.role !== "工程" && robot.role !== "空中" ? `
+          <div><span>实时目标模型</span><b>地面 ${Math.round(Number(targetPrior.robot || 0) * 100)}% · 前哨 ${Math.round(Number(targetPrior.outpost || 0) * 100)}% · 基地 ${Math.round(Number(targetPrior.base || 0) * 100)}%</b></div>
+          <div><span>目标判断来源</span><b>${robot.targetPolicySource === "contextual_target_mlp" ? "实时局势分类模型" : "阶段先验回退"}</b></div>` : "";
       elements.selectedLabel.textContent = `${sideCode(robot.side)} · ${robot.role}`;
       elements.detail.className = "";
       elements.detail.innerHTML = `
@@ -455,6 +459,7 @@
           <div><span>当前选点控制器</span><b>${robot.role === "空中" ? "无人机状态机" : robot.policySource === "transformer" ? "Temporal Transformer" : "规则/任务约束"}</b></div>
           <div><span>无人机反制</span><b>${robot.role === "空中" ? `${robot.radarCounterCount}/5 · 剩 ${robot.radarCounteredIn}s` : "—"}</b></div>
           ${weaponModel}
+          ${targetModel}
           ${coreDetails}
           ${uavDetails}
           ${terrainDetails}
@@ -565,7 +570,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=15");
+      const worker = new Worker("./full-match-worker.js?v=16");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -701,8 +706,8 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=14").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=24").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=15").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=25").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;
