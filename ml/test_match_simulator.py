@@ -10,6 +10,30 @@ MODEL_PATH = ROOT / "docs" / "data" / "models" / "match_simulation.json"
 FULL_MODEL_PATH = ROOT / "docs" / "data" / "models" / "full_simulation.json"
 
 
+class SimulatorPageLayoutTests(unittest.TestCase):
+    def test_simulator_is_a_dedicated_page(self):
+        replay = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
+        simulator = (ROOT / "docs" / "simulator.html").read_text(encoding="utf-8")
+        heatmap = (ROOT / "docs" / "heatmap.html").read_text(encoding="utf-8")
+        self.assertIn('href="./simulator.html"', replay)
+        self.assertIn('href="./simulator.html"', heatmap)
+        self.assertNotIn('id="simulator"', replay)
+        self.assertNotIn("full-match-ui.js", replay)
+        self.assertNotIn("match-simulator.js", replay)
+        for element_id in (
+            "simulator",
+            "full-sim-canvas",
+            "full-red-team",
+            "full-blue-team",
+            "sim-red-team",
+            "sim-blue-team",
+            "sim-monte-carlo",
+        ):
+            self.assertIn(f'id="{element_id}"', simulator)
+        self.assertIn("./full-match-ui.js", simulator)
+        self.assertIn("./match-simulator.js", simulator)
+
+
 class MatchSimulationDataTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

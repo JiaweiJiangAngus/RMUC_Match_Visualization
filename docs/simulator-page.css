@@ -1,0 +1,14 @@
+.simulator-shell { max-width:2200px; }
+.simulator-hero { align-items:center; }
+.simulator-hero-note { flex:0 0 auto; display:grid; gap:6px; min-width:270px; padding:14px 16px; background:rgba(72,160,255,.06); border:1px solid var(--line); border-radius:11px; }
+.simulator-hero-note b { color:var(--green); font-size:14px; }
+.simulator-hero-note span { color:var(--muted); font-size:11px; }
+.simulator-panel { margin-top:0; }
+.mobile-dock a.active { color:#fff; background:#16755e; }
+.mobile-dock a.active b { color:#d7fff4; }
+
+@media (max-width:760px) {
+  .simulator-shell { padding-bottom:88px; }
+  .simulator-hero { align-items:stretch; flex-direction:column; }
+  .simulator-hero-note { min-width:0; }
+}

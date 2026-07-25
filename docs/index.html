@@ -33,7 +33,7 @@
         <button class="dataset-tab active" type="button" data-scroll-target="battlefield"><b>01</b> 战场回放</button>
         <button class="dataset-tab" type="button" data-scroll-target="status"><b>02</b> 双方状态</button>
         <button class="dataset-tab" type="button" data-scroll-target="events"><b>03</b> 比赛事件</button>
-        <button class="dataset-tab" type="button" data-scroll-target="simulator"><b>04</b> 对局模拟</button>
+        <a class="dataset-tab" href="./simulator.html"><b>04</b> 对局模拟</a>
         <a class="dataset-tab" href="./heatmap.html"><b>05</b> 战队热图</a>
       </nav>
       <div class="display-controls" aria-label="显示设置">
@@ -117,99 +117,6 @@
       </div>
     </section>
 
-    <section class="simulator-panel panel" id="simulator" aria-labelledby="simulator-title">
-      <div class="simulator-heading">
-        <div>
-          <span class="eyebrow">TACTICAL CHESS // COUNTERFACTUAL MATCH</span>
-          <h2 id="simulator-title">战队对局模拟器</h2>
-          <p>把 420 秒拆成 28 手：伤害节奏、飞镖、堡垒驻留、增益与地形转点均来自真实比赛样本。</p>
-        </div>
-        <span id="sim-model-status" class="sim-model-status">载入 44 队棋谱…</span>
-      </div>
-
-      <section class="full-sim-panel" aria-labelledby="full-sim-title">
-        <div class="full-sim-heading">
-          <div><h3 id="full-sim-title">完整机器人沙盘 · Temporal Transformer</h3><p>Transformer 10 秒战术选点 · 队伍/对手身份与受击响应 token · 地形规则约束寻路 · 交火、补给、科技核心与复活 · <a href="https://github.com/JiaweiJiangAngus/RMUC_Match_Visualization/blob/main/ml/README.md#怎么训练和修正沙盘行为" target="_blank" rel="noreferrer">训练/地形参数说明</a></p></div>
-          <span id="full-sim-status">载入逐车参数…</span>
-        </div>
-        <div class="full-sim-toolbar">
-          <label class="red"><span>红方</span><select id="full-red-team"></select><select id="full-red-hero-mode" class="full-hero-mode" aria-label="红方英雄整机类型"><option value="auto" selected>英雄：自动（队伍画像）</option><option value="ranged">英雄：远程优先</option><option value="melee">英雄：近战优先</option></select></label>
-          <strong>VS</strong>
-          <label class="blue"><span>蓝方</span><select id="full-blue-team"></select><select id="full-blue-hero-mode" class="full-hero-mode" aria-label="蓝方英雄整机类型"><option value="auto" selected>英雄：自动（队伍画像）</option><option value="ranged">英雄：远程优先</option><option value="melee">英雄：近战优先</option></select></label>
-          <button id="full-sim-new" class="primary" type="button">生成完整对局</button>
-          <button id="full-sim-play" type="button">▶ 播放</button>
-          <button id="full-sim-back" type="button">−1s</button>
-          <button id="full-sim-forward" type="button">+1s</button>
-          <select id="full-sim-speed" aria-label="沙盘播放速度"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
-        </div>
-        <div class="full-sim-progress">
-          <b id="full-sim-clock">07:00</b>
-          <input id="full-sim-slider" type="range" min="0" max="420" step="1" value="0" aria-label="完整沙盘进度">
-          <span id="full-sim-result">等待生成</span>
-        </div>
-        <div class="full-sim-grid">
-          <aside id="full-red-roster" class="full-roster red"></aside>
-          <div class="full-map-wrap">
-            <canvas id="full-sim-canvas" aria-label="完整机器人对局沙盘"></canvas>
-            <div class="full-map-legend"><span><i class="red"></i>红方</span><span><i class="blue"></i>蓝方</span><span><i class="service"></i>补血+补弹</span><span><i class="ammo"></i>仅补弹</span><span><i class="core"></i>科技核心</span><span><i class="shot"></i>正在交火</span><b>点击机器人查看路线与状态</b></div>
-          </div>
-          <aside id="full-blue-roster" class="full-roster blue"></aside>
-        </div>
-        <div class="full-sim-bottom">
-          <article><div class="section-title"><h3>沙盘实时统计</h3><span id="full-sim-seed">seed --</span></div><div id="full-sim-stats"></div></article>
-          <article><div class="section-title"><h3>机器人详情</h3><span id="full-selected-label">未选择</span></div><div id="full-robot-detail" class="full-empty">点击地图或两侧兵种</div></article>
-          <article><div class="section-title"><h3>最近战况</h3><span id="full-event-count">0 条</span></div><div id="full-sim-events" class="full-event-list"></div></article>
-        </div>
-      </section>
-
-      <div class="quick-sim-title"><span>QUICK MODEL</span><h3>快速宏观推演</h3><p>用于迅速比较 44 队历史伤害节奏；完整逐车对局请使用上方沙盘。</p></div>
-
-      <div class="simulator-toolbar" aria-label="模拟设置">
-        <label class="sim-team-picker red"><span>红方学校</span><select id="sim-red-team"></select></label>
-        <strong class="sim-versus">VS</strong>
-        <label class="sim-team-picker blue"><span>蓝方学校</span><select id="sim-blue-team"></select></label>
-        <div class="sim-buttons">
-          <button id="sim-reset" type="button">↻ 新开一局</button>
-          <button id="sim-step" class="primary" type="button">下一手 +15s</button>
-          <button id="sim-auto" type="button">▶ 自动演算</button>
-          <button id="sim-monte-carlo" type="button">模拟 500 局</button>
-        </div>
-      </div>
-
-      <div class="simulator-grid">
-        <article id="sim-red-profile" class="sim-profile red"></article>
-        <div class="sim-board" aria-live="polite">
-          <div class="sim-board-head">
-            <span id="sim-turn">第 0 / 28 手</span>
-            <b id="sim-clock">07:00</b>
-            <span id="sim-state">等待开局</span>
-          </div>
-          <div id="sim-scoreboard" class="sim-scoreboard"></div>
-          <div id="sim-fortresses" class="sim-fortresses"></div>
-          <div class="sim-action-row">
-            <div class="red"><span>红方本手</span><b id="sim-red-action">部署</b></div>
-            <div class="blue"><span>蓝方本手</span><b id="sim-blue-action">部署</b></div>
-          </div>
-        </div>
-        <article id="sim-blue-profile" class="sim-profile blue"></article>
-      </div>
-
-      <div class="simulator-analysis">
-        <article class="sim-breakdown">
-          <div class="section-title"><h3>本局伤害分布</h3><span>实际采样值</span></div>
-          <div id="sim-damage-breakdown"></div>
-        </article>
-        <article class="sim-monte">
-          <div class="section-title"><h3>批量推演</h3><span>不是官方胜率</span></div>
-          <div id="sim-monte-result" class="sim-monte-empty">点“模拟 500 局”查看对阵分布</div>
-        </article>
-        <article class="sim-log-panel">
-          <div class="section-title"><h3>回合记录</h3><span id="sim-log-count">0 条</span></div>
-          <div id="sim-log" class="sim-log"><div class="empty">开局后显示双方战术动作</div></div>
-        </article>
-      </div>
-      <p class="sim-disclaimer">实验模型：堡垒控制由机器人位置驻留推断；跨赛区对阵不存在直接样本。结果用于客户端/操作手推演，不等同于裁判系统比分或真实赛果。</p>
-    </section>
     </div>
 
     <footer>
@@ -222,7 +129,7 @@
     <button class="active" type="button" data-scroll-target="battlefield"><b>⌖</b><span>战场</span></button>
     <button type="button" data-scroll-target="status"><b>▤</b><span>状态</span></button>
     <button type="button" data-scroll-target="events"><b>≋</b><span>事件</span></button>
-    <button type="button" data-scroll-target="simulator"><b>♟</b><span>模拟</span></button>
+    <a href="./simulator.html"><b>♟</b><span>模拟</span></a>
     <a href="./heatmap.html"><b>▦</b><span>热图</span></a>
   </nav>
 
@@ -230,9 +137,5 @@
   <div id="toast" class="toast" role="status"></div>
   <script>window.RMUC_STATIC_DATA = true;</script>
   <script src="./app.js?v=30"></script>
-  <script src="./terrain-router.js?v=8"></script>
-  <script src="./full-match-engine.js?v=22"></script>
-  <script src="./full-match-ui.js?v=26"></script>
-  <script src="./match-simulator.js?v=3"></script>
 </body>
 </html>
