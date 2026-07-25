@@ -79,7 +79,7 @@ function rememberPlayhead(immediate=false) {
 const state = {
   game: null, playhead: 1, speed: 1, playing: false, lastSecond: -1,
   lastAnimation: performance.now(), lastDraw: 0, dirty: true, tracks: new Map(),
-  heatmapMode: "off", heatmapTeam: "both", heatmapRole: "all",
+  heatmapActive: false, heatmapMode: "full", heatmapTeam: "both", heatmapRole: "all",
   heatmapCanonical: false, heatmapPlaying: false, heatmapBin: 0,
   heatmapLastStep: 0,
   uavCounterWindows: new Map(),
@@ -494,8 +494,8 @@ function heatmapWindow() {
   return [start, Math.min(Number(state.game.info.duration), start + 15)];
 }
 
-function selectedHeatmapPoints() {
-  if (!state.game || state.heatmapMode === "off") return [];
+function selectedHeatmapSamples() {
+  if (!state.game || !state.heatmapActive) return [];
   const [start, end] = heatmapWindow();
   const result = [];
   for (const points of state.tracks.values()) {
@@ -517,30 +517,57 @@ function selectedHeatmapPoints() {
 }
 
 function drawHeatmap(width,height,scale) {
-  if (state.heatmapMode === "off") {
-    $("#heatmap-status").textContent = "点云未开启";
-    return;
+  if (!state.heatmapActive) return;
+  const samples = selectedHeatmapSamples();
+  const cellSize = clamp(Math.round(5.2*scale),4,8);
+  const columns = Math.max(1,Math.ceil(width/cellSize));
+  const rows = Math.max(1,Math.ceil(height/cellSize));
+  const redDensity = new Float32Array(columns*rows);
+  const blueDensity = new Float32Array(columns*rows);
+  const kernelRadius = 4;
+  const sigmaSquared = 3.1;
+  for (const sample of samples) {
+    const [mapX,mapY] = mapPoint(sample.x,sample.y,width,height);
+    const centerX = Math.floor(mapX/width*columns);
+    const centerY = Math.floor(mapY/height*rows);
+    const density = sample.side === "红" ? redDensity : blueDensity;
+    for (let offsetY=-kernelRadius;offsetY<=kernelRadius;offsetY+=1) {
+      const gridY=centerY+offsetY;
+      if(gridY<0||gridY>=rows)continue;
+      for (let offsetX=-kernelRadius;offsetX<=kernelRadius;offsetX+=1) {
+        const gridX=centerX+offsetX;
+        if(gridX<0||gridX>=columns)continue;
+        density[gridY*columns+gridX]+=Math.exp(-(offsetX*offsetX+offsetY*offsetY)/(2*sigmaSquared));
+      }
+    }
   }
-  const points = selectedHeatmapPoints();
+  const redPeak=redDensity.reduce((peak,value)=>Math.max(peak,value),0);
+  const bluePeak=blueDensity.reduce((peak,value)=>Math.max(peak,value),0);
+  const layer=document.createElement("canvas");
+  layer.width=columns;layer.height=rows;
+  const layerContext=layer.getContext("2d");
+  const image=layerContext.createImageData(columns,rows);
+  for(let index=0;index<redDensity.length;index+=1){
+    const red=redPeak?Math.pow(Math.log1p(redDensity[index])/Math.log1p(redPeak),.72):0;
+    const blue=bluePeak?Math.pow(Math.log1p(blueDensity[index])/Math.log1p(bluePeak),.72):0;
+    const strength=Math.max(red,blue);
+    if(strength<.035)continue;
+    const total=Math.max(.0001,red+blue),pixel=index*4;
+    image.data[pixel]=Math.round((red*255+blue*42)/total);
+    image.data[pixel+1]=Math.round((red*(55+165*red)+blue*(125+100*blue))/total);
+    image.data[pixel+2]=Math.round((red*58+blue*255)/total);
+    image.data[pixel+3]=Math.round(clamp(strength*.88,0,.88)*255);
+  }
+  layerContext.putImageData(image,0,0);
   mapCtx.save();
-  mapCtx.globalCompositeOperation = "lighter";
-  for (const point of points) {
-    const [x,y] = mapPoint(point.x,point.y,width,height);
-    const red = point.side === "红";
-    mapCtx.beginPath();
-    mapCtx.arc(x,y,4.8*scale,0,Math.PI*2);
-    mapCtx.fillStyle = red ? "rgba(255,49,81,.055)" : "rgba(45,139,255,.055)";
-    mapCtx.fill();
-    mapCtx.beginPath();
-    mapCtx.arc(x,y,1.65*scale,0,Math.PI*2);
-    mapCtx.fillStyle = red ? "rgba(255,100,120,.31)" : "rgba(91,175,255,.31)";
-    mapCtx.fill();
-  }
+  mapCtx.globalCompositeOperation="screen";
+  mapCtx.imageSmoothingEnabled=true;
+  mapCtx.drawImage(layer,0,0,width,height);
   mapCtx.restore();
   const [start,end] = heatmapWindow();
   const range = state.heatmapMode === "full" ? "整局" : `${fmtTime(start)}–${fmtTime(end)}`;
   const aligned = state.heatmapCanonical ? " · 蓝方已旋转至红方视角" : "";
-  $("#heatmap-status").textContent = `${range} · ${points.length.toLocaleString()} 点${aligned}`;
+  $("#heatmap-status").textContent = `${range} · ${samples.length.toLocaleString()} 个轨迹采样${aligned}`;
 }
 
 function drawMap() {
@@ -553,25 +580,26 @@ function drawMap() {
   const robots = frameAt(second), next = new Map(frameAt(second+1).map(robot => [robotKey(robot),robot]));
   const scale = clamp(width/850,.78,1.7);
 
-  drawHeatmap(width,height,scale);
+  if (state.heatmapActive) drawHeatmap(width,height,scale);
 
-  for (const points of state.tracks.values()) {
-    const trailSecond=Math.floor(state.playhead);
-    const recent = points.filter(point => point[0] >= trailSecond-5 && point[0] <= trailSecond);
-    if (recent.length<2) continue;
-    mapCtx.beginPath();
-    recent.forEach((point,index) => { const [x,y]=mapPoint(point[1],point[2],width,height); index ? mapCtx.lineTo(x,y) : mapCtx.moveTo(x,y); });
-    mapCtx.strokeStyle = recent[0][3] === "红" ? "rgba(255,82,108,.52)" : "rgba(72,160,255,.52)";
-    mapCtx.lineWidth=2*scale; mapCtx.stroke();
+  if (!state.heatmapActive) {
+    for (const points of state.tracks.values()) {
+      const trailSecond=Math.floor(state.playhead);
+      const recent = points.filter(point => point[0] >= trailSecond-5 && point[0] <= trailSecond);
+      if (recent.length<2) continue;
+      mapCtx.beginPath();
+      recent.forEach((point,index) => { const [x,y]=mapPoint(point[1],point[2],width,height); index ? mapCtx.lineTo(x,y) : mapCtx.moveTo(x,y); });
+      mapCtx.strokeStyle = recent[0][3] === "红" ? "rgba(255,82,108,.52)" : "rgba(72,160,255,.52)";
+      mapCtx.lineWidth=2*scale; mapCtx.stroke();
+    }
+    drawPredictions(width,height,scale,second);
   }
-
-  drawPredictions(width,height,scale,second);
 
   for (const [side,type,u,v,label] of STRUCTURES) {
     const robot=robots.find(item=>item[R.side]===side&&item[R.type]===type);
     drawStructure(...uvPoint(u,v,width,height),side,label,robot,scale);
   }
-  for (const robot of robots) {
+  if (!state.heatmapActive) for (const robot of robots) {
     if (["基地","前哨站"].includes(robot[R.type]) || robot[R.x]==null || robot[R.y]==null) continue;
     let x=Number(robot[R.x]),y=Number(robot[R.y]); const after=next.get(robotKey(robot));
     if (after && after[R.x]!=null && after[R.y]!=null) { x+=(Number(after[R.x])-x)*alpha; y+=(Number(after[R.y])-y)*alpha; }
@@ -677,7 +705,27 @@ function syncHeatmapTeamLabels() {
 function stopHeatmapPlayback() {
   state.heatmapPlaying = false;
   const button = $("#heatmap-play");
-  if (button) button.textContent = "▶ 15s 点云";
+  if (button) button.textContent = "▶ 15s 热图";
+}
+
+function setHeatmapActive(active) {
+  state.heatmapActive = Boolean(active);
+  const toolbar = $("#heatmap-toggle");
+  const controls = $(".heatmap-toolbar");
+  $(".map-stage")?.classList.toggle("heatmap-mode",state.heatmapActive);
+  if (controls) controls.hidden = !state.heatmapActive;
+  if (toolbar) {
+    toolbar.setAttribute("aria-pressed",String(state.heatmapActive));
+    toolbar.classList.toggle("active",state.heatmapActive);
+    toolbar.textContent=state.heatmapActive?"退出热图":"热图模式";
+  }
+  const note=$("#map-mode-note");
+  if(note)note.textContent=state.heatmapActive
+    ?"热图亮度表示所选机器人在该区域的轨迹密度；红蓝分别归一化"
+    :"预测虚线与箭头：未来 10 秒可达路径　地形方向与队伍能力已纳入寻路";
+  if(state.heatmapActive)stopPlayback();
+  else stopHeatmapPlayback();
+  state.dirty=true;
 }
 
 function toggleHeatmapPlayback() {
@@ -689,6 +737,7 @@ function toggleHeatmapPlayback() {
     stopHeatmapPlayback();
     return;
   }
+  setHeatmapActive(true);
   stopPlayback();
   state.heatmapMode = "window";
   $("#heatmap-mode").value = "window";
@@ -699,7 +748,7 @@ function toggleHeatmapPlayback() {
   renderState(Math.floor(state.playhead));
   state.heatmapPlaying = true;
   state.heatmapLastStep = performance.now();
-  $("#heatmap-play").textContent = "Ⅱ 停止点云";
+  $("#heatmap-play").textContent = "Ⅱ 停止热图";
   state.dirty = true;
 }
 
@@ -712,6 +761,7 @@ function seek(second) {
 function stopPlayback(){state.playing=false;$("#play-button").textContent="▶ 播放";}
 function togglePlayback(){
   if(!state.game){showToast("比赛数据尚未载入，请稍候再播放");return;}
+  if(state.heatmapActive)setHeatmapActive(false);
   stopHeatmapPlayback();
   if(state.playhead>=state.game.info.duration)seek(0);
   state.playing=!state.playing;
@@ -764,6 +814,7 @@ $("#forward-button").addEventListener("click",()=>seek(state.playhead+5));
 $("#time-slider").addEventListener("input",event=>seek(event.target.value));
 $("#speed-select").addEventListener("change",event=>{state.speed=Number(event.target.value);memory.speed=state.speed;persistMemory();});
 $("#prediction-button")?.addEventListener("click",togglePrediction);
+$("#heatmap-toggle")?.addEventListener("click",()=>setHeatmapActive(!state.heatmapActive));
 $("#heatmap-mode")?.addEventListener("change",event=>{
   state.heatmapMode=event.target.value;
   stopHeatmapPlayback();
