@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the generated 96-team position heatmap dataset."""
+"""Validate the generated 96-team position and firing heatmap dataset."""
 
 from __future__ import annotations
 
@@ -40,7 +40,8 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         )
 
     def test_geometry_and_kernel_are_high_resolution(self) -> None:
-        self.assertEqual(self.config["schema_version"], 1)
+        self.assertEqual(self.config["schema_version"], 2)
+        self.assertEqual(self.config["modes"], ["position", "shots"])
         self.assertEqual(self.config["grid_width"], 280)
         self.assertEqual(self.config["grid_height"], 150)
         self.assertEqual(self.config["cell_size_metres"], 0.1)
@@ -50,6 +51,16 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertEqual(
             self.config["roles"],
             ["英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"],
+        )
+        self.assertEqual(self.config["firing_projectiles"], 1_200_632)
+        self.assertEqual(self.config["firing_event_groups"], 336_226)
+        self.assertEqual(
+            self.config["firing_position_matching"],
+            {
+                "exact_groups": 336_224,
+                "adjacent_1s_groups": 2,
+                "missing_groups": 0,
+            },
         )
 
     def test_all_96_teams_are_present_once(self) -> None:
@@ -79,8 +90,10 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
             self.assertEqual(payload["region"], entry["region"])
             self.assertEqual(payload["games"], entry["games"])
             self.assertEqual(payload["samples"], entry["samples"])
+            self.assertEqual(payload["shots"]["samples"], entry["shots"])
             self.assertGreater(payload["games"], 0)
             self.assertGreater(payload["samples"], 0)
+            self.assertGreater(payload["shots"]["samples"], 0)
             self.assertEqual(
                 sparse_total(payload["red"], grid_length)
                 + sparse_total(payload["blue"], grid_length),
@@ -119,6 +132,41 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
                 self.assertEqual(role_window_samples, role_payload["samples"])
                 role_samples += decoded_role_samples
             self.assertEqual(role_samples, payload["samples"])
+
+            shots = payload["shots"]
+            self.assertEqual(
+                sparse_total(shots["red"], grid_length)
+                + sparse_total(shots["blue"], grid_length),
+                shots["samples"],
+            )
+            self.assertEqual(len(shots["windows"]), self.config["window_count"])
+            shot_window_samples = sum(
+                sparse_total(window["red"], grid_length)
+                + sparse_total(window["blue"], grid_length)
+                for window in shots["windows"]
+            )
+            self.assertEqual(shot_window_samples, shots["samples"])
+            self.assertEqual(set(shots["roles"]), set(self.config["roles"]))
+            shot_role_samples = 0
+            for role in self.config["roles"]:
+                role_payload = shots["roles"][role]
+                decoded_role_samples = (
+                    sparse_total(role_payload["red"], grid_length)
+                    + sparse_total(role_payload["blue"], grid_length)
+                )
+                self.assertEqual(decoded_role_samples, role_payload["samples"])
+                self.assertEqual(
+                    len(role_payload["windows"]),
+                    self.config["window_count"],
+                )
+                role_window_samples = sum(
+                    sparse_total(window["red"], grid_length)
+                    + sparse_total(window["blue"], grid_length)
+                    for window in role_payload["windows"]
+                )
+                self.assertEqual(role_window_samples, role_payload["samples"])
+                shot_role_samples += decoded_role_samples
+            self.assertEqual(shot_role_samples, shots["samples"])
         actual_files = {
             path.name for path in HEATMAP_DIR.glob("[0-9][0-9][0-9].json")
         }
@@ -133,9 +181,13 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertNotIn("60 × 60", page)
         self.assertNotIn("60 * 60", script)
         self.assertIn('id="school-select"', page)
+        self.assertIn('id="heatmap-type-select"', page)
+        self.assertIn('<option value="shots">打弹热力图</option>', page)
         self.assertIn('id="role-select"', page)
         self.assertIn('id="window-play"', page)
         self.assertIn("toggleWindowPlayback", script)
+        self.assertIn('state.mode === "shots"', script)
+        self.assertIn("state.schoolData.shots", script)
         self.assertIn('href="./app.css?v=24"', page)
         self.assertNotIn("RM_LADDER", page)
 

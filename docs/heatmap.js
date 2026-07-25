@@ -1,6 +1,6 @@
 "use strict";
 
-const CONFIG_URL = "./data/heatmaps/config.json?v=3";
+const CONFIG_URL = "./data/heatmaps/config.json?v=4";
 const FIELD_HEIGHT_WITH_MARGIN = 17;
 const state = {
   config: null,
@@ -8,6 +8,7 @@ const state = {
   school: "东北大学",
   side: "canonical",
   role: "all",
+  mode: "position",
   range: "full",
   windowIndex: 0,
   schoolData: null,
@@ -83,7 +84,7 @@ function heatColor(value) {
 }
 
 function combinedDensity(data) {
-  const cacheKey = `${state.school}:${state.side}:${state.role}:${state.range}:${state.windowIndex}`;
+  const cacheKey = `${state.school}:${state.mode}:${state.side}:${state.role}:${state.range}:${state.windowIndex}`;
   if (state.densityCache.has(cacheKey)) return state.densityCache.get(cacheKey);
   const { grid_width: width, grid_height: height } = state.config;
   const length = width * height;
@@ -102,9 +103,13 @@ function combinedDensity(data) {
 
 function activeSeries() {
   if (!state.schoolData) return null;
+  const root = state.mode === "shots"
+    ? state.schoolData.shots
+    : state.schoolData;
+  if (!root) return null;
   return state.role === "all"
-    ? state.schoolData
-    : state.schoolData.roles?.[state.role] || null;
+    ? root
+    : root.roles?.[state.role] || null;
 }
 
 function activePayload() {
@@ -181,6 +186,7 @@ function formatTime(seconds) {
 
 function updatePlaybackUI() {
   if (!state.config) return;
+  const isShots = state.mode === "shots";
   const isWindow = state.range === "window";
   const windowSeconds = state.config.window_seconds;
   const start = state.windowIndex * windowSeconds;
@@ -190,7 +196,7 @@ function updatePlaybackUI() {
   slider.value = String(state.windowIndex);
   document.querySelector("#window-label").textContent = isWindow
     ? `${formatTime(start)}–${formatTime(end)}`
-    : "整局位置汇总";
+    : isShots ? "整局发弹汇总" : "整局位置汇总";
   document.querySelector("#map-time").textContent = isWindow
     ? `T + ${formatTime(start)}–${formatTime(end)}`
     : "整局汇总";
@@ -203,9 +209,19 @@ function updatePlaybackUI() {
   const series = activeSeries();
   const windowSamples = series?.windows?.[state.windowIndex]?.samples || 0;
   const roleLabel = state.role === "all" ? "全部机器人" : state.role;
+  const modeLabel = isShots ? "打弹热力图" : "位置热图";
+  const unit = isShots ? "发" : "个位置样本";
+  document.querySelector("#selected-school").textContent = `${entry.school} · ${modeLabel}`;
+  document.querySelector("#heatmap-description").textContent = isShots
+    ? "亮度表示该校机器人在所选比赛时段从对应位置发射弹丸的累计密度"
+    : "亮度表示该校机器人在所选比赛时段出现在对应位置的累计密度";
+  document.querySelector("#heatmap-kernel-note").textContent = isShots
+    ? "每发弹丸按射手当秒坐标记录，并以 σ=0.22m 的二维正态分布展开"
+    : "每个位置样本以 σ=0.22m 的二维正态分布展开";
+  canvas.setAttribute("aria-label", isShots ? "战队打弹位置热力图" : "战队位置密度热图");
   document.querySelector("#selected-stats").textContent = isWindow
-    ? `${roleLabel} · ${formatTime(start)}–${formatTime(end)} · ${windowSamples.toLocaleString()} 个位置样本`
-    : `${entry.games} 局 · ${roleLabel} · ${(series?.samples || 0).toLocaleString()} 个存活位置样本`;
+    ? `${roleLabel} · ${formatTime(start)}–${formatTime(end)} · ${windowSamples.toLocaleString()} ${unit}`
+    : `${entry.games} 局 · ${roleLabel} · ${(series?.samples || 0).toLocaleString()} ${unit}`;
 }
 
 function stopWindowPlayback() {
@@ -269,12 +285,12 @@ async function loadSchool(name) {
   document.querySelector("#heatmap-loading").classList.remove("hidden");
   document.querySelector("#selected-school").textContent = entry.school;
   document.querySelector("#selected-region").textContent = entry.region;
-  document.querySelector("#selected-stats").textContent = `${entry.games} 局 · ${entry.samples.toLocaleString()} 个存活位置样本`;
+  document.querySelector("#selected-stats").textContent = "读取该校热图数据…";
   const select = document.querySelector("#school-select");
   if ([...select.options].some((option) => option.value === name)) select.value = name;
   try {
     if (!state.cache.has(entry.file)) {
-      const response = await fetch(`./data/heatmaps/${entry.file}?v=3`, { cache: "force-cache" });
+      const response = await fetch(`./data/heatmaps/${entry.file}?v=4`, { cache: "force-cache" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       state.cache.set(entry.file, await response.json());
     }
@@ -283,6 +299,7 @@ async function loadSchool(name) {
     drawHeatmap();
     const url = new URL(location.href);
     url.searchParams.set("school", name);
+    url.searchParams.set("mode", state.mode);
     history.replaceState(null, "", url);
   } catch (error) {
     document.querySelector("#selected-stats").textContent = `热图读取失败：${error.message}`;
@@ -375,10 +392,23 @@ async function init() {
     document.querySelector("#metric-sigma").textContent =
       `σ ${state.config.gaussian_sigma_metres.toFixed(2)}m`;
     const requested = new URL(location.href).searchParams.get("school");
+    const requestedMode = new URL(location.href).searchParams.get("mode");
     if (requested && schoolEntry(requested)) state.school = requested;
+    if (state.config.modes?.includes(requestedMode)) state.mode = requestedMode;
     renderRegions();
     renderSchoolOptions();
     renderRoleOptions();
+    document.querySelector("#heatmap-type-select").value = state.mode;
+    document.querySelector("#heatmap-type-select").addEventListener("change", (event) => {
+      stopWindowPlayback();
+      state.mode = event.target.value === "shots" ? "shots" : "position";
+      state.densityCache.clear();
+      const url = new URL(location.href);
+      url.searchParams.set("mode", state.mode);
+      history.replaceState(null, "", url);
+      updatePlaybackUI();
+      drawHeatmap();
+    });
     document.querySelector("#side-select").addEventListener("change", (event) => {
       state.side = event.target.value;
       state.densityCache.clear();
