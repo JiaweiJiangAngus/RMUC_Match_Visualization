@@ -1,79 +1,50 @@
-:root {
-  color-scheme:dark;
-  --bg:#05080b;
-  --surface:#0b1117;
-  --surface2:#101a23;
-  --line:#293845;
-  --text:#f2f6f8;
-  --muted:#7f919e;
-  --accent:#52e0ba;
-}
-* { box-sizing:border-box; }
-html { background:var(--bg); }
-body { min-height:100vh; margin:0; color:var(--text); background:radial-gradient(circle at 75% 0,rgba(27,109,122,.22),transparent 34%),var(--bg); font-family:Inter,"Noto Sans SC","Microsoft YaHei",sans-serif; }
-button,input { font:inherit; }
-a { color:inherit; }
-.heat-nav { position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:20px; min-height:68px; padding:0 clamp(18px,4vw,58px); background:rgba(5,8,11,.9); border-bottom:1px solid var(--line); backdrop-filter:blur(16px); }
-.heat-brand { font-size:14px; font-weight:900; letter-spacing:.16em; text-decoration:none; }
-.heat-nav nav { display:flex; gap:8px; }
-.heat-nav nav a { padding:9px 15px; color:var(--muted); border:1px solid transparent; border-radius:999px; font-size:13px; font-weight:800; text-decoration:none; }
-.heat-nav nav a.active { color:#07110e; background:var(--accent); }
-main { width:min(1400px,calc(100% - 32px)); margin:auto; }
-.heat-hero { padding:78px 0 46px; text-align:center; }
-.heat-hero > span { color:var(--accent); font:800 11px/1.2 monospace; letter-spacing:.22em; }
-.heat-hero h1 { margin:13px 0 14px; font-size:clamp(38px,7vw,82px); line-height:.98; letter-spacing:-.055em; }
-.heat-hero p { margin:0; color:var(--muted); font-size:15px; }
-.heat-metrics { display:flex; justify-content:center; gap:clamp(12px,4vw,60px); margin-top:32px; }
-.heat-metrics div { display:grid; gap:4px; min-width:110px; }
-.heat-metrics b { font:900 clamp(17px,2.4vw,27px)/1 monospace; }
-.heat-metrics span { color:var(--muted); font-size:11px; }
-.heat-controls { padding:20px clamp(14px,2vw,24px); background:rgba(11,17,23,.9); border:1px solid var(--line); border-radius:14px; }
-.filter-row,.school-heading { display:flex; align-items:center; gap:14px; padding:10px 0; }
-.filter-row > span,.school-heading > span { flex:0 0 54px; color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.08em; }
-.pills { display:flex; flex-wrap:wrap; gap:8px; }
-.pill { min-height:35px; padding:0 15px; color:var(--text); background:transparent; border:1px solid #53626d; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer; }
-.pill:hover { border-color:#a5b2ba; }
-.pill.active { color:#07110e; background:#fff; border-color:#fff; }
-.school-heading { justify-content:space-between; border-top:1px solid rgba(64,82,96,.45); margin-top:8px; padding-top:18px; }
-.school-heading label { flex:1; max-width:340px; }
-#school-search { width:100%; min-height:40px; padding:0 13px; color:var(--text); background:#080d12; border:1px solid var(--line); border-radius:9px; outline:none; }
-#school-search:focus { border-color:var(--accent); }
-.school-list { max-height:190px; display:flex; flex-wrap:wrap; gap:7px; overflow:auto; padding:4px 2px 8px; scrollbar-width:thin; }
-.school-list button { min-height:32px; padding:0 12px; color:#b9c7cf; background:#0a1117; border:1px solid #2b3c49; border-radius:7px; font-size:11px; cursor:pointer; }
-.school-list button:hover { color:#fff; border-color:#70838f; }
-.school-list button.active { color:#06110e; background:var(--accent); border-color:var(--accent); }
-.heat-view { margin:24px 0 55px; padding:clamp(12px,2vw,20px); background:var(--surface); border:1px solid var(--line); border-radius:14px; }
-.heat-view-head { display:flex; align-items:end; justify-content:space-between; gap:18px; padding:4px 3px 15px; }
-.heat-view-head span { color:var(--accent); font:800 10px/1.2 monospace; letter-spacing:.12em; }
-.heat-view-head h2 { margin:6px 0 0; font-size:clamp(21px,3vw,34px); }
-.selected-stats { color:var(--muted); font:700 12px/1.5 monospace; text-align:right; }
-.heatmap-stage { position:relative; width:100%; aspect-ratio:2337/1283; overflow:hidden; background:#020406; border:1px solid #3a4e5b; border-radius:10px; }
-.heatmap-stage img,.heatmap-stage canvas { position:absolute; inset:0; width:100%; height:100%; }
-.heatmap-stage img { display:block; object-fit:contain; opacity:.72; }
+.heatmap-shell { max-width:1700px; }
+.heatmap-header { align-items:flex-end; }
+.heatmap-selectors { flex-wrap:wrap; justify-content:flex-end; }
+.heatmap-selectors .team-select select { min-width:300px; }
+.heatmap-content { display:grid; gap:12px; }
+.heatmap-panel { padding:14px 16px 10px; }
+.heatmap-panel .eyebrow { margin-bottom:5px; }
+.heatmap-stats { align-self:center; color:var(--muted); font:750 12px/1.45 "JetBrains Mono",monospace; text-align:right; }
+
+.heatmap-stage { position:relative; width:100%; aspect-ratio:2337/1283; max-height:none; overflow:hidden; }
+.heatmap-stage img,
+.heatmap-stage canvas { position:absolute; inset:0; width:100%; height:100%; }
+.heatmap-stage img { display:block; object-fit:contain; opacity:.74; }
 .heatmap-stage canvas { pointer-events:none; }
 .heatmap-loading { position:absolute; inset:0; display:grid; place-items:center; color:#dbe8ed; background:rgba(3,7,10,.56); font-size:13px; font-weight:800; }
 .heatmap-loading.hidden { display:none; }
-.heat-legend { display:flex; align-items:center; justify-content:center; gap:9px; padding:15px 2px 0; color:var(--muted); font-size:11px; }
-.heat-legend i { width:min(340px,38vw); height:10px; border-radius:99px; background:linear-gradient(90deg,#0046ff,#00e5ff,#18f06b,#fff000,#ff1900); }
-.heat-legend b { margin-left:15px; color:#9aabb5; font-weight:650; }
-footer { display:flex; justify-content:space-between; gap:20px; padding:24px clamp(18px,4vw,58px); color:var(--muted); border-top:1px solid var(--line); font-size:11px; }
-.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
-@media (max-width:700px) {
-  .heat-nav { min-height:58px; padding:0 12px; }
-  .heat-brand { font-size:11px; }
-  .heat-nav nav a { padding:8px 10px; font-size:11px; }
-  main { width:min(100% - 14px,1400px); }
-  .heat-hero { padding:50px 6px 30px; }
-  .heat-hero p { font-size:12px; line-height:1.6; }
-  .heat-metrics { gap:8px; }
-  .heat-metrics div { min-width:0; flex:1; }
-  .filter-row { align-items:flex-start; }
-  .school-heading { display:grid; grid-template-columns:54px 1fr; }
-  .school-heading label { max-width:none; }
-  .school-list { max-height:240px; }
-  .heat-view-head { display:block; }
-  .selected-stats { margin-top:8px; text-align:left; }
-  .heat-legend { flex-wrap:wrap; }
-  .heat-legend b { width:100%; margin:2px 0 0; text-align:center; }
-  footer { flex-direction:column; }
+
+.heatmap-legend > i { width:min(320px,26vw); height:10px; border-radius:99px; background:linear-gradient(90deg,#0046ff,#00e5ff,#18f06b,#fff000,#ff1900); }
+.heatmap-controls { grid-template-columns:auto auto auto minmax(180px,1fr) auto auto; }
+.heatmap-controls output { min-width:140px; }
+.heatmap-controls select { min-width:112px; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+.mobile-dock a.active { color:#fff; background:#16755e; }
+.mobile-dock a.active b { color:#d7fff4; }
+
+html[data-theme="day"] .heatmap-stage img { opacity:.82; }
+html[data-theme="day"] .heatmap-loading { color:#17303f; background:rgba(238,245,249,.62); }
+
+@media (max-width:1100px) {
+  .heatmap-header { align-items:stretch; flex-direction:column; }
+  .heatmap-selectors { display:grid; grid-template-columns:140px minmax(240px,1fr) 140px; }
+  .heatmap-selectors .team-select select { min-width:0; }
+}
+@media (max-width:760px) {
+  .heatmap-shell { padding:10px 8px 88px; }
+  .heatmap-header { padding:15px; }
+  .heatmap-selectors { grid-template-columns:1fr; }
+  .heatmap-selectors label,
+  .heatmap-selectors select { width:100%; }
+  .heatmap-controls { grid-template-columns:1fr 1fr 1fr; padding:9px; }
+  .heatmap-controls #window-play { min-width:0; }
+  .heatmap-controls #window-range { grid-column:1 / -1; grid-row:2; }
+  .heatmap-controls output { grid-column:1 / 3; min-width:0; }
+  .heatmap-controls select { width:100%; min-width:0; }
+  .heatmap-stats { margin-top:7px; text-align:left; }
+  .heatmap-panel .map-heading { display:block; }
+  .heatmap-legend { flex-wrap:wrap; }
+  .heatmap-legend .map-note { width:100%; margin:0; }
+  .heatmap-legend b { margin-left:auto; }
 }

@@ -20,6 +20,7 @@ CELL_SIZE_METRES = 0.1
 GRID_WIDTH = round(FIELD_WIDTH / CELL_SIZE_METRES)
 GRID_HEIGHT = round(FIELD_HEIGHT / CELL_SIZE_METRES)
 GAUSSIAN_SIGMA_METRES = 0.22
+WINDOW_SECONDS = 15
 MOBILE_ROLES = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
 ROW = {"type": 1, "side": 2, "hp": 3, "x": 5, "y": 6}
 
@@ -56,8 +57,13 @@ def main() -> None:
         }
         for school in school_region
     }
+    window_grids = {
+        school: defaultdict(lambda: {"red": Counter(), "blue": Counter()})
+        for school in school_region
+    }
     games = defaultdict(int)
     samples = defaultdict(int)
+    max_window = 0
 
     for path in sorted(args.games_dir.glob("*.json.gz")):
         with gzip.open(path, "rt", encoding="utf-8") as handle:
@@ -66,7 +72,12 @@ def main() -> None:
         side_school = {"红": info["red"], "蓝": info["blue"]}
         games[info["red"]] += 1
         games[info["blue"]] += 1
-        for robots in game.get("frames", {}).values():
+        max_window = max(
+            max_window,
+            (int(info["duration"]) - 1) // WINDOW_SECONDS,
+        )
+        for second, robots in game.get("frames", {}).items():
+            window = int(float(second)) // WINDOW_SECONDS
             for robot in robots:
                 if robot[ROW["type"]] not in MOBILE_ROLES:
                     continue
@@ -81,13 +92,27 @@ def main() -> None:
                 grid_y = min(GRID_HEIGHT - 1, int(y / CELL_SIZE_METRES))
                 school = side_school[robot[ROW["side"]]]
                 side = "red" if robot[ROW["side"]] == "红" else "blue"
-                grids[school][side][grid_y * GRID_WIDTH + grid_x] += 1
+                grid_index = grid_y * GRID_WIDTH + grid_x
+                grids[school][side][grid_index] += 1
+                window_grids[school][window][side][grid_index] += 1
                 samples[school] += 1
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    window_count = max_window + 1
     schools = []
     for index, school in enumerate(sorted(school_region)):
         filename = f"{index:03d}.json"
+        windows = []
+        for window in range(window_count):
+            red = window_grids[school][window]["red"]
+            blue = window_grids[school][window]["blue"]
+            windows.append({
+                "start": window * WINDOW_SECONDS,
+                "end": (window + 1) * WINDOW_SECONDS,
+                "samples": sum(red.values()) + sum(blue.values()),
+                "red": sparse_grid(red),
+                "blue": sparse_grid(blue),
+            })
         payload = {
             "school": school,
             "region": school_region[school],
@@ -95,6 +120,7 @@ def main() -> None:
             "samples": samples[school],
             "red": sparse_grid(grids[school]["red"]),
             "blue": sparse_grid(grids[school]["blue"]),
+            "windows": windows,
         }
         (args.output_dir / filename).write_text(
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
@@ -115,11 +141,13 @@ def main() -> None:
         "grid_height": GRID_HEIGHT,
         "cell_size_metres": CELL_SIZE_METRES,
         "gaussian_sigma_metres": GAUSSIAN_SIGMA_METRES,
+        "window_seconds": WINDOW_SECONDS,
+        "window_count": window_count,
         "x_range": [0, FIELD_WIDTH],
         "y_range": [0, FIELD_HEIGHT],
         "regions": catalog["regions"],
         "schools": schools,
-        "source": "613局区域赛1Hz存活机器人位置；0.1m等距学校级红蓝方密度场；显示端以σ=0.22m二维高斯核表达单点位置误差；基地和前哨站不计入",
+        "source": "613局区域赛1Hz存活机器人位置；0.1m等距学校级红蓝方密度场；按比赛时间聚合为15秒切片；显示端以σ=0.22m二维高斯核表达单点位置误差；基地和前哨站不计入",
     }
     (args.output_dir / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, separators=(",", ":")),

@@ -45,6 +45,8 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertEqual(self.config["grid_height"], 150)
         self.assertEqual(self.config["cell_size_metres"], 0.1)
         self.assertEqual(self.config["gaussian_sigma_metres"], 0.22)
+        self.assertEqual(self.config["window_seconds"], 15)
+        self.assertEqual(self.config["window_count"], 28)
 
     def test_all_96_teams_are_present_once(self) -> None:
         schools = self.config["schools"]
@@ -80,6 +82,18 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
                 + sparse_total(payload["blue"], grid_length),
                 payload["samples"],
             )
+            self.assertEqual(len(payload["windows"]), self.config["window_count"])
+            window_samples = 0
+            for index, window in enumerate(payload["windows"]):
+                self.assertEqual(window["start"], index * 15)
+                self.assertEqual(window["end"], (index + 1) * 15)
+                decoded_samples = (
+                    sparse_total(window["red"], grid_length)
+                    + sparse_total(window["blue"], grid_length)
+                )
+                self.assertEqual(decoded_samples, window["samples"])
+                window_samples += decoded_samples
+            self.assertEqual(window_samples, payload["samples"])
         actual_files = {
             path.name for path in HEATMAP_DIR.glob("[0-9][0-9][0-9].json")
         }
@@ -93,6 +107,11 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertIn("gaussian_sigma_metres / state.config.cell_size_metres", script)
         self.assertNotIn("60 × 60", page)
         self.assertNotIn("60 * 60", script)
+        self.assertIn('id="school-select"', page)
+        self.assertIn('id="window-play"', page)
+        self.assertIn("toggleWindowPlayback", script)
+        self.assertIn('href="./app.css?v=24"', page)
+        self.assertNotIn("RM_LADDER", page)
 
     def test_heatmap_is_a_separate_page_from_replay(self) -> None:
         replay_page = REPLAY_PAGE.read_text(encoding="utf-8")
