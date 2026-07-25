@@ -1,6 +1,6 @@
 .heatmap-shell { max-width:1700px; }
 .heatmap-header { align-items:flex-end; }
-.heatmap-selectors { flex-wrap:wrap; justify-content:flex-end; }
+.heatmap-selectors { display:grid; grid-template-columns:140px minmax(260px,300px); }
 .heatmap-selectors .team-select select { min-width:300px; }
 .heatmap-content { display:grid; gap:12px; }
 .heatmap-panel { padding:14px 16px 10px; }
@@ -28,7 +28,7 @@ html[data-theme="day"] .heatmap-loading { color:#17303f; background:rgba(238,245
 
 @media (max-width:1100px) {
   .heatmap-header { align-items:stretch; flex-direction:column; }
-  .heatmap-selectors { display:grid; grid-template-columns:140px minmax(240px,1fr) 140px; }
+  .heatmap-selectors { grid-template-columns:140px minmax(240px,1fr); }
   .heatmap-selectors .team-select select { min-width:0; }
 }
 @media (max-width:760px) {
@@ -40,7 +40,7 @@ html[data-theme="day"] .heatmap-loading { color:#17303f; background:rgba(238,245
   .heatmap-controls { grid-template-columns:1fr 1fr 1fr; padding:9px; }
   .heatmap-controls #window-play { min-width:0; }
   .heatmap-controls #window-range { grid-column:1 / -1; grid-row:2; }
-  .heatmap-controls output { grid-column:1 / 3; min-width:0; }
+  .heatmap-controls output { grid-column:1 / -1; min-width:0; }
   .heatmap-controls select { width:100%; min-width:0; }
   .heatmap-stats { margin-top:7px; text-align:left; }
   .heatmap-panel .map-heading { display:block; }

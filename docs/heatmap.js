@@ -1,12 +1,13 @@
 "use strict";
 
-const CONFIG_URL = "./data/heatmaps/config.json?v=2";
+const CONFIG_URL = "./data/heatmaps/config.json?v=3";
 const FIELD_HEIGHT_WITH_MARGIN = 17;
 const state = {
   config: null,
   region: "all",
   school: "东北大学",
   side: "canonical",
+  role: "all",
   range: "full",
   windowIndex: 0,
   schoolData: null,
@@ -82,7 +83,7 @@ function heatColor(value) {
 }
 
 function combinedDensity(data) {
-  const cacheKey = `${state.school}:${state.side}:${state.range}:${state.windowIndex}`;
+  const cacheKey = `${state.school}:${state.side}:${state.role}:${state.range}:${state.windowIndex}`;
   if (state.densityCache.has(cacheKey)) return state.densityCache.get(cacheKey);
   const { grid_width: width, grid_height: height } = state.config;
   const length = width * height;
@@ -99,10 +100,18 @@ function combinedDensity(data) {
   return density;
 }
 
-function activePayload() {
+function activeSeries() {
   if (!state.schoolData) return null;
-  if (state.range === "full") return state.schoolData;
-  return state.schoolData.windows?.[state.windowIndex] || null;
+  return state.role === "all"
+    ? state.schoolData
+    : state.schoolData.roles?.[state.role] || null;
+}
+
+function activePayload() {
+  const series = activeSeries();
+  if (!series) return null;
+  if (state.range === "full") return series;
+  return series.windows?.[state.windowIndex] || null;
 }
 
 function resizeCanvas() {
@@ -191,10 +200,12 @@ function updatePlaybackUI() {
     isWindow && state.windowIndex === state.config.window_count - 1;
   const entry = schoolEntry(state.school);
   if (!entry) return;
-  const windowSamples = state.schoolData?.windows?.[state.windowIndex]?.samples || 0;
+  const series = activeSeries();
+  const windowSamples = series?.windows?.[state.windowIndex]?.samples || 0;
+  const roleLabel = state.role === "all" ? "全部机器人" : state.role;
   document.querySelector("#selected-stats").textContent = isWindow
-    ? `${formatTime(start)}–${formatTime(end)} · ${windowSamples.toLocaleString()} 个位置样本`
-    : `${entry.games} 局 · ${entry.samples.toLocaleString()} 个存活位置样本`;
+    ? `${roleLabel} · ${formatTime(start)}–${formatTime(end)} · ${windowSamples.toLocaleString()} 个位置样本`
+    : `${entry.games} 局 · ${roleLabel} · ${(series?.samples || 0).toLocaleString()} 个存活位置样本`;
 }
 
 function stopWindowPlayback() {
@@ -263,7 +274,7 @@ async function loadSchool(name) {
   if ([...select.options].some((option) => option.value === name)) select.value = name;
   try {
     if (!state.cache.has(entry.file)) {
-      const response = await fetch(`./data/heatmaps/${entry.file}?v=2`, { cache: "force-cache" });
+      const response = await fetch(`./data/heatmaps/${entry.file}?v=3`, { cache: "force-cache" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       state.cache.set(entry.file, await response.json());
     }
@@ -315,6 +326,16 @@ function renderSchoolOptions() {
   }
 }
 
+function renderRoleOptions() {
+  const select = document.querySelector("#role-select");
+  for (const role of state.config.roles) {
+    const option = document.createElement("option");
+    option.value = role;
+    option.textContent = role;
+    select.appendChild(option);
+  }
+}
+
 function initDisplayControls() {
   const root = document.documentElement;
   const themeButton = document.querySelector("#theme-toggle");
@@ -357,12 +378,19 @@ async function init() {
     if (requested && schoolEntry(requested)) state.school = requested;
     renderRegions();
     renderSchoolOptions();
+    renderRoleOptions();
     document.querySelector("#side-select").addEventListener("change", (event) => {
       state.side = event.target.value;
       state.densityCache.clear();
       drawHeatmap();
     });
     document.querySelector("#school-select").addEventListener("change", (event) => loadSchool(event.target.value));
+    document.querySelector("#role-select").addEventListener("change", (event) => {
+      state.role = event.target.value;
+      state.densityCache.clear();
+      updatePlaybackUI();
+      drawHeatmap();
+    });
     document.querySelector("#range-select").addEventListener("change", (event) => setRange(event.target.value));
     document.querySelector("#window-prev").addEventListener("click", () => setWindowIndex(state.windowIndex - 1));
     document.querySelector("#window-next").addEventListener("click", () => setWindowIndex(state.windowIndex + 1));

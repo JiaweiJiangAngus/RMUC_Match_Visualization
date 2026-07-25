@@ -47,6 +47,10 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertEqual(self.config["gaussian_sigma_metres"], 0.22)
         self.assertEqual(self.config["window_seconds"], 15)
         self.assertEqual(self.config["window_count"], 28)
+        self.assertEqual(
+            self.config["roles"],
+            ["英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"],
+        )
 
     def test_all_96_teams_are_present_once(self) -> None:
         schools = self.config["schools"]
@@ -94,6 +98,27 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
                 self.assertEqual(decoded_samples, window["samples"])
                 window_samples += decoded_samples
             self.assertEqual(window_samples, payload["samples"])
+            self.assertEqual(set(payload["roles"]), set(self.config["roles"]))
+            role_samples = 0
+            for role in self.config["roles"]:
+                role_payload = payload["roles"][role]
+                decoded_role_samples = (
+                    sparse_total(role_payload["red"], grid_length)
+                    + sparse_total(role_payload["blue"], grid_length)
+                )
+                self.assertEqual(decoded_role_samples, role_payload["samples"])
+                self.assertEqual(
+                    len(role_payload["windows"]),
+                    self.config["window_count"],
+                )
+                role_window_samples = sum(
+                    sparse_total(window["red"], grid_length)
+                    + sparse_total(window["blue"], grid_length)
+                    for window in role_payload["windows"]
+                )
+                self.assertEqual(role_window_samples, role_payload["samples"])
+                role_samples += decoded_role_samples
+            self.assertEqual(role_samples, payload["samples"])
         actual_files = {
             path.name for path in HEATMAP_DIR.glob("[0-9][0-9][0-9].json")
         }
@@ -108,6 +133,7 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertNotIn("60 × 60", page)
         self.assertNotIn("60 * 60", script)
         self.assertIn('id="school-select"', page)
+        self.assertIn('id="role-select"', page)
         self.assertIn('id="window-play"', page)
         self.assertIn("toggleWindowPlayback", script)
         self.assertIn('href="./app.css?v=24"', page)

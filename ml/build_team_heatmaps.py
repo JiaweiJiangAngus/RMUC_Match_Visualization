@@ -21,7 +21,8 @@ GRID_WIDTH = round(FIELD_WIDTH / CELL_SIZE_METRES)
 GRID_HEIGHT = round(FIELD_HEIGHT / CELL_SIZE_METRES)
 GAUSSIAN_SIGMA_METRES = 0.22
 WINDOW_SECONDS = 15
-MOBILE_ROLES = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
+MOBILE_ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵", "空中")
+MOBILE_ROLE_SET = set(MOBILE_ROLES)
 ROW = {"type": 1, "side": 2, "hp": 3, "x": 5, "y": 6}
 
 
@@ -35,6 +36,21 @@ def options() -> argparse.Namespace:
 
 def sparse_grid(values: Counter) -> str:
     return ",".join(f"{index}:{values[index]}" for index in sorted(values))
+
+
+def serialise_windows(values, window_count: int) -> list[dict]:
+    windows = []
+    for window in range(window_count):
+        red = values[window]["red"]
+        blue = values[window]["blue"]
+        windows.append({
+            "start": window * WINDOW_SECONDS,
+            "end": (window + 1) * WINDOW_SECONDS,
+            "samples": sum(red.values()) + sum(blue.values()),
+            "red": sparse_grid(red),
+            "blue": sparse_grid(blue),
+        })
+    return windows
 
 
 def main() -> None:
@@ -61,6 +77,20 @@ def main() -> None:
         school: defaultdict(lambda: {"red": Counter(), "blue": Counter()})
         for school in school_region
     }
+    role_grids = {
+        school: {
+            role: {"red": Counter(), "blue": Counter()}
+            for role in MOBILE_ROLES
+        }
+        for school in school_region
+    }
+    role_window_grids = {
+        school: {
+            role: defaultdict(lambda: {"red": Counter(), "blue": Counter()})
+            for role in MOBILE_ROLES
+        }
+        for school in school_region
+    }
     games = defaultdict(int)
     samples = defaultdict(int)
     max_window = 0
@@ -79,7 +109,8 @@ def main() -> None:
         for second, robots in game.get("frames", {}).items():
             window = int(float(second)) // WINDOW_SECONDS
             for robot in robots:
-                if robot[ROW["type"]] not in MOBILE_ROLES:
+                role = robot[ROW["type"]]
+                if role not in MOBILE_ROLE_SET:
                     continue
                 if float(robot[ROW["hp"]] or 0) <= 0:
                     continue
@@ -95,6 +126,8 @@ def main() -> None:
                 grid_index = grid_y * GRID_WIDTH + grid_x
                 grids[school][side][grid_index] += 1
                 window_grids[school][window][side][grid_index] += 1
+                role_grids[school][role][side][grid_index] += 1
+                role_window_grids[school][role][window][side][grid_index] += 1
                 samples[school] += 1
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -102,17 +135,19 @@ def main() -> None:
     schools = []
     for index, school in enumerate(sorted(school_region)):
         filename = f"{index:03d}.json"
-        windows = []
-        for window in range(window_count):
-            red = window_grids[school][window]["red"]
-            blue = window_grids[school][window]["blue"]
-            windows.append({
-                "start": window * WINDOW_SECONDS,
-                "end": (window + 1) * WINDOW_SECONDS,
+        roles = {}
+        for role in MOBILE_ROLES:
+            red = role_grids[school][role]["red"]
+            blue = role_grids[school][role]["blue"]
+            roles[role] = {
                 "samples": sum(red.values()) + sum(blue.values()),
                 "red": sparse_grid(red),
                 "blue": sparse_grid(blue),
-            })
+                "windows": serialise_windows(
+                    role_window_grids[school][role],
+                    window_count,
+                ),
+            }
         payload = {
             "school": school,
             "region": school_region[school],
@@ -120,7 +155,8 @@ def main() -> None:
             "samples": samples[school],
             "red": sparse_grid(grids[school]["red"]),
             "blue": sparse_grid(grids[school]["blue"]),
-            "windows": windows,
+            "windows": serialise_windows(window_grids[school], window_count),
+            "roles": roles,
         }
         (args.output_dir / filename).write_text(
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
@@ -143,11 +179,12 @@ def main() -> None:
         "gaussian_sigma_metres": GAUSSIAN_SIGMA_METRES,
         "window_seconds": WINDOW_SECONDS,
         "window_count": window_count,
+        "roles": list(MOBILE_ROLES),
         "x_range": [0, FIELD_WIDTH],
         "y_range": [0, FIELD_HEIGHT],
         "regions": catalog["regions"],
         "schools": schools,
-        "source": "613局区域赛1Hz存活机器人位置；0.1m等距学校级红蓝方密度场；按比赛时间聚合为15秒切片；显示端以σ=0.22m二维高斯核表达单点位置误差；基地和前哨站不计入",
+        "source": "613局区域赛1Hz存活机器人位置；0.1m等距学校级红蓝方密度场；支持六兵种独立筛选并按比赛时间聚合为15秒切片；显示端以σ=0.22m二维高斯核表达单点位置误差；基地和前哨站不计入",
     }
     (args.output_dir / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, separators=(",", ":")),

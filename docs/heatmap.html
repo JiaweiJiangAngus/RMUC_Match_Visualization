@@ -14,7 +14,7 @@
     })();
   </script>
   <link rel="stylesheet" href="./app.css?v=24">
-  <link rel="stylesheet" href="./heatmap.css?v=2">
+  <link rel="stylesheet" href="./heatmap.css?v=3">
 </head>
 <body>
   <div class="animated-backdrop" aria-hidden="true">
@@ -56,6 +56,11 @@
       <div class="selectors heatmap-selectors" aria-label="热图筛选">
         <label><span>赛区</span><select id="region-select"></select></label>
         <label class="team-select"><span>学校</span><select id="school-select"></select></label>
+        <label><span>兵种</span>
+          <select id="role-select" aria-label="机器人兵种">
+            <option value="all" selected>全部机器人</option>
+          </select>
+        </label>
         <label><span>视角</span>
           <select id="side-select">
             <option value="canonical" selected>统一红方</option>
@@ -121,6 +126,6 @@
     <a class="active" href="./heatmap.html"><b>▦</b><span>热图</span></a>
   </nav>
 
-  <script src="./heatmap.js?v=2"></script>
+  <script src="./heatmap.js?v=3"></script>
 </body>
 </html>
