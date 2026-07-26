@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build high-resolution position and firing-density grids for all 96 teams."""
+"""Build position, firing and death-density grids for all 96 teams."""
 
 from __future__ import annotations
 
@@ -160,10 +160,34 @@ def main() -> None:
         }
         for school in school_region
     }
+    death_grids = {
+        school: {"red": Counter(), "blue": Counter()}
+        for school in school_region
+    }
+    death_window_grids = {
+        school: defaultdict(lambda: {"red": Counter(), "blue": Counter()})
+        for school in school_region
+    }
+    death_role_grids = {
+        school: {
+            role: {"red": Counter(), "blue": Counter()}
+            for role in MOBILE_ROLES
+        }
+        for school in school_region
+    }
+    death_role_window_grids = {
+        school: {
+            role: defaultdict(lambda: {"red": Counter(), "blue": Counter()})
+            for role in MOBILE_ROLES
+        }
+        for school in school_region
+    }
     games = defaultdict(int)
     samples = defaultdict(int)
     firing_samples = defaultdict(int)
     firing_groups = defaultdict(int)
+    death_samples = defaultdict(int)
+    missing_death_positions = 0
     exact_firing_groups = 0
     adjacent_firing_groups = 0
     missing_firing_groups = 0
@@ -184,7 +208,12 @@ def main() -> None:
             (int(info["duration"]) - 1) // WINDOW_SECONDS,
         )
         frame_robots: dict[int, dict[int, list]] = {}
-        for second, robots in game.get("frames", {}).items():
+        previous_hp: dict[int, float] = {}
+        frame_items = sorted(
+            game.get("frames", {}).items(),
+            key=lambda item: float(item[0]),
+        )
+        for second, robots in frame_items:
             second_index = int(float(second))
             window = second_index // WINDOW_SECONDS
             frame_robots[second_index] = {int(robot[0]): robot for robot in robots}
@@ -192,17 +221,45 @@ def main() -> None:
                 role = robot[ROW["type"]]
                 if role not in MOBILE_ROLE_SET:
                     continue
-                if float(robot[ROW["hp"]] or 0) <= 0:
-                    continue
+                robot_id = int(robot[0])
+                current_hp = float(robot[ROW["hp"]] or 0)
+                previous_robot_hp = previous_hp.get(robot_id)
+                previous_hp[robot_id] = current_hp
                 x, y = robot[ROW["x"]], robot[ROW["y"]]
+                school = side_school[robot[ROW["side"]]]
+                side = "red" if robot[ROW["side"]] == "红" else "blue"
+                if (
+                    previous_robot_hp is not None
+                    and previous_robot_hp > 0
+                    and current_hp <= 0
+                ):
+                    if x is None or y is None:
+                        missing_death_positions += 1
+                    else:
+                        death_x = max(0.0, min(FIELD_WIDTH, float(x)))
+                        death_y = max(0.0, min(FIELD_HEIGHT, float(y)))
+                        death_grid_x = min(
+                            GRID_WIDTH - 1,
+                            int(death_x / CELL_SIZE_METRES),
+                        )
+                        death_grid_y = min(
+                            GRID_HEIGHT - 1,
+                            int(death_y / CELL_SIZE_METRES),
+                        )
+                        death_grid_index = death_grid_y * GRID_WIDTH + death_grid_x
+                        death_grids[school][side][death_grid_index] += 1
+                        death_window_grids[school][window][side][death_grid_index] += 1
+                        death_role_grids[school][role][side][death_grid_index] += 1
+                        death_role_window_grids[school][role][window][side][death_grid_index] += 1
+                        death_samples[school] += 1
+                if current_hp <= 0:
+                    continue
                 if x is None or y is None:
                     continue
                 x = max(0.0, min(FIELD_WIDTH, float(x)))
                 y = max(0.0, min(FIELD_HEIGHT, float(y)))
                 grid_x = min(GRID_WIDTH - 1, int(x / CELL_SIZE_METRES))
                 grid_y = min(GRID_HEIGHT - 1, int(y / CELL_SIZE_METRES))
-                school = side_school[robot[ROW["side"]]]
-                side = "red" if robot[ROW["side"]] == "红" else "blue"
                 grid_index = grid_y * GRID_WIDTH + grid_x
                 grids[school][side][grid_index] += 1
                 window_grids[school][window][side][grid_index] += 1
@@ -285,6 +342,19 @@ def main() -> None:
         )
         firing_payload["groups"] = firing_groups[school]
         firing_payload["roles"] = firing_roles
+        death_roles = {}
+        for role in MOBILE_ROLES:
+            death_roles[role] = serialise_series(
+                death_role_grids[school][role],
+                death_role_window_grids[school][role],
+                window_count,
+            )
+        death_payload = serialise_series(
+            death_grids[school],
+            death_window_grids[school],
+            window_count,
+        )
+        death_payload["roles"] = death_roles
         payload = {
             "school": school,
             "region": school_region[school],
@@ -295,6 +365,7 @@ def main() -> None:
             "windows": serialise_windows(window_grids[school], window_count),
             "roles": roles,
             "shots": firing_payload,
+            "deaths": death_payload,
         }
         (args.output_dir / filename).write_text(
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
@@ -307,12 +378,13 @@ def main() -> None:
             "games": games[school],
             "samples": samples[school],
             "shots": firing_samples[school],
+            "deaths": death_samples[school],
         })
 
     config = {
-        "schema_version": 2,
-        "kind": "rmuc_2026_team_position_and_firing_heatmaps",
-        "modes": ["position", "shots"],
+        "schema_version": 3,
+        "kind": "rmuc_2026_team_position_firing_and_death_heatmaps",
+        "modes": ["position", "shots", "deaths"],
         "grid_width": GRID_WIDTH,
         "grid_height": GRID_HEIGHT,
         "cell_size_metres": CELL_SIZE_METRES,
@@ -331,7 +403,12 @@ def main() -> None:
             "adjacent_1s_groups": adjacent_firing_groups,
             "missing_groups": missing_firing_groups,
         },
-        "source": "613局区域赛1Hz存活机器人位置与逐发发弹事件；发弹按同局同秒robot_id映射射手坐标，缺帧时只取相邻1秒；0.1m等距学校级红蓝方密度场；支持六兵种独立筛选并按比赛时间聚合为15秒切片；显示端以σ=0.22m二维高斯核表达单点位置误差；基地和前哨站不计入",
+        "death_events": sum(death_samples.values()),
+        "death_position_detection": {
+            "method": "同一robot_id相邻轨迹由HP>0转为HP=0时记录归零秒坐标",
+            "missing_positions": missing_death_positions,
+        },
+        "source": "613局区域赛1Hz机器人位置、血量与逐发发弹事件；发弹按同局同秒robot_id映射射手坐标，缺帧时只取相邻1秒；阵亡按同一robot_id血量由正数首次转为0的归零秒坐标去重；0.1m等距学校级红蓝方密度场；支持六兵种独立筛选并按比赛时间聚合为15秒切片；显示端以σ=0.22m二维高斯核表达单点误差；基地和前哨站不计入",
     }
     (args.output_dir / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, separators=(",", ":")),
@@ -339,7 +416,8 @@ def main() -> None:
     )
     print(
         f"wrote {len(schools)} team heatmaps from {sum(games.values()) // 2} games "
-        f"and {sum(firing_samples.values())} matched projectiles to {args.output_dir}"
+        f"with {sum(firing_samples.values())} projectiles and "
+        f"{sum(death_samples.values())} deaths to {args.output_dir}"
     )
 
 

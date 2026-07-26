@@ -1,6 +1,6 @@
 "use strict";
 
-const CONFIG_URL = "./data/heatmaps/config.json?v=4";
+const CONFIG_URL = "./data/heatmaps/config.json?v=5";
 const FIELD_HEIGHT_WITH_MARGIN = 17;
 const state = {
   config: null,
@@ -105,7 +105,9 @@ function activeSeries() {
   if (!state.schoolData) return null;
   const root = state.mode === "shots"
     ? state.schoolData.shots
-    : state.schoolData;
+    : state.mode === "deaths"
+      ? state.schoolData.deaths
+      : state.schoolData;
   if (!root) return null;
   return state.role === "all"
     ? root
@@ -187,6 +189,7 @@ function formatTime(seconds) {
 function updatePlaybackUI() {
   if (!state.config) return;
   const isShots = state.mode === "shots";
+  const isDeaths = state.mode === "deaths";
   const isWindow = state.range === "window";
   const windowSeconds = state.config.window_seconds;
   const start = state.windowIndex * windowSeconds;
@@ -196,7 +199,7 @@ function updatePlaybackUI() {
   slider.value = String(state.windowIndex);
   document.querySelector("#window-label").textContent = isWindow
     ? `${formatTime(start)}–${formatTime(end)}`
-    : isShots ? "整局发弹汇总" : "整局位置汇总";
+    : isShots ? "整局发弹汇总" : isDeaths ? "整局阵亡汇总" : "整局位置汇总";
   document.querySelector("#map-time").textContent = isWindow
     ? `T + ${formatTime(start)}–${formatTime(end)}`
     : "整局汇总";
@@ -209,16 +212,23 @@ function updatePlaybackUI() {
   const series = activeSeries();
   const windowSamples = series?.windows?.[state.windowIndex]?.samples || 0;
   const roleLabel = state.role === "all" ? "全部机器人" : state.role;
-  const modeLabel = isShots ? "打弹热力图" : "位置热图";
-  const unit = isShots ? "发" : "个位置样本";
+  const modeLabel = isShots ? "打弹热力图" : isDeaths ? "阵亡热力图" : "位置热图";
+  const unit = isShots ? "发" : isDeaths ? "次阵亡" : "个位置样本";
   document.querySelector("#selected-school").textContent = `${entry.school} · ${modeLabel}`;
   document.querySelector("#heatmap-description").textContent = isShots
     ? "亮度表示该校机器人在所选比赛时段从对应位置发射弹丸的累计密度"
-    : "亮度表示该校机器人在所选比赛时段出现在对应位置的累计密度";
+    : isDeaths
+      ? "亮度表示该校机器人在所选比赛时段于对应位置阵亡的累计密度"
+      : "亮度表示该校机器人在所选比赛时段出现在对应位置的累计密度";
   document.querySelector("#heatmap-kernel-note").textContent = isShots
     ? "每发弹丸按射手当秒坐标记录，并以 σ=0.22m 的二维正态分布展开"
-    : "每个位置样本以 σ=0.22m 的二维正态分布展开";
-  canvas.setAttribute("aria-label", isShots ? "战队打弹位置热力图" : "战队位置密度热图");
+    : isDeaths
+      ? "每次阵亡按血量归零当秒坐标记录，并以 σ=0.22m 的二维正态分布展开"
+      : "每个位置样本以 σ=0.22m 的二维正态分布展开";
+  canvas.setAttribute(
+    "aria-label",
+    isShots ? "战队打弹位置热力图" : isDeaths ? "战队阵亡位置热力图" : "战队位置密度热图",
+  );
   document.querySelector("#selected-stats").textContent = isWindow
     ? `${roleLabel} · ${formatTime(start)}–${formatTime(end)} · ${windowSamples.toLocaleString()} ${unit}`
     : `${entry.games} 局 · ${roleLabel} · ${(series?.samples || 0).toLocaleString()} ${unit}`;
@@ -290,7 +300,7 @@ async function loadSchool(name) {
   if ([...select.options].some((option) => option.value === name)) select.value = name;
   try {
     if (!state.cache.has(entry.file)) {
-      const response = await fetch(`./data/heatmaps/${entry.file}?v=4`, { cache: "force-cache" });
+      const response = await fetch(`./data/heatmaps/${entry.file}?v=5`, { cache: "force-cache" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       state.cache.set(entry.file, await response.json());
     }
@@ -401,7 +411,9 @@ async function init() {
     document.querySelector("#heatmap-type-select").value = state.mode;
     document.querySelector("#heatmap-type-select").addEventListener("change", (event) => {
       stopWindowPlayback();
-      state.mode = event.target.value === "shots" ? "shots" : "position";
+      state.mode = state.config.modes.includes(event.target.value)
+        ? event.target.value
+        : "position";
       state.densityCache.clear();
       const url = new URL(location.href);
       url.searchParams.set("mode", state.mode);
