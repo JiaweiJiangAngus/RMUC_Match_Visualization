@@ -40,7 +40,7 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         )
 
     def test_geometry_and_kernel_are_high_resolution(self) -> None:
-        self.assertEqual(self.config["schema_version"], 5)
+        self.assertEqual(self.config["schema_version"], 6)
         self.assertEqual(
             self.config["modes"],
             ["position", "shots", "hits", "kills", "deaths"],
@@ -149,6 +149,55 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
                 sum(role["samples"] for role in series["roles"].values()),
                 expected,
             )
+
+    def test_each_region_has_a_32_team_aggregate(self) -> None:
+        aggregates = self.config["region_aggregates"]
+        self.assertEqual(
+            {entry["region"] for entry in aggregates},
+            set(self.config["regions"]),
+        )
+        self.assertEqual(len(aggregates), 3)
+        grid_length = self.config["grid_width"] * self.config["grid_height"]
+        fields = {
+            "position": "samples",
+            "shots": "shots",
+            "hits": "hits",
+            "kills": "kills",
+            "deaths": "deaths",
+        }
+        for aggregate in aggregates:
+            region_schools = [
+                entry
+                for entry in self.config["schools"]
+                if entry["region"] == aggregate["region"]
+            ]
+            self.assertEqual(aggregate["team_count"], 32)
+            self.assertEqual(len(region_schools), 32)
+            self.assertIn(aggregate["region"], aggregate["school"])
+            payload = json.loads(
+                (HEATMAP_DIR / aggregate["file"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(payload["region"], aggregate["region"])
+            self.assertEqual(payload["team_count"], 32)
+            self.assertEqual(payload["games"], aggregate["games"])
+            for mode, field in fields.items():
+                series = payload if mode == "position" else payload[mode]
+                expected = sum(entry[field] for entry in region_schools)
+                self.assertEqual(aggregate[field], expected)
+                self.assertEqual(series["samples"], expected)
+                self.assertEqual(
+                    sparse_total(series["red"], grid_length)
+                    + sparse_total(series["blue"], grid_length),
+                    expected,
+                )
+                self.assertEqual(
+                    sum(window["samples"] for window in series["windows"]),
+                    expected,
+                )
+                self.assertEqual(
+                    sum(role["samples"] for role in series["roles"].values()),
+                    expected,
+                )
 
     def test_sparse_files_match_catalog_totals(self) -> None:
         grid_length = self.config["grid_width"] * self.config["grid_height"]
@@ -359,7 +408,10 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertIn("blue[index] + red[mirroredIndex]", script)
         self.assertIn('name === "all"', script)
         self.assertIn("state.config.aggregate", script)
-        self.assertIn('option.value = "all"', script)
+        self.assertIn("option.value = aggregateValue(state.region)", script)
+        self.assertIn("state.config.region_aggregates", script)
+        self.assertIn("regionAggregate(state.region)", script)
+        self.assertIn('return region === "all" ? "all" : `region:${region}`', script)
         self.assertIn("const MAP_WIDTH_METRES = 29", script)
         self.assertIn("const MAP_HEIGHT_METRES = 16", script)
         self.assertIn("const FIELD_WIDTH_METRES = 28", script)

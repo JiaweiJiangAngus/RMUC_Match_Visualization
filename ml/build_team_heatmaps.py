@@ -606,49 +606,76 @@ def main() -> None:
             "kills": kill_samples[school],
         })
 
-    total_games = sum(games.values()) // 2
-    aggregate_payload = aggregate_series(
-        grids,
-        window_grids,
-        role_grids,
-        role_window_grids,
-        window_count,
-    )
-    aggregate_payload.update({
-        "school": "全部学校（96队）",
-        "region": "全部赛区",
-        "games": total_games,
-        "team_count": len(schools),
-    })
-    aggregate_payload["shots"] = aggregate_series(
-        firing_grids,
-        firing_window_grids,
-        firing_role_grids,
-        firing_role_window_grids,
-        window_count,
-    )
-    aggregate_payload["shots"]["groups"] = sum(firing_groups.values())
-    aggregate_payload["deaths"] = aggregate_series(
-        death_grids,
-        death_window_grids,
-        death_role_grids,
-        death_role_window_grids,
-        window_count,
-    )
-    aggregate_payload["hits"] = aggregate_series(
-        hit_grids,
-        hit_window_grids,
-        hit_role_grids,
-        hit_role_window_grids,
-        window_count,
-    )
-    aggregate_payload["hits"]["groups"] = sum(hit_groups.values())
-    aggregate_payload["kills"] = aggregate_series(
-        kill_grids,
-        kill_window_grids,
-        kill_role_grids,
-        kill_role_window_grids,
-        window_count,
+    def build_aggregate(
+        school_names: list[str],
+        label: str,
+        region: str,
+    ) -> tuple[dict, dict]:
+        def selected(source):
+            return {name: source[name] for name in school_names}
+
+        payload = aggregate_series(
+            selected(grids),
+            selected(window_grids),
+            selected(role_grids),
+            selected(role_window_grids),
+            window_count,
+        )
+        game_count = sum(games[name] for name in school_names) // 2
+        payload.update({
+            "school": label,
+            "region": region,
+            "games": game_count,
+            "team_count": len(school_names),
+        })
+        payload["shots"] = aggregate_series(
+            selected(firing_grids),
+            selected(firing_window_grids),
+            selected(firing_role_grids),
+            selected(firing_role_window_grids),
+            window_count,
+        )
+        payload["shots"]["groups"] = sum(firing_groups[name] for name in school_names)
+        payload["deaths"] = aggregate_series(
+            selected(death_grids),
+            selected(death_window_grids),
+            selected(death_role_grids),
+            selected(death_role_window_grids),
+            window_count,
+        )
+        payload["hits"] = aggregate_series(
+            selected(hit_grids),
+            selected(hit_window_grids),
+            selected(hit_role_grids),
+            selected(hit_role_window_grids),
+            window_count,
+        )
+        payload["hits"]["groups"] = sum(hit_groups[name] for name in school_names)
+        payload["kills"] = aggregate_series(
+            selected(kill_grids),
+            selected(kill_window_grids),
+            selected(kill_role_grids),
+            selected(kill_role_window_grids),
+            window_count,
+        )
+        entry = {
+            "school": payload["school"],
+            "region": payload["region"],
+            "games": game_count,
+            "team_count": len(school_names),
+            "samples": payload["samples"],
+            "shots": payload["shots"]["samples"],
+            "deaths": payload["deaths"]["samples"],
+            "hits": payload["hits"]["samples"],
+            "kills": payload["kills"]["samples"],
+        }
+        return payload, entry
+
+    all_school_names = [entry["school"] for entry in schools]
+    aggregate_payload, aggregate_entry = build_aggregate(
+        all_school_names,
+        "全部学校（96队）",
+        "全部赛区",
     )
     aggregate_filename = "all.json"
     (args.output_dir / aggregate_filename).write_text(
@@ -659,21 +686,32 @@ def main() -> None:
         ),
         encoding="utf-8",
     )
-    aggregate_entry = {
-        "school": aggregate_payload["school"],
-        "region": aggregate_payload["region"],
-        "file": aggregate_filename,
-        "games": total_games,
-        "team_count": len(schools),
-        "samples": aggregate_payload["samples"],
-        "shots": aggregate_payload["shots"]["samples"],
-        "deaths": aggregate_payload["deaths"]["samples"],
-        "hits": aggregate_payload["hits"]["samples"],
-        "kills": aggregate_payload["kills"]["samples"],
-    }
+    aggregate_entry["file"] = aggregate_filename
+
+    region_aggregates = []
+    for index, region in enumerate(catalog["regions"]):
+        region_school_names = [
+            entry["school"] for entry in schools if entry["region"] == region
+        ]
+        region_payload, region_entry = build_aggregate(
+            region_school_names,
+            f"{region}全部学校（{len(region_school_names)}队）",
+            region,
+        )
+        region_filename = f"region-{index}.json"
+        (args.output_dir / region_filename).write_text(
+            json.dumps(
+                region_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        region_entry["file"] = region_filename
+        region_aggregates.append(region_entry)
 
     config = {
-        "schema_version": 5,
+        "schema_version": 6,
         "kind": "rmuc_2026_team_five_mode_tactical_heatmaps",
         "modes": ["position", "shots", "hits", "kills", "deaths"],
         "grid_width": GRID_WIDTH,
@@ -688,6 +726,7 @@ def main() -> None:
         "regions": catalog["regions"],
         "schools": schools,
         "aggregate": aggregate_entry,
+        "region_aggregates": region_aggregates,
         "firing_event_groups": exact_firing_groups + adjacent_firing_groups,
         "firing_projectiles": sum(firing_samples.values()),
         "firing_position_matching": {
@@ -723,8 +762,8 @@ def main() -> None:
         encoding="utf-8",
     )
     print(
-        f"wrote {len(schools)} team heatmaps and all-school aggregate from "
-        f"{total_games} games "
+        f"wrote {len(schools)} team heatmaps, {len(region_aggregates)} region "
+        f"aggregates and all-school aggregate from {aggregate_entry['games']} games "
         f"with {sum(firing_samples.values())} projectiles, "
         f"{sum(hit_samples.values())} hits, {sum(kill_samples.values())} kills and "
         f"{sum(death_samples.values())} deaths to {args.output_dir}"

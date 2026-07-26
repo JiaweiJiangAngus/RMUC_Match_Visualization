@@ -1,6 +1,6 @@
 "use strict";
 
-const CONFIG_URL = "./data/heatmaps/config.json?v=8";
+const CONFIG_URL = "./data/heatmaps/config.json?v=9";
 const MAP_WIDTH_METRES = 29;
 const MAP_HEIGHT_METRES = 16;
 const FIELD_WIDTH_METRES = 28;
@@ -240,7 +240,21 @@ function drawHeatmap() {
 
 function schoolEntry(name) {
   if (name === "all") return state.config.aggregate;
+  if (name.startsWith("region:")) {
+    const region = name.slice("region:".length);
+    return state.config.region_aggregates.find((entry) => entry.region === region);
+  }
   return state.config.schools.find((entry) => entry.school === name);
+}
+
+function regionAggregate(region) {
+  return region === "all"
+    ? state.config.aggregate
+    : state.config.region_aggregates.find((entry) => entry.region === region);
+}
+
+function aggregateValue(region) {
+  return region === "all" ? "all" : `region:${region}`;
 }
 
 function formatTime(seconds) {
@@ -345,12 +359,12 @@ async function loadSchool(name) {
   document.querySelector("#heatmap-loading").classList.remove("hidden");
   document.querySelector("#selected-school").textContent = entry.school;
   document.querySelector("#selected-region").textContent = entry.region;
-  document.querySelector("#selected-stats").textContent = "读取该校热图数据…";
+  document.querySelector("#selected-stats").textContent = "读取热图数据…";
   const select = document.querySelector("#school-select");
   if ([...select.options].some((option) => option.value === name)) select.value = name;
   try {
     if (!state.cache.has(entry.file)) {
-      const response = await fetch(`./data/heatmaps/${entry.file}?v=8`, { cache: "force-cache" });
+      const response = await fetch(`./data/heatmaps/${entry.file}?v=9`, { cache: "force-cache" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       state.cache.set(entry.file, await response.json());
     }
@@ -376,15 +390,16 @@ function renderRegions() {
     option.textContent = region === "all" ? "全部赛区" : region;
     select.appendChild(option);
   }
+  select.value = state.region;
   select.addEventListener("change", () => {
     state.region = select.value;
-    const first = state.region === "all"
-      ? schoolEntry(state.school) || state.config.schools[0]
-      : state.config.schools.find((entry) => (
-        entry.school === state.school && entry.region === state.region
-      )) || state.config.schools.find((entry) => entry.region === state.region);
+    const current = state.config.schools.find((entry) => (
+      entry.school === state.school
+      && (state.region === "all" || entry.region === state.region)
+    ));
+    const first = current || regionAggregate(state.region);
     renderSchoolOptions();
-    if (first) loadSchool(first.school);
+    if (first) loadSchool(current ? current.school : aggregateValue(state.region));
   });
 }
 
@@ -394,12 +409,12 @@ function renderSchoolOptions() {
     state.region === "all" || entry.region === state.region
   ));
   select.replaceChildren();
-  if (state.region === "all") {
-    const aggregate = state.config.aggregate;
+  const aggregate = regionAggregate(state.region);
+  if (aggregate) {
     const option = document.createElement("option");
-    option.value = "all";
+    option.value = aggregateValue(state.region);
     option.textContent = `${aggregate.school} · ${aggregate.games} 局`;
-    option.selected = state.school === "all";
+    option.selected = state.school === option.value;
     select.appendChild(option);
   }
   for (const entry of schools) {
@@ -463,7 +478,11 @@ async function init() {
     const requestedMode = new URL(location.href).searchParams.get("mode");
     const requestedSide = new URL(location.href).searchParams.get("side");
     const requestedRole = new URL(location.href).searchParams.get("role");
-    if (requested && schoolEntry(requested)) state.school = requested;
+    if (requested && schoolEntry(requested)) {
+      state.school = requested;
+      const requestedEntry = schoolEntry(requested);
+      if (requested.startsWith("region:")) state.region = requestedEntry.region;
+    }
     if (state.config.modes?.includes(requestedMode)) state.mode = requestedMode;
     if (["all", ...state.config.roles].includes(requestedRole)) {
       state.role = requestedRole;
