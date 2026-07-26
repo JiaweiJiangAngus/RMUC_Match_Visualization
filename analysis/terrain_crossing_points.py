@@ -37,7 +37,7 @@ MAP_WIDTH = 2337
 MAP_HEIGHT = 1283
 FIELD_WIDTH_M = 28.0
 FIELD_HEIGHT_M = 15.0
-MAP_WIDTH_M = 30.0
+MAP_WIDTH_M = 29.0
 MAP_HEIGHT_M = 16.0
 FIELD_X_MARGIN_M = (MAP_WIDTH_M - FIELD_WIDTH_M) / 2
 FIELD_Y_MARGIN_M = (MAP_HEIGHT_M - FIELD_HEIGHT_M) / 2
@@ -159,7 +159,7 @@ def polygon_center(points: Sequence[tuple[float, float]]) -> tuple[float, float]
 
 
 def map_to_field(x_px: float, y_px: float) -> tuple[float, float]:
-    """Map the 30x16 m image to its inset 28x15 m referee coordinates."""
+    """Map the 29x16 m image to its inset 28x15 m referee coordinates."""
     x_m = x_px / MAP_WIDTH * MAP_WIDTH_M - FIELD_X_MARGIN_M
     y_m = MAP_HEIGHT_M - FIELD_Y_MARGIN_M - y_px / MAP_HEIGHT * MAP_HEIGHT_M
     return (
@@ -689,7 +689,7 @@ def write_outputs(features: Sequence[Feature], counts: dict[str, int]) -> tuple[
         "coordinate_mapping": {
             "map_size_m": [MAP_WIDTH_M, MAP_HEIGHT_M],
             "referee_coordinate_area_m": [FIELD_WIDTH_M, FIELD_HEIGHT_M],
-            "x_m": "x_px / 2337 * 30 - 1, clamped to [0,28]",
+            "x_m": "x_px / 2337 * 29 - 0.5, clamped to [0,28]",
             "y_m": "15.5 - y_px / 1283 * 16, clamped to [0,15]",
             "compatible_with": "web/app.js mapPoint()",
         },

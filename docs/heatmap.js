@@ -1,7 +1,7 @@
 "use strict";
 
 const CONFIG_URL = "./data/heatmaps/config.json?v=8";
-const MAP_WIDTH_METRES = 30;
+const MAP_WIDTH_METRES = 29;
 const MAP_HEIGHT_METRES = 16;
 const FIELD_WIDTH_METRES = 28;
 const FIELD_HEIGHT_METRES = 15;

@@ -12,7 +12,7 @@ const R = { id:0, type:1, side:2, hp:3, max:4, x:5, y:6, yaw:7, a17:8, a42:9, co
 const E = { sec:0, type:1, robot:2, side:3, category:4, value:5, note:6, target:7 };
 const FIELD_WIDTH_METERS = 28;
 const FIELD_HEIGHT_METERS = 15;
-const MAP_WIDTH_METERS = 30;
+const MAP_WIDTH_METERS = 29;
 const MAP_HEIGHT_METERS = 16;
 const FIELD_X_SPAN = FIELD_WIDTH_METERS / MAP_WIDTH_METERS;
 const FIELD_X_OFFSET = (1 - FIELD_X_SPAN) / 2;
@@ -385,7 +385,7 @@ function ensurePredictionWorker() {
     setPredictionStatus("浏览器不支持后台预测","error");
     return false;
   }
-  const worker=new Worker("./prediction-worker.js?v=30");
+  const worker=new Worker("./prediction-worker.js?v=31");
   worker.onmessage=event=>{
     const message=event.data||{};
     if (message.type==="status") {

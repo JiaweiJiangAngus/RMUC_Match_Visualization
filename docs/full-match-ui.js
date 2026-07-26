@@ -10,8 +10,8 @@
   const UAV_FLIGHT_LABEL = { parked: "停机坪", airborne: "空中巡航", returning: "正在返航" };
   const COLORS = { red: "#ff526c", blue: "#48a0ff", gold: "#f3bd4d", green: "#38d39f" };
   const MAP_RATIO = 1283 / 2337;
-  const FIELD_X_SPAN = 28 / 30;
-  const FIELD_X_OFFSET = 1 / 30;
+  const FIELD_X_SPAN = 28 / 29;
+  const FIELD_X_OFFSET = 0.5 / 29;
   const FIELD_Y_SPAN = 15 / 16;
   const FIELD_Y_OFFSET = 0.5 / 16;
   const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
@@ -580,7 +580,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=17");
+      const worker = new Worker("./full-match-worker.js?v=18");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -717,7 +717,7 @@
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
         fetch("./data/models/full_simulation.json?v=15").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=26").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=27").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;

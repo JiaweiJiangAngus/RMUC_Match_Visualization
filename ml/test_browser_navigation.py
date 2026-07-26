@@ -18,8 +18,8 @@ const core=require('./docs/prediction-worker.js');
 const router=require('./docs/terrain-router.js');
 const nav=JSON.parse(fs.readFileSync('./docs/data/models/terrain_navigation.json','utf8'));
 // Preserve the same map-image locations used by these regression probes after
-// replacing the old 28x17 projection with a 30x16 map and 28x15 inset field.
-const remapLegacyPoint=([x,y])=>[x*30/28-1,(y*16+7.5)/17];
+// replacing the old 28x17 projection with a 29x16 map and 28x15 inset field.
+const remapLegacyPoint=([x,y])=>[x*29/28-.5,(y*16+7.5)/17];
 function plan(start,end,school,role){
   const value=core.terrainRoute(nav,start,end,school,role);
   return {length:core.routeLength(value.route),points:value.route.length,route:value.route,corrected:value.corrected,passages:value.passages,target:value.target};
@@ -314,7 +314,7 @@ console.log(JSON.stringify({
 
     def test_every_terrain_gate_has_a_gap_free_routing_blocker(self):
         validation = self.result["routingBlockers"]
-        self.assertEqual(10, validation["schema"])
+        self.assertEqual(11, validation["schema"])
         self.assertEqual(16, validation["gates"])
         self.assertEqual([], validation["violations"])
 

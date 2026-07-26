@@ -22,12 +22,12 @@ class TerrainSemanticsTest(unittest.TestCase):
         self.assertEqual(len(gates), 16)
         self.assertEqual({feature.gate_index for feature in gates}, set(range(1, 9)))
 
-    def test_referee_coordinates_are_inset_in_30_by_16_map(self):
+    def test_referee_coordinates_are_inset_in_29_by_16_map(self):
         top_left = terrain.field_to_map(0, 15)
         bottom_right = terrain.field_to_map(28, 0)
-        self.assertAlmostEqual(top_left[0], terrain.MAP_WIDTH / 30)
+        self.assertAlmostEqual(top_left[0], terrain.MAP_WIDTH * 0.5 / 29)
         self.assertAlmostEqual(top_left[1], terrain.MAP_HEIGHT * 0.5 / 16)
-        self.assertAlmostEqual(bottom_right[0], terrain.MAP_WIDTH * 29 / 30)
+        self.assertAlmostEqual(bottom_right[0], terrain.MAP_WIDTH * 28.5 / 29)
         self.assertAlmostEqual(bottom_right[1], terrain.MAP_HEIGHT * 15.5 / 16)
         for point in ((0, 0), (14, 7.5), (28, 15)):
             mapped = terrain.field_to_map(*point)
