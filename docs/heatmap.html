@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#081019">
-  <title>RMUC 2026 · 战队位置、打弹与阵亡热力图</title>
+  <title>RMUC 2026 · 96 支战队五类战术热力图</title>
   <script>
     (() => {
       const theme = localStorage.getItem("rmuc-dashboard-theme") || "night";
@@ -45,12 +45,13 @@
 
     <header class="app-header panel hero-card heatmap-header">
       <div class="brand">
-        <span class="eyebrow">TEAM POSITION · FIRING · DEATH DENSITY // 15-SECOND WINDOWS</span>
-        <h1>96 支战队位置、打弹与阵亡热力图</h1>
-        <p>613 局区域赛机器人位置、逐发记录与血量归零点 · 0.1m 等距密度场 · 二维高斯核误差</p>
+        <span class="eyebrow">POSITION · FIRING · HIT · KILL · DEATH // 15-SECOND WINDOWS</span>
+        <h1>96 支战队五类战术热力图</h1>
+        <p>位置、打弹、受击、击杀与阵亡 · 0.1m 等距密度场 · 二维高斯核误差</p>
         <div class="combat-strip" aria-hidden="true">
           <span><b>DATA</b> 613 GAMES</span><span><b>GRID</b> 280 × 150</span>
-          <span><b>SHOTS</b> 1,200,632</span><span><b>DEATHS</b> 7,556</span>
+          <span><b>SHOTS</b> 1,200,632</span><span><b>HITS</b> 162,304</span>
+          <span><b>KILLS</b> 7,193</span><span><b>DEATHS</b> 7,556</span>
           <span><b>SLICE</b> 15 SECONDS</span>
         </div>
       </div>
@@ -59,12 +60,14 @@
           <select id="heatmap-type-select">
             <option value="position" selected>位置热图</option>
             <option value="shots">打弹热力图</option>
+            <option value="hits">受击热力图</option>
+            <option value="kills">击杀热力图</option>
             <option value="deaths">阵亡热力图</option>
           </select>
         </label>
         <label><span>赛区</span><select id="region-select"></select></label>
         <label class="team-select"><span>学校</span><select id="school-select"></select></label>
-        <label><span>兵种</span>
+        <label><span id="role-label">兵种</span>
           <select id="role-select" aria-label="机器人兵种">
             <option value="all" selected>全部机器人</option>
           </select>
@@ -122,8 +125,8 @@
     </main>
 
     <footer>
-      <span>位置、打弹与阵亡热力图独立于单场比赛回放 · 96 队数据按需载入</span>
-      <span>归零当秒坐标去重 · 15s 相对比赛时间聚合 · 高斯核密度估计</span>
+      <span>五类热力图独立于单场比赛回放 · 96 队数据按需载入</span>
+      <span>击杀仅计武器受击归零 · 15s 相对比赛时间聚合 · 高斯核密度估计</span>
     </footer>
   </div>
 
@@ -135,6 +138,6 @@
     <a class="active" href="./heatmap.html"><b>▦</b><span>热图</span></a>
   </nav>
 
-  <script src="./heatmap.js?v=6"></script>
+  <script src="./heatmap.js?v=7"></script>
 </body>
 </html>

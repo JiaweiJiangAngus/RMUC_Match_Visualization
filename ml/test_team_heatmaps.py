@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the generated 96-team position, firing and death heatmaps."""
+"""Validate all five generated tactical heatmap modes for 96 teams."""
 
 from __future__ import annotations
 
@@ -40,8 +40,11 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         )
 
     def test_geometry_and_kernel_are_high_resolution(self) -> None:
-        self.assertEqual(self.config["schema_version"], 3)
-        self.assertEqual(self.config["modes"], ["position", "shots", "deaths"])
+        self.assertEqual(self.config["schema_version"], 4)
+        self.assertEqual(
+            self.config["modes"],
+            ["position", "shots", "hits", "kills", "deaths"],
+        )
         self.assertEqual(self.config["grid_width"], 280)
         self.assertEqual(self.config["grid_height"], 150)
         self.assertEqual(self.config["cell_size_metres"], 0.1)
@@ -70,6 +73,31 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
                 "missing_positions": 0,
             },
         )
+        self.assertEqual(self.config["hit_events"], 162_304)
+        self.assertEqual(self.config["hit_event_groups"], 97_092)
+        self.assertEqual(
+            self.config["hit_categories"],
+            {
+                "17mm": 134_881,
+                "42mm": 836,
+                "判罚": 1_700,
+                "撞击": 24_722,
+                "飞镖": 165,
+            },
+        )
+        self.assertEqual(
+            self.config["hit_position_matching"],
+            {
+                "exact_groups": 97_081,
+                "adjacent_1s_groups": 11,
+                "missing_groups": 0,
+            },
+        )
+        self.assertEqual(self.config["kill_events"], 7_193)
+        kill_detection = self.config["kill_position_detection"]
+        self.assertEqual(kill_detection["weapon_hit_same_second"], 19)
+        self.assertEqual(kill_detection["weapon_hit_previous_1s"], 7_174)
+        self.assertEqual(kill_detection["excluded_noncombat_deaths"], 363)
 
     def test_all_96_teams_are_present_once(self) -> None:
         schools = self.config["schools"]
@@ -100,10 +128,14 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
             self.assertEqual(payload["samples"], entry["samples"])
             self.assertEqual(payload["shots"]["samples"], entry["shots"])
             self.assertEqual(payload["deaths"]["samples"], entry["deaths"])
+            self.assertEqual(payload["hits"]["samples"], entry["hits"])
+            self.assertEqual(payload["kills"]["samples"], entry["kills"])
             self.assertGreater(payload["games"], 0)
             self.assertGreater(payload["samples"], 0)
             self.assertGreater(payload["shots"]["samples"], 0)
             self.assertGreater(payload["deaths"]["samples"], 0)
+            self.assertGreater(payload["hits"]["samples"], 0)
+            self.assertGreater(payload["kills"]["samples"], 0)
             self.assertEqual(
                 sparse_total(payload["red"], grid_length)
                 + sparse_total(payload["blue"], grid_length),
@@ -212,6 +244,54 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
                 self.assertEqual(role_window_samples, role_payload["samples"])
                 death_role_samples += decoded_role_samples
             self.assertEqual(death_role_samples, deaths["samples"])
+
+            for mode in ("hits", "kills"):
+                series = payload[mode]
+                self.assertEqual(
+                    sparse_total(series["red"], grid_length)
+                    + sparse_total(series["blue"], grid_length),
+                    series["samples"],
+                )
+                self.assertEqual(
+                    len(series["windows"]),
+                    self.config["window_count"],
+                )
+                series_window_samples = sum(
+                    sparse_total(window["red"], grid_length)
+                    + sparse_total(window["blue"], grid_length)
+                    for window in series["windows"]
+                )
+                self.assertEqual(series_window_samples, series["samples"])
+                self.assertEqual(
+                    set(series["roles"]),
+                    set(self.config["roles"]),
+                )
+                series_role_samples = 0
+                for role in self.config["roles"]:
+                    role_payload = series["roles"][role]
+                    decoded_role_samples = (
+                        sparse_total(role_payload["red"], grid_length)
+                        + sparse_total(role_payload["blue"], grid_length)
+                    )
+                    self.assertEqual(
+                        decoded_role_samples,
+                        role_payload["samples"],
+                    )
+                    self.assertEqual(
+                        len(role_payload["windows"]),
+                        self.config["window_count"],
+                    )
+                    role_window_samples = sum(
+                        sparse_total(window["red"], grid_length)
+                        + sparse_total(window["blue"], grid_length)
+                        for window in role_payload["windows"]
+                    )
+                    self.assertEqual(
+                        role_window_samples,
+                        role_payload["samples"],
+                    )
+                    series_role_samples += decoded_role_samples
+                self.assertEqual(series_role_samples, series["samples"])
         actual_files = {
             path.name for path in HEATMAP_DIR.glob("[0-9][0-9][0-9].json")
         }
@@ -228,14 +308,17 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertIn('id="school-select"', page)
         self.assertIn('id="heatmap-type-select"', page)
         self.assertIn('<option value="shots">打弹热力图</option>', page)
+        self.assertIn('<option value="hits">受击热力图</option>', page)
+        self.assertIn('<option value="kills">击杀热力图</option>', page)
         self.assertIn('<option value="deaths">阵亡热力图</option>', page)
         self.assertIn('<option value="canonical-blue">统一蓝方</option>', page)
         self.assertIn('id="role-select"', page)
         self.assertIn('id="window-play"', page)
         self.assertIn("toggleWindowPlayback", script)
-        self.assertIn('state.mode === "shots"', script)
-        self.assertIn("state.schoolData.shots", script)
-        self.assertIn("state.schoolData.deaths", script)
+        self.assertIn("MODE_PRESENTATION", script)
+        self.assertIn('roleLabel: "受击兵种"', script)
+        self.assertIn('roleLabel: "被击杀兵种"', script)
+        self.assertIn('kills: "kills"', script)
         self.assertIn('state.side === "canonical-blue"', script)
         self.assertIn("blue[index] + red[mirroredIndex]", script)
         self.assertIn('href="./app.css?v=24"', page)
