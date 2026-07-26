@@ -72,6 +72,46 @@ def serialise_series(grids, windows, window_count: int) -> dict:
     }
 
 
+def aggregate_series(
+    school_grids,
+    school_windows,
+    school_role_grids,
+    school_role_windows,
+    window_count: int,
+) -> dict:
+    """Merge every school's sparse source counters before serialisation."""
+    grids = {"red": Counter(), "blue": Counter()}
+    windows = defaultdict(lambda: {"red": Counter(), "blue": Counter()})
+    for school_grid in school_grids.values():
+        for side in ("red", "blue"):
+            grids[side].update(school_grid[side])
+    for school_window in school_windows.values():
+        for window in range(window_count):
+            for side in ("red", "blue"):
+                windows[window][side].update(school_window[window][side])
+
+    payload = serialise_series(grids, windows, window_count)
+    payload["roles"] = {}
+    for role in MOBILE_ROLES:
+        role_grids = {"red": Counter(), "blue": Counter()}
+        role_windows = defaultdict(lambda: {"red": Counter(), "blue": Counter()})
+        for school_roles in school_role_grids.values():
+            for side in ("red", "blue"):
+                role_grids[side].update(school_roles[role][side])
+        for school_roles in school_role_windows.values():
+            for window in range(window_count):
+                for side in ("red", "blue"):
+                    role_windows[window][side].update(
+                        school_roles[role][window][side]
+                    )
+        payload["roles"][role] = serialise_series(
+            role_grids,
+            role_windows,
+            window_count,
+        )
+    return payload
+
+
 def load_firing_events(db_path: Path, schools: set[str]) -> dict[int, list[dict]]:
     """Load one aggregate row per shooter/second, weighted by projectiles fired."""
     if not db_path.exists():
@@ -566,8 +606,74 @@ def main() -> None:
             "kills": kill_samples[school],
         })
 
+    total_games = sum(games.values()) // 2
+    aggregate_payload = aggregate_series(
+        grids,
+        window_grids,
+        role_grids,
+        role_window_grids,
+        window_count,
+    )
+    aggregate_payload.update({
+        "school": "全部学校（96队）",
+        "region": "全部赛区",
+        "games": total_games,
+        "team_count": len(schools),
+    })
+    aggregate_payload["shots"] = aggregate_series(
+        firing_grids,
+        firing_window_grids,
+        firing_role_grids,
+        firing_role_window_grids,
+        window_count,
+    )
+    aggregate_payload["shots"]["groups"] = sum(firing_groups.values())
+    aggregate_payload["deaths"] = aggregate_series(
+        death_grids,
+        death_window_grids,
+        death_role_grids,
+        death_role_window_grids,
+        window_count,
+    )
+    aggregate_payload["hits"] = aggregate_series(
+        hit_grids,
+        hit_window_grids,
+        hit_role_grids,
+        hit_role_window_grids,
+        window_count,
+    )
+    aggregate_payload["hits"]["groups"] = sum(hit_groups.values())
+    aggregate_payload["kills"] = aggregate_series(
+        kill_grids,
+        kill_window_grids,
+        kill_role_grids,
+        kill_role_window_grids,
+        window_count,
+    )
+    aggregate_filename = "all.json"
+    (args.output_dir / aggregate_filename).write_text(
+        json.dumps(
+            aggregate_payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    aggregate_entry = {
+        "school": aggregate_payload["school"],
+        "region": aggregate_payload["region"],
+        "file": aggregate_filename,
+        "games": total_games,
+        "team_count": len(schools),
+        "samples": aggregate_payload["samples"],
+        "shots": aggregate_payload["shots"]["samples"],
+        "deaths": aggregate_payload["deaths"]["samples"],
+        "hits": aggregate_payload["hits"]["samples"],
+        "kills": aggregate_payload["kills"]["samples"],
+    }
+
     config = {
-        "schema_version": 4,
+        "schema_version": 5,
         "kind": "rmuc_2026_team_five_mode_tactical_heatmaps",
         "modes": ["position", "shots", "hits", "kills", "deaths"],
         "grid_width": GRID_WIDTH,
@@ -581,6 +687,7 @@ def main() -> None:
         "y_range": [0, FIELD_HEIGHT],
         "regions": catalog["regions"],
         "schools": schools,
+        "aggregate": aggregate_entry,
         "firing_event_groups": exact_firing_groups + adjacent_firing_groups,
         "firing_projectiles": sum(firing_samples.values()),
         "firing_position_matching": {
@@ -616,7 +723,8 @@ def main() -> None:
         encoding="utf-8",
     )
     print(
-        f"wrote {len(schools)} team heatmaps from {sum(games.values()) // 2} games "
+        f"wrote {len(schools)} team heatmaps and all-school aggregate from "
+        f"{total_games} games "
         f"with {sum(firing_samples.values())} projectiles, "
         f"{sum(hit_samples.values())} hits, {sum(kill_samples.values())} kills and "
         f"{sum(death_samples.values())} deaths to {args.output_dir}"

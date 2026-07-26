@@ -40,7 +40,7 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         )
 
     def test_geometry_and_kernel_are_high_resolution(self) -> None:
-        self.assertEqual(self.config["schema_version"], 4)
+        self.assertEqual(self.config["schema_version"], 5)
         self.assertEqual(
             self.config["modes"],
             ["position", "shots", "hits", "kills", "deaths"],
@@ -113,6 +113,42 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
             "南部赛区": 32,
             "北部赛区": 32,
         })
+
+    def test_all_school_aggregate_matches_team_totals(self) -> None:
+        aggregate = self.config["aggregate"]
+        self.assertEqual(aggregate["school"], "全部学校（96队）")
+        self.assertEqual(aggregate["region"], "全部赛区")
+        self.assertEqual(aggregate["games"], 613)
+        self.assertEqual(aggregate["team_count"], 96)
+        payload = json.loads(
+            (HEATMAP_DIR / aggregate["file"]).read_text(encoding="utf-8")
+        )
+        grid_length = self.config["grid_width"] * self.config["grid_height"]
+        fields = {
+            "position": "samples",
+            "shots": "shots",
+            "hits": "hits",
+            "kills": "kills",
+            "deaths": "deaths",
+        }
+        for mode, field in fields.items():
+            series = payload if mode == "position" else payload[mode]
+            expected = sum(entry[field] for entry in self.config["schools"])
+            self.assertEqual(series["samples"], expected)
+            self.assertEqual(aggregate[field], expected)
+            self.assertEqual(
+                sparse_total(series["red"], grid_length)
+                + sparse_total(series["blue"], grid_length),
+                expected,
+            )
+            self.assertEqual(
+                sum(window["samples"] for window in series["windows"]),
+                expected,
+            )
+            self.assertEqual(
+                sum(role["samples"] for role in series["roles"].values()),
+                expected,
+            )
 
     def test_sparse_files_match_catalog_totals(self) -> None:
         grid_length = self.config["grid_width"] * self.config["grid_height"]
@@ -321,6 +357,9 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertIn('kills: "kills"', script)
         self.assertIn('state.side === "canonical-blue"', script)
         self.assertIn("blue[index] + red[mirroredIndex]", script)
+        self.assertIn('name === "all"', script)
+        self.assertIn("state.config.aggregate", script)
+        self.assertIn('option.value = "all"', script)
         self.assertIn('href="./app.css?v=24"', page)
         self.assertNotIn("RM_LADDER", page)
 

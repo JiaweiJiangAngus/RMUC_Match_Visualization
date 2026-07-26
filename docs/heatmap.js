@@ -1,6 +1,6 @@
 "use strict";
 
-const CONFIG_URL = "./data/heatmaps/config.json?v=7";
+const CONFIG_URL = "./data/heatmaps/config.json?v=8";
 const FIELD_HEIGHT_WITH_MARGIN = 17;
 const MODE_PRESENTATION = Object.freeze({
   position: {
@@ -232,6 +232,7 @@ function drawHeatmap() {
 }
 
 function schoolEntry(name) {
+  if (name === "all") return state.config.aggregate;
   return state.config.schools.find((entry) => entry.school === name);
 }
 
@@ -342,7 +343,7 @@ async function loadSchool(name) {
   if ([...select.options].some((option) => option.value === name)) select.value = name;
   try {
     if (!state.cache.has(entry.file)) {
-      const response = await fetch(`./data/heatmaps/${entry.file}?v=7`, { cache: "force-cache" });
+      const response = await fetch(`./data/heatmaps/${entry.file}?v=8`, { cache: "force-cache" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       state.cache.set(entry.file, await response.json());
     }
@@ -386,6 +387,14 @@ function renderSchoolOptions() {
     state.region === "all" || entry.region === state.region
   ));
   select.replaceChildren();
+  if (state.region === "all") {
+    const aggregate = state.config.aggregate;
+    const option = document.createElement("option");
+    option.value = "all";
+    option.textContent = `${aggregate.school} · ${aggregate.games} 局`;
+    option.selected = state.school === "all";
+    select.appendChild(option);
+  }
   for (const entry of schools) {
     const option = document.createElement("option");
     option.value = entry.school;
@@ -446,8 +455,12 @@ async function init() {
     const requested = new URL(location.href).searchParams.get("school");
     const requestedMode = new URL(location.href).searchParams.get("mode");
     const requestedSide = new URL(location.href).searchParams.get("side");
+    const requestedRole = new URL(location.href).searchParams.get("role");
     if (requested && schoolEntry(requested)) state.school = requested;
     if (state.config.modes?.includes(requestedMode)) state.mode = requestedMode;
+    if (["all", ...state.config.roles].includes(requestedRole)) {
+      state.role = requestedRole;
+    }
     if (["canonical", "canonical-blue", "bilateral"].includes(requestedSide)) {
       state.side = requestedSide;
     }
@@ -456,6 +469,7 @@ async function init() {
     renderRoleOptions();
     document.querySelector("#heatmap-type-select").value = state.mode;
     document.querySelector("#side-select").value = state.side;
+    document.querySelector("#role-select").value = state.role;
     document.querySelector("#heatmap-type-select").addEventListener("change", (event) => {
       stopWindowPlayback();
       state.mode = state.config.modes.includes(event.target.value)
@@ -480,6 +494,9 @@ async function init() {
     document.querySelector("#role-select").addEventListener("change", (event) => {
       state.role = event.target.value;
       state.densityCache.clear();
+      const url = new URL(location.href);
+      url.searchParams.set("role", state.role);
+      history.replaceState(null, "", url);
       updatePlaybackUI();
       drawHeatmap();
     });
