@@ -92,8 +92,14 @@ function combinedDensity(data) {
   const blue = decodeSparse(data.blue, length);
   const combined = new Float32Array(length);
   for (let index = 0; index < length; index += 1) {
-    const blueIndex = state.side === "canonical" ? length - 1 - index : index;
-    combined[index] = red[index] + blue[blueIndex];
+    const mirroredIndex = length - 1 - index;
+    if (state.side === "canonical") {
+      combined[index] = red[index] + blue[mirroredIndex];
+    } else if (state.side === "canonical-blue") {
+      combined[index] = blue[index] + red[mirroredIndex];
+    } else {
+      combined[index] = red[index] + blue[index];
+    }
   }
   const sigmaCells = state.config.gaussian_sigma_metres / state.config.cell_size_metres;
   const density = gaussianBlur(combined, width, height, sigmaCells);
@@ -403,12 +409,17 @@ async function init() {
       `σ ${state.config.gaussian_sigma_metres.toFixed(2)}m`;
     const requested = new URL(location.href).searchParams.get("school");
     const requestedMode = new URL(location.href).searchParams.get("mode");
+    const requestedSide = new URL(location.href).searchParams.get("side");
     if (requested && schoolEntry(requested)) state.school = requested;
     if (state.config.modes?.includes(requestedMode)) state.mode = requestedMode;
+    if (["canonical", "canonical-blue", "bilateral"].includes(requestedSide)) {
+      state.side = requestedSide;
+    }
     renderRegions();
     renderSchoolOptions();
     renderRoleOptions();
     document.querySelector("#heatmap-type-select").value = state.mode;
+    document.querySelector("#side-select").value = state.side;
     document.querySelector("#heatmap-type-select").addEventListener("change", (event) => {
       stopWindowPlayback();
       state.mode = state.config.modes.includes(event.target.value)
@@ -424,6 +435,9 @@ async function init() {
     document.querySelector("#side-select").addEventListener("change", (event) => {
       state.side = event.target.value;
       state.densityCache.clear();
+      const url = new URL(location.href);
+      url.searchParams.set("side", state.side);
+      history.replaceState(null, "", url);
       drawHeatmap();
     });
     document.querySelector("#school-select").addEventListener("change", (event) => loadSchool(event.target.value));
