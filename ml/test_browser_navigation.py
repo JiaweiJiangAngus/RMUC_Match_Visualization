@@ -17,16 +17,19 @@ const fs=require('fs');
 const core=require('./docs/prediction-worker.js');
 const router=require('./docs/terrain-router.js');
 const nav=JSON.parse(fs.readFileSync('./docs/data/models/terrain_navigation.json','utf8'));
+// Preserve the same map-image locations used by these regression probes after
+// replacing the old 28x17 projection with a 30x16 map and 28x15 inset field.
+const remapLegacyPoint=([x,y])=>[x*30/28-1,(y*16+7.5)/17];
 function plan(start,end,school,role){
   const value=core.terrainRoute(nav,start,end,school,role);
   return {length:core.routeLength(value.route),points:value.route.length,route:value.route,corrected:value.corrected,passages:value.passages,target:value.target};
 }
 function validateAllTunnelGates(){
   const specs=[
-    {id:'blue_road_tunnel',start:[18.55,14.5],end:[18.55,11.8],passage:'B2公路隧道'},
-    {id:'red_road_tunnel',start:[9.43,.5],end:[9.43,3.1],passage:'R2公路隧道'},
-    {id:'blue_highland_tunnel',start:[12.2,1.18],end:[16,1.18],passage:'B6高地隧道'},
-    {id:'red_highland_tunnel',start:[15.8,13.83],end:[12.1,13.83],passage:'R6高地隧道'},
+    {id:'blue_road_tunnel',start:remapLegacyPoint([18.55,14.5]),end:remapLegacyPoint([18.55,11.8]),passage:'B2公路隧道'},
+    {id:'red_road_tunnel',start:remapLegacyPoint([9.43,.5]),end:remapLegacyPoint([9.43,3.1]),passage:'R2公路隧道'},
+    {id:'blue_highland_tunnel',start:remapLegacyPoint([12.2,1.18]),end:remapLegacyPoint([16,1.18]),passage:'B6高地隧道'},
+    {id:'red_highland_tunnel',start:remapLegacyPoint([15.8,13.83]),end:remapLegacyPoint([12.1,13.83]),passage:'R6高地隧道'},
   ];
   const implementations=[['prediction-worker',core.terrainRoute],['full-match-router',router.terrainRoute]];
   const violations=[];
@@ -93,12 +96,19 @@ function validateRoutingBlockers(){
   return {schema:nav.schema_version,gates:nav.gates.length,violations};
 }
 function validateDeniedBypasses(){
+  const bounds=polygon=>({
+    minX:Math.min(...polygon.map(point=>point[0])),maxX:Math.max(...polygon.map(point=>point[0])),
+    minY:Math.min(...polygon.map(point=>point[1])),maxY:Math.max(...polygon.map(point=>point[1])),
+  });
+  const blueRough=bounds(nav.gates.find(item=>item.id==='blue_rough_road').routing_blocker_polygon);
+  const redRough=bounds(nav.gates.find(item=>item.id==='red_rough_road').routing_blocker_polygon);
   const specs=[
-    ['blue_fly_ramp',[16,14.7],[12,14.7]],['red_fly_ramp',[12,.3],[16,.3]],
-    ['blue_road_tunnel',[18.55,14.5],[18.55,11.8]],['red_road_tunnel',[9.43,.5],[9.43,3.1]],
-    ['blue_road_step',[19.7,11.8],[19.7,14.5]],['red_road_step',[8.3,3.1],[8.3,.5]],
-    ['blue_rough_road',[20.6,14.3],[23.8,14.3]],['red_rough_road',[7.4,.7],[4.2,.7]],
-    ['blue_highland_tunnel',[12.2,1.18],[16,1.18]],['red_highland_tunnel',[15.8,13.83],[12.1,13.83]],
+    ['blue_fly_ramp',remapLegacyPoint([16,14.7]),remapLegacyPoint([12,14.7])],['red_fly_ramp',remapLegacyPoint([12,.3]),remapLegacyPoint([16,.3])],
+    ['blue_road_tunnel',remapLegacyPoint([18.55,14.5]),remapLegacyPoint([18.55,11.8])],['red_road_tunnel',remapLegacyPoint([9.43,.5]),remapLegacyPoint([9.43,3.1])],
+    ['blue_road_step',remapLegacyPoint([19.7,11.8]),remapLegacyPoint([19.7,14.5])],['red_road_step',remapLegacyPoint([8.3,3.1]),remapLegacyPoint([8.3,.5])],
+    ['blue_rough_road',[blueRough.minX-.3,(blueRough.minY+blueRough.maxY)/2],[blueRough.maxX+.3,(blueRough.minY+blueRough.maxY)/2]],
+    ['red_rough_road',[redRough.maxX+.3,(redRough.minY+redRough.maxY)/2],[redRough.minX-.3,(redRough.minY+redRough.maxY)/2]],
+    ['blue_highland_tunnel',remapLegacyPoint([12.2,1.18]),remapLegacyPoint([16,1.18])],['red_highland_tunnel',remapLegacyPoint([15.8,13.83]),remapLegacyPoint([12.1,13.83])],
   ];
   const implementations=[['prediction-worker',core.terrainRoute],['full-match-router',router.terrainRoute]];
   const violations=[];
@@ -136,12 +146,12 @@ function validateStrictTunnelLabels(){
 }
 function validateEnclosureRoutes(){
   const cases=[
-    {name:'blue_supply_lower_fence',start:[24.8,11.8],end:[24.8,13.0]},
-    {name:'red_supply_lower_fence',start:[3.2,3.2],end:[3.2,2.0]},
-    {name:'blue_road_lower_fence',start:[16.0,12.4],end:[16.0,13.8]},
-    {name:'red_road_lower_fence',start:[12.0,2.6],end:[12.0,1.2]},
-    {name:'blue_supply_zone',start:[24.0,10.0],end:[26.2,13.45]},
-    {name:'red_supply_zone',start:[4.0,5.0],end:[1.8,1.55]},
+    {name:'blue_supply_lower_fence',start:remapLegacyPoint([24.8,11.8]),end:remapLegacyPoint([24.8,13.0])},
+    {name:'red_supply_lower_fence',start:remapLegacyPoint([3.2,3.2]),end:remapLegacyPoint([3.2,2.0])},
+    {name:'blue_road_lower_fence',start:remapLegacyPoint([16.0,12.4]),end:remapLegacyPoint([16.0,13.8])},
+    {name:'red_road_lower_fence',start:remapLegacyPoint([12.0,2.6]),end:remapLegacyPoint([12.0,1.2])},
+    {name:'blue_supply_zone',start:remapLegacyPoint([24.0,10.0]),end:remapLegacyPoint([26.2,13.45])},
+    {name:'red_supply_zone',start:remapLegacyPoint([4.0,5.0]),end:remapLegacyPoint([1.8,1.55])},
   ];
   const walls=nav.static_obstacles.filter(item=>item.blocks_movement!==false);
   const implementations=[['prediction-worker',core.terrainRoute],['full-match-router',router.terrainRoute]];
@@ -160,25 +170,25 @@ function validateEnclosureRoutes(){
   return {checks,walls:walls.length,violations};
 }
 console.log(JSON.stringify({
-  around:plan([5,7.5],[23,7.5],'华南农业大学','步兵3'),
-  blockedAscent:plan([6,7.5],[14,7.5],'未知学校','英雄'),
-  reverseAllowed:plan([12,14.7],[16,14.7],'上海交通大学','步兵3'),
-  forwardCentered:plan([16,14.85],[12,14.55],'东北大学','步兵3'),
-  reverseBlocked:plan([12,14.7],[16,14.7],'上海交通大学','英雄'),
-  trapezoidBlocked:plan([24,1],[24,3],'未知学校','英雄'),
-  trapezoidSlope:plan([24,1],[24,3],'五邑大学','英雄'),
-  trapezoidDescent:plan([24,3],[24,1],'未知学校','英雄'),
-  roadStepAscent:plan([19.7,12],[19.7,14.3],'未知学校','英雄'),
-  roadStepDescent:plan([19.7,14.3],[19.7,12],'未知学校','英雄'),
-  alignedRoadStepAscent:plan([19.35,12],[19.95,14.3],'东北大学','步兵3'),
-  alignedRoadStepDescent:plan([19.95,14.3],[19.35,12],'东北大学','步兵3'),
-  confirmedJump:plan([6,12],[14,10],'上海交通大学','英雄')
-  ,neuInfantryTunnel:plan([18.55,14.5],[18.55,11.8],'东北大学','步兵3')
-  ,neuSentinelTunnel:plan([18.55,14.5],[18.55,11.8],'东北大学','哨兵')
+  around:plan(remapLegacyPoint([5,7.5]),remapLegacyPoint([23,7.5]),'华南农业大学','步兵3'),
+  blockedAscent:plan(remapLegacyPoint([6,7.5]),remapLegacyPoint([14,7.5]),'未知学校','英雄'),
+  reverseAllowed:plan(remapLegacyPoint([12,14.7]),remapLegacyPoint([16,14.7]),'上海交通大学','步兵3'),
+  forwardCentered:plan(remapLegacyPoint([16,14.85]),remapLegacyPoint([12,14.55]),'东北大学','步兵3'),
+  reverseBlocked:plan(remapLegacyPoint([12,14.7]),remapLegacyPoint([16,14.7]),'上海交通大学','英雄'),
+  trapezoidBlocked:plan(remapLegacyPoint([24,1]),remapLegacyPoint([24,3]),'未知学校','英雄'),
+  trapezoidSlope:plan(remapLegacyPoint([24,1]),remapLegacyPoint([24,3]),'五邑大学','英雄'),
+  trapezoidDescent:plan(remapLegacyPoint([24,3]),remapLegacyPoint([24,1]),'未知学校','英雄'),
+  roadStepAscent:plan(remapLegacyPoint([19.7,12]),remapLegacyPoint([19.7,14.3]),'未知学校','英雄'),
+  roadStepDescent:plan(remapLegacyPoint([19.7,14.3]),remapLegacyPoint([19.7,12]),'未知学校','英雄'),
+  alignedRoadStepAscent:plan(remapLegacyPoint([19.35,12]),remapLegacyPoint([19.95,14.3]),'东北大学','步兵3'),
+  alignedRoadStepDescent:plan(remapLegacyPoint([19.95,14.3]),remapLegacyPoint([19.35,12]),'东北大学','步兵3'),
+  confirmedJump:plan(remapLegacyPoint([6,12]),remapLegacyPoint([14,10]),'上海交通大学','英雄')
+  ,neuInfantryTunnel:plan(remapLegacyPoint([18.55,14.5]),remapLegacyPoint([18.55,11.8]),'东北大学','步兵3')
+  ,neuSentinelTunnel:plan(remapLegacyPoint([18.55,14.5]),remapLegacyPoint([18.55,11.8]),'东北大学','哨兵')
   ,speed:(()=>{
-    const up=router.terrainRoute(nav,[19.7,12],[19.7,14.3],'东北大学','步兵3');
-    const down=router.terrainRoute(nav,[19.7,14.3],[19.7,12],'东北大学','步兵3');
-    const fly=router.terrainRoute(nav,[16,14.7],[12,14.7],'东北大学','步兵3');
+    const up=router.terrainRoute(nav,remapLegacyPoint([19.7,12]),remapLegacyPoint([19.7,14.3]),'东北大学','步兵3');
+    const down=router.terrainRoute(nav,remapLegacyPoint([19.7,14.3]),remapLegacyPoint([19.7,12]),'东北大学','步兵3');
+    const fly=router.terrainRoute(nav,remapLegacyPoint([16,14.7]),remapLegacyPoint([12,14.7]),'东北大学','步兵3');
     return {
       up:router.terrainMotion(nav,up.route[1],up.route.slice(1),up.actions,2),
       down:router.terrainMotion(nav,down.route[2],down.route.slice(2),down.actions,2),
@@ -236,7 +246,8 @@ console.log(JSON.stringify({
         self.assertIn("B8下梯形高地台阶", self.result["trapezoidDescent"]["passages"])
 
     def test_road_step_ascent_requires_evidence_but_descent_does_not(self):
-        self.assertGreater(self.result["roadStepAscent"]["points"], 2)
+        self.assertTrue(self.result["roadStepAscent"]["corrected"])
+        self.assertIn("能力不足·停在地形外", self.result["roadStepAscent"]["passages"])
         self.assertIn("B3下公路台阶", self.result["roadStepDescent"]["passages"])
 
     def test_road_step_model_aligns_ascent_and_descent_straight_through_gate(self):
@@ -303,7 +314,7 @@ console.log(JSON.stringify({
 
     def test_every_terrain_gate_has_a_gap_free_routing_blocker(self):
         validation = self.result["routingBlockers"]
-        self.assertEqual(9, validation["schema"])
+        self.assertEqual(10, validation["schema"])
         self.assertEqual(16, validation["gates"])
         self.assertEqual([], validation["violations"])
 

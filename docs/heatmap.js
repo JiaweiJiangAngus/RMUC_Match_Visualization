@@ -1,7 +1,12 @@
 "use strict";
 
 const CONFIG_URL = "./data/heatmaps/config.json?v=8";
-const FIELD_HEIGHT_WITH_MARGIN = 17;
+const MAP_WIDTH_METRES = 30;
+const MAP_HEIGHT_METRES = 16;
+const FIELD_WIDTH_METRES = 28;
+const FIELD_HEIGHT_METRES = 15;
+const FIELD_X_MARGIN_METRES = (MAP_WIDTH_METRES - FIELD_WIDTH_METRES) / 2;
+const FIELD_Y_MARGIN_METRES = (MAP_HEIGHT_METRES - FIELD_HEIGHT_METRES) / 2;
 const MODE_PRESENTATION = Object.freeze({
   position: {
     label: "位置热图",
@@ -222,12 +227,14 @@ function drawHeatmap() {
     }
   }
   layerContext.putImageData(pixels, 0, 0);
-  const fieldTop = canvasHeight / FIELD_HEIGHT_WITH_MARGIN;
-  const fieldHeight = canvasHeight * 15 / FIELD_HEIGHT_WITH_MARGIN;
+  const fieldLeft = canvasWidth * FIELD_X_MARGIN_METRES / MAP_WIDTH_METRES;
+  const fieldTop = canvasHeight * FIELD_Y_MARGIN_METRES / MAP_HEIGHT_METRES;
+  const fieldWidth = canvasWidth * FIELD_WIDTH_METRES / MAP_WIDTH_METRES;
+  const fieldHeight = canvasHeight * FIELD_HEIGHT_METRES / MAP_HEIGHT_METRES;
   context.save();
   context.globalCompositeOperation = "screen";
   context.imageSmoothingEnabled = true;
-  context.drawImage(layer, 0, fieldTop, canvasWidth, fieldHeight);
+  context.drawImage(layer, fieldLeft, fieldTop, fieldWidth, fieldHeight);
   context.restore();
 }
 

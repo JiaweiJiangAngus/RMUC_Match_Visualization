@@ -5,7 +5,7 @@
 self.RMUC_EMBEDDED_PREDICTION = true;
 importScripts(
   "./terrain-router.js?v=8",
-  "./prediction-worker.js?v=29",
+  "./prediction-worker.js?v=30",
   "./full-match-transformer-policy.js?v=1",
   "./full-match-engine.js?v=22",
 );

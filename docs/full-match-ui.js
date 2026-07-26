@@ -9,9 +9,11 @@
   const ENGAGEMENT_LABEL = { long_range: "远程吊射", close_pressure: "近身压制", flexible: "灵活站位" };
   const UAV_FLIGHT_LABEL = { parked: "停机坪", airborne: "空中巡航", returning: "正在返航" };
   const COLORS = { red: "#ff526c", blue: "#48a0ff", gold: "#f3bd4d", green: "#38d39f" };
-  const MAP_RATIO = 1125 / 2048;
-  const FIELD_Y_SPAN = 15 / 17;
-  const FIELD_Y_OFFSET = 1 / 17;
+  const MAP_RATIO = 1283 / 2337;
+  const FIELD_X_SPAN = 28 / 30;
+  const FIELD_X_OFFSET = 1 / 30;
+  const FIELD_Y_SPAN = 15 / 16;
+  const FIELD_Y_OFFSET = 0.5 / 16;
   const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
@@ -100,17 +102,25 @@
     }
 
     function mapPoint(x, y, width, height) {
-      const u = clamp(x / 28, 0, 1);
+      const fieldU = clamp(x / 28, 0, 1);
       const fieldV = 1 - clamp(y / 15, 0, 1);
-      return [u * width, (FIELD_Y_OFFSET + fieldV * FIELD_Y_SPAN) * height];
+      return [
+        (FIELD_X_OFFSET + fieldU * FIELD_X_SPAN) * width,
+        (FIELD_Y_OFFSET + fieldV * FIELD_Y_SPAN) * height,
+      ];
     }
 
     function worldPoint(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
-      const u = clamp((clientX - rect.left) / rect.width, 0, 1);
+      const textureU = clamp(
+        (clientX - rect.left) / rect.width,
+        FIELD_X_OFFSET,
+        FIELD_X_OFFSET + FIELD_X_SPAN,
+      );
       const textureV = clamp((clientY - rect.top) / rect.height, FIELD_Y_OFFSET, FIELD_Y_OFFSET + FIELD_Y_SPAN);
+      const fieldU = (textureU - FIELD_X_OFFSET) / FIELD_X_SPAN;
       const fieldV = (textureV - FIELD_Y_OFFSET) / FIELD_Y_SPAN;
-      return [u * 28, (1 - fieldV) * 15];
+      return [fieldU * 28, (1 - fieldV) * 15];
     }
 
     function interpolatedFrame() {
@@ -175,7 +185,7 @@
       const zone = model.assembly_zones?.[side];
       if (!zone) return;
       const [x, y] = mapPoint(zone.center[0], zone.center[1], width, height);
-      const radiusX = zone.radius[0] * width / 28;
+      const radiusX = zone.radius[0] * FIELD_X_SPAN * width / 28;
       const radiusY = zone.radius[1] * FIELD_Y_SPAN * height / 15;
       context.beginPath();
       context.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
@@ -196,7 +206,7 @@
     function drawServiceZone(side, name, zone, width, height, scale) {
       if (!zone) return;
       const [x, y] = mapPoint(zone.center[0], zone.center[1], width, height);
-      const radiusX = zone.radius[0] * width / 28;
+      const radiusX = zone.radius[0] * FIELD_X_SPAN * width / 28;
       const radiusY = zone.radius[1] * FIELD_Y_SPAN * height / 15;
       const isSupply = Boolean(zone.heal);
       context.beginPath();
@@ -570,7 +580,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=16");
+      const worker = new Worker("./full-match-worker.js?v=17");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -707,7 +717,7 @@
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
         fetch("./data/models/full_simulation.json?v=15").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
-        fetch("./data/models/terrain_navigation.json?v=25").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/terrain_navigation.json?v=26").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;
         navigation = navigationData;

@@ -37,7 +37,10 @@ MAP_WIDTH = 2337
 MAP_HEIGHT = 1283
 FIELD_WIDTH_M = 28.0
 FIELD_HEIGHT_M = 15.0
-MAP_HEIGHT_M = 17.0
+MAP_WIDTH_M = 30.0
+MAP_HEIGHT_M = 16.0
+FIELD_X_MARGIN_M = (MAP_WIDTH_M - FIELD_WIDTH_M) / 2
+FIELD_Y_MARGIN_M = (MAP_HEIGHT_M - FIELD_HEIGHT_M) / 2
 
 FONT_REGULAR = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
 FONT_BOLD = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc")
@@ -156,9 +159,9 @@ def polygon_center(points: Sequence[tuple[float, float]]) -> tuple[float, float]
 
 
 def map_to_field(x_px: float, y_px: float) -> tuple[float, float]:
-    """Match web/app.js: map is 28x17 m with 1 m vertical padding."""
-    x_m = x_px / MAP_WIDTH * FIELD_WIDTH_M
-    y_m = 16.0 - y_px / MAP_HEIGHT * MAP_HEIGHT_M
+    """Map the 30x16 m image to its inset 28x15 m referee coordinates."""
+    x_m = x_px / MAP_WIDTH * MAP_WIDTH_M - FIELD_X_MARGIN_M
+    y_m = MAP_HEIGHT_M - FIELD_Y_MARGIN_M - y_px / MAP_HEIGHT * MAP_HEIGHT_M
     return (
         max(0.0, min(FIELD_WIDTH_M, x_m)),
         max(0.0, min(FIELD_HEIGHT_M, y_m)),
@@ -167,8 +170,8 @@ def map_to_field(x_px: float, y_px: float) -> tuple[float, float]:
 
 def field_to_map(x_m: float, y_m: float) -> tuple[float, float]:
     return (
-        x_m / FIELD_WIDTH_M * MAP_WIDTH,
-        (16.0 - y_m) / MAP_HEIGHT_M * MAP_HEIGHT,
+        (x_m + FIELD_X_MARGIN_M) / MAP_WIDTH_M * MAP_WIDTH,
+        (MAP_HEIGHT_M - FIELD_Y_MARGIN_M - y_m) / MAP_HEIGHT_M * MAP_HEIGHT,
     )
 
 
@@ -684,8 +687,10 @@ def write_outputs(features: Sequence[Feature], counts: dict[str, int]) -> tuple[
         "map_size_px": [MAP_WIDTH, MAP_HEIGHT],
         "field_size_m": [FIELD_WIDTH_M, FIELD_HEIGHT_M],
         "coordinate_mapping": {
-            "x_m": "x_px / 2337 * 28",
-            "y_m": "16 - y_px / 1283 * 17, clamped to [0,15]",
+            "map_size_m": [MAP_WIDTH_M, MAP_HEIGHT_M],
+            "referee_coordinate_area_m": [FIELD_WIDTH_M, FIELD_HEIGHT_M],
+            "x_m": "x_px / 2337 * 30 - 1, clamped to [0,28]",
+            "y_m": "15.5 - y_px / 1283 * 16, clamped to [0,15]",
             "compatible_with": "web/app.js mapPoint()",
         },
         "annotation_registration": {

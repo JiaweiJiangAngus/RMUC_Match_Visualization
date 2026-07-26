@@ -12,7 +12,10 @@ const R = { id:0, type:1, side:2, hp:3, max:4, x:5, y:6, yaw:7, a17:8, a42:9, co
 const E = { sec:0, type:1, robot:2, side:3, category:4, value:5, note:6, target:7 };
 const FIELD_WIDTH_METERS = 28;
 const FIELD_HEIGHT_METERS = 15;
-const MAP_HEIGHT_METERS = 17;
+const MAP_WIDTH_METERS = 30;
+const MAP_HEIGHT_METERS = 16;
+const FIELD_X_SPAN = FIELD_WIDTH_METERS / MAP_WIDTH_METERS;
+const FIELD_X_OFFSET = (1 - FIELD_X_SPAN) / 2;
 const FIELD_Y_SPAN = FIELD_HEIGHT_METERS / MAP_HEIGHT_METERS;
 const FIELD_Y_OFFSET = (1 - FIELD_Y_SPAN) / 2;
 const STATIC_DATA = Boolean(window.RMUC_STATIC_DATA);
@@ -370,9 +373,9 @@ function canvasSize(canvas, ratio, fixedHeight=null) {
   return { width, height, dpr };
 }
 function mapPoint(x,y,width,height) {
-  const u=clamp(x/FIELD_WIDTH_METERS,0,1);
+  const fieldU=clamp(x/FIELD_WIDTH_METERS,0,1);
   const fieldV=1-clamp(y/FIELD_HEIGHT_METERS,0,1);
-  return [u*width,(FIELD_Y_OFFSET+fieldV*FIELD_Y_SPAN)*height];
+  return [(FIELD_X_OFFSET+fieldU*FIELD_X_SPAN)*width,(FIELD_Y_OFFSET+fieldV*FIELD_Y_SPAN)*height];
 }
 function uvPoint(u,v,width,height) { return [u*width,v*height]; }
 

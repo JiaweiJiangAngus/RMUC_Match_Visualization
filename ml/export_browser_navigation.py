@@ -185,7 +185,7 @@ def main() -> None:
     red_road_region = terrain.rotate_geometry_180(blue_road_region)
 
     output = {
-        "schema_version": 9,
+        "schema_version": 10,
         "field_size_m": [terrain.FIELD_WIDTH_M, terrain.FIELD_HEIGHT_M],
         "routing": {
             "grid_m": 0.35,

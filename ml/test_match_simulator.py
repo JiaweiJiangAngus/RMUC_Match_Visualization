@@ -32,6 +32,16 @@ class SimulatorPageLayoutTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', simulator)
         self.assertIn("./full-match-ui.js", simulator)
         self.assertIn("./match-simulator.js", simulator)
+        replay_script = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
+        simulator_script = (ROOT / "docs" / "full-match-ui.js").read_text(encoding="utf-8")
+        self.assertIn("const MAP_WIDTH_METERS = 30", replay_script)
+        self.assertIn("const MAP_HEIGHT_METERS = 16", replay_script)
+        self.assertIn("const FIELD_X_SPAN = 28 / 30", simulator_script)
+        self.assertIn("const FIELD_Y_SPAN = 15 / 16", simulator_script)
+        self.assertNotIn("const FIELD_Y_SPAN = 15 / 17", simulator_script)
+        prediction_worker = (ROOT / "docs" / "prediction-worker.js").read_text(encoding="utf-8")
+        self.assertIn('terrain_navigation.json?v=26', prediction_worker)
+        self.assertNotIn('terrain_navigation.json?v=25', prediction_worker)
 
 
 class MatchSimulationDataTests(unittest.TestCase):
@@ -389,6 +399,7 @@ const router=require('./docs/terrain-router.js');
 const engine=require('./docs/full-match-engine.js');
 const model=JSON.parse(fs.readFileSync('./docs/data/models/full_simulation.json','utf8'));
 const nav=JSON.parse(fs.readFileSync('./docs/data/models/terrain_navigation.json','utf8'));
+const remapLegacyPoint=([x,y])=>[x*30/28-1,(y*16+7.5)/17];
 function run() {
   const schools={red:'东北大学',blue:'中国石油大学（华东）'};
   const result=engine.runMatch(model,nav,schools.red,schools.blue,20260719,router);
@@ -626,11 +637,11 @@ function probeHardRules() {
 
   const hero=state.robots.find(item=>item.key==='red:英雄');
   const uav=state.robots.find(item=>item.key==='red:空中');
-  hero.position=[9,7.5]; uav.position=[9,7.5];
+  hero.position=remapLegacyPoint([9,7.5]); uav.position=remapLegacyPoint([9,7.5]);
   return {
     destroyedOutpost,
     assembly:{protectedSeconds,used:engineer.assemblyInvulnerableSeconds,protectedAfterLimit:engineer.assemblyProtected,protectedDecision,exhaustedDecision},
-    lineOfSight:{ground:engine.lineOfSight(state,hero,[19,7.5]),uav:engine.lineOfSight(state,uav,[19,7.5])},
+    lineOfSight:{ground:engine.lineOfSight(state,hero,remapLegacyPoint([19,7.5])),uav:engine.lineOfSight(state,uav,remapLegacyPoint([19,7.5]))},
   };
 }
 function probeServiceExit() {

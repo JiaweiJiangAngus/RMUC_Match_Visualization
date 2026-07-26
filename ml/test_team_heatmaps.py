@@ -360,6 +360,16 @@ class TeamHeatmapDatasetTest(unittest.TestCase):
         self.assertIn('name === "all"', script)
         self.assertIn("state.config.aggregate", script)
         self.assertIn('option.value = "all"', script)
+        self.assertIn("const MAP_WIDTH_METRES = 30", script)
+        self.assertIn("const MAP_HEIGHT_METRES = 16", script)
+        self.assertIn("const FIELD_WIDTH_METRES = 28", script)
+        self.assertIn("const FIELD_HEIGHT_METRES = 15", script)
+        self.assertIn(
+            "context.drawImage(layer, fieldLeft, fieldTop, fieldWidth, fieldHeight)",
+            script,
+        )
+        self.assertNotIn("FIELD_HEIGHT_WITH_MARGIN", script)
+        self.assertIn("<b>MAP</b> 30 × 16m", page)
         self.assertIn('href="./app.css?v=24"', page)
         self.assertNotIn("RM_LADDER", page)
 
