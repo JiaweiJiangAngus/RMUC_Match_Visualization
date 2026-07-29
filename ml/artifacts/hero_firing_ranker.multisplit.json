@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "evaluation_kind": "series_group_resampling",
+  "model_kind": "contextual_hero_firing_anchor_ranker",
+  "description": "四次重新按系列赛分组划分、重新构造训练集热图先验并从头训练；每次测试系列赛均不进入对应训练集。",
+  "caution": "这是四次分组重采样验证，不是四折互斥交叉验证；不同次运行的测试系列赛之间可能重叠，因此22080组仅用于加权汇总，不能宣称为22080个彼此独立样本。",
+  "candidate_definition": {
+    "positive": "英雄下一次真实42mm发弹位置",
+    "alternatives": "同队同比赛阶段真实使用过的三个发弹阵位；不足时才从同阶段其他队真实阵位补足",
+    "candidate_count": 4,
+    "context_offsets_seconds": [3, 5, 10],
+    "forbidden_shortcuts": [
+      "当前点到候选点的移动距离",
+      "近战/远程推断标签",
+      "英雄整机类型标签"
+    ]
+  },
+  "runs": [
+    {
+      "split_seed": 7803,
+      "test_groups": 5646,
+      "top1_accuracy": 0.5469,
+      "training_heatmap_top1_baseline": 0.5020,
+      "pairwise_accuracy": 0.6955,
+      "mean_reciprocal_rank": 0.7097,
+      "best_epoch": 1
+    },
+    {
+      "split_seed": 7804,
+      "test_groups": 4842,
+      "top1_accuracy": 0.6049,
+      "training_heatmap_top1_baseline": 0.5615,
+      "pairwise_accuracy": 0.7434,
+      "mean_reciprocal_rank": 0.7511,
+      "best_epoch": 7
+    },
+    {
+      "split_seed": 7805,
+      "test_groups": 5988,
+      "top1_accuracy": 0.6127,
+      "training_heatmap_top1_baseline": 0.5646,
+      "pairwise_accuracy": 0.7505,
+      "mean_reciprocal_rank": 0.7562,
+      "best_epoch": 1
+    },
+    {
+      "split_seed": 7806,
+      "test_groups": 5604,
+      "top1_accuracy": 0.5205,
+      "training_heatmap_top1_baseline": 0.4834,
+      "pairwise_accuracy": 0.6812,
+      "mean_reciprocal_rank": 0.6946,
+      "best_epoch": 6
+    }
+  ],
+  "weighted_summary": {
+    "test_groups": 22080,
+    "top1_accuracy": 0.5708,
+    "training_heatmap_top1_baseline": 0.5273,
+    "top1_absolute_gain": 0.0435,
+    "pairwise_accuracy": 0.7173,
+    "mean_reciprocal_rank": 0.7276,
+    "random_top1_baseline": 0.25
+  },
+  "coverage": {
+    "union_test_teams": 44,
+    "total_teams": 44,
+    "all_teams_held_out_at_least_once": true
+  },
+  "reproduce": [
+    "python3 ml/train_hero_firing_ranker.py --split-seed 7803 --output ml/artifacts/hero_firing_ranker.json",
+    "python3 ml/train_hero_firing_ranker.py --split-seed 7804 --output /tmp/hero_firing_ranker_7804.json",
+    "python3 ml/train_hero_firing_ranker.py --split-seed 7805 --output /tmp/hero_firing_ranker_7805.json",
+    "python3 ml/train_hero_firing_ranker.py --split-seed 7806 --output /tmp/hero_firing_ranker_7806.json"
+  ]
+}

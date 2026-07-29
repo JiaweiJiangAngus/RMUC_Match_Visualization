@@ -16,11 +16,23 @@ from ml.train_trajectory_transformer import (
     DAMAGE_FEATURE_NAMES, iter_transformer_samples,
     sample_weights, transformer_sample_features,
 )
-from ml.trajectory_transformer import TemporalBattlefieldTransformer
+from ml.train_trajectory_mixture_transformer import (
+    mixture_energy_scores_m, mixture_nll,
+)
+from ml.trajectory_transformer import (
+    TemporalBattlefieldMixtureTransformer,
+    TemporalBattlefieldTransformer,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKPOINT = ROOT / "ml" / "artifacts" / "trajectory_transformer.pt"
+MIXTURE_CHECKPOINT = (
+    ROOT / "ml" / "artifacts" / "trajectory_mixture_transformer.pt"
+)
+CONDITIONING_AUDIT = MIXTURE_CHECKPOINT.with_suffix(
+    ".conditioning_audit.json"
+)
 MANIFEST = ROOT / "docs" / "data" / "models" / "trajectory_transformer.json"
 WEIGHTS = ROOT / "docs" / "data" / "models" / "trajectory_transformer.bin"
 
@@ -33,6 +45,36 @@ class TrajectoryTransformerTests(unittest.TestCase):
         attention = model.encoder.layers[0].self_attn
         self.assertEqual(4, attention.num_heads)
         self.assertGreater(attention.in_proj_weight.numel(), 0)
+
+    def test_mixture_transformer_outputs_continuous_distribution(self):
+        model = TemporalBattlefieldMixtureTransformer(
+            len(FEATURE_NAMES), 5, mixture_count=8,
+        )
+        logits, means, log_scales = model(
+            torch.zeros(2, len(FEATURE_NAMES)),
+        )
+        self.assertEqual((2, 5, 8), tuple(logits.shape))
+        self.assertEqual((2, 5, 8, 2), tuple(means.shape))
+        self.assertEqual((2, 5, 8, 2), tuple(log_scales.shape))
+        self.assertTrue(torch.isfinite(
+            mixture_nll(
+                logits, means, log_scales, torch.zeros(2, 5, 2),
+            )
+        ))
+
+    def test_energy_score_does_not_use_best_component_oracle(self):
+        targets = np.zeros((512, 1, 2), dtype=np.float32)
+        logits = np.zeros((512, 1, 1), dtype=np.float32)
+        scales = np.full((512, 1, 1, 2), 0.01, dtype=np.float32)
+        centered = np.zeros((512, 1, 1, 2), dtype=np.float32)
+        displaced = np.full((512, 1, 1, 2), 0.2, dtype=np.float32)
+        centered_score = mixture_energy_scores_m(
+            logits, centered, scales, targets, seed=17,
+        ).mean()
+        displaced_score = mixture_energy_scores_m(
+            logits, displaced, scales, targets, seed=17,
+        ).mean()
+        self.assertLess(float(centered_score), float(displaced_score))
 
     def test_stationary_service_samples_are_downweighted(self):
         x = np.zeros((3, len(FEATURE_NAMES)), dtype=np.float32)
@@ -63,6 +105,47 @@ class TrajectoryTransformerTests(unittest.TestCase):
         self.assertIn("target.school.同济大学", checkpoint["feature_names"])
         self.assertEqual(252_394, checkpoint["parameter_count"])
 
+    @unittest.skipUnless(
+        MIXTURE_CHECKPOINT.exists(), "trained mixture checkpoint is required"
+    )
+    def test_mixture_checkpoint_passed_blind_distribution_gates(self):
+        checkpoint = torch.load(
+            MIXTURE_CHECKPOINT, map_location="cpu", weights_only=True
+        )
+        self.assertEqual(
+            "temporal_battlefield_mixture_transformer",
+            checkpoint["model_kind"],
+        )
+        self.assertEqual(
+            "exact observed future canonical coordinates",
+            checkpoint["training_target"],
+        )
+        self.assertEqual("no handcrafted tactical labels", checkpoint["label_policy"])
+        self.assertTrue(all(checkpoint["test_metrics"]["acceptance"].values()))
+        self.assertGreaterEqual(
+            checkpoint["test_metrics"]["sample_counts"]["hero_recently_damaged"],
+            100,
+        )
+        self.assertGreaterEqual(
+            len(checkpoint["blind_split_audit"]["final_blind_test_games"]),
+            70,
+        )
+
+    @unittest.skipUnless(
+        CONDITIONING_AUDIT.exists(), "frozen conditioning audit is required"
+    )
+    def test_frozen_model_uses_identity_damage_hp_and_time_context(self):
+        report = json.loads(CONDITIONING_AUDIT.read_text(encoding="utf-8"))
+        self.assertEqual(
+            "frozen post-training audit; no retraining or threshold labels",
+            report["policy"],
+        )
+        self.assertTrue(all(report["acceptance"].values()))
+        self.assertGreater(report["hero_correct_identity_improvement"], 0)
+        self.assertGreater(report["damaged_hero_damage_feature_improvement"], 0)
+        self.assertGreater(report["hero_live_hp_improvement"], 0)
+        self.assertGreater(report["hero_match_time_improvement"], 0)
+
     @unittest.skipUnless(CHECKPOINT.exists(), "trained Transformer checkpoint is required")
     def test_tongji_hero_leaves_anchor_more_after_damage_on_held_out_games(self):
         checkpoint = torch.load(CHECKPOINT, map_location="cpu", weights_only=True)
@@ -90,6 +173,7 @@ class TrajectoryTransformerTests(unittest.TestCase):
                 if features[school_index] and features[hero_index]:
                     rows.append((features, targets))
         x = np.asarray([row[0] for row in rows], dtype=np.float32)
+        y = np.asarray([row[1] for row in rows], dtype=np.float32)
         normalized = (
             (x - checkpoint["feature_mean"].numpy())
             / checkpoint["feature_std"].numpy()
@@ -100,6 +184,34 @@ class TrajectoryTransformerTests(unittest.TestCase):
             residual[:, 3] * np.asarray([28, 15]), axis=1
         )
         damaged = x[:, damage_indices].max(axis=1) > 0.005
+        velocity_indices = [
+            names.index("target.vx_3_norm_per_s"),
+            names.index("target.vy_3_norm_per_s"),
+        ]
+        stationary_anchor = np.linalg.norm(
+            x[:, velocity_indices] * np.asarray([28, 15]), axis=1
+        ) < 0.15
+        observed_displacement = np.linalg.norm(
+            (
+                y[:, checkpoint["horizons"].index(10)]
+                - x[:, [
+                    names.index("target.x"), names.index("target.y")
+                ]]
+            ) * np.asarray([28, 15]),
+            axis=1,
+        )
+        damaged_anchor = stationary_anchor & damaged
+        undamaged_anchor = stationary_anchor & ~damaged
+        self.assertGreaterEqual(int(damaged_anchor.sum()), 5)
+        self.assertGreaterEqual(int(undamaged_anchor.sum()), 100)
+        self.assertGreater(
+            float((observed_displacement[damaged_anchor] > 0.75).mean()),
+            float((observed_displacement[undamaged_anchor] > 0.75).mean()) * 3,
+        )
+        self.assertGreater(
+            float((observed_displacement[undamaged_anchor] < 0.25).mean()),
+            0.85,
+        )
         self.assertGreater(int(damaged.sum()), 5)
         self.assertGreater(int((~damaged).sum()), 100)
         self.assertGreater(
@@ -111,13 +223,48 @@ class TrajectoryTransformerTests(unittest.TestCase):
             float((predicted_displacement[~damaged] < 0.75).mean()),
         )
 
+        mixture_checkpoint = torch.load(
+            MIXTURE_CHECKPOINT, map_location="cpu", weights_only=True
+        )
+        self.assertEqual(
+            list(mixture_checkpoint["feature_names"]), names
+        )
+        mixture_model = TemporalBattlefieldMixtureTransformer(
+            **mixture_checkpoint["model_kwargs"]
+        )
+        mixture_model.load_state_dict(mixture_checkpoint["model_state"])
+        mixture_model.eval()
+        mixture_normalized = (
+            (x - mixture_checkpoint["feature_mean"].numpy())
+            / mixture_checkpoint["feature_std"].numpy()
+        )
+        with torch.inference_mode():
+            logits, means, _log_scales = mixture_model(
+                torch.from_numpy(mixture_normalized)
+            )
+        horizon_index = mixture_checkpoint["horizons"].index(10)
+        probabilities = logits[:, horizon_index].softmax(dim=-1).numpy()
+        component_displacement = np.linalg.norm(
+            means[:, horizon_index].numpy() * np.asarray([28, 15]), axis=2
+        )
+        distribution_displacement = (
+            probabilities * component_displacement
+        ).sum(axis=1)
+        self.assertGreater(
+            float(distribution_displacement[damaged_anchor].mean()),
+            float(distribution_displacement[undamaged_anchor].mean()) * 1.1,
+        )
+
     @unittest.skipUnless(
-        shutil.which("node") and CHECKPOINT.exists() and MANIFEST.exists() and WEIGHTS.exists(),
+        shutil.which("node") and MIXTURE_CHECKPOINT.exists()
+        and MANIFEST.exists() and WEIGHTS.exists(),
         "trained/exported Transformer artifacts are required",
     )
-    def test_browser_forward_matches_pytorch(self):
-        checkpoint = torch.load(CHECKPOINT, map_location="cpu", weights_only=True)
-        model = TemporalBattlefieldTransformer(**checkpoint["model_kwargs"])
+    def test_browser_mixture_distribution_matches_pytorch(self):
+        checkpoint = torch.load(
+            MIXTURE_CHECKPOINT, map_location="cpu", weights_only=True
+        )
+        model = TemporalBattlefieldMixtureTransformer(**checkpoint["model_kwargs"])
         model.load_state_dict(checkpoint["model_state"])
         model.eval()
         game_path = next((ROOT / "docs" / "data" / "games").glob("*.json.gz"))
@@ -142,7 +289,10 @@ class TrajectoryTransformerTests(unittest.TestCase):
         features = np.asarray(values, dtype=np.float32)
         normalized = (features - checkpoint["feature_mean"].numpy()) / checkpoint["feature_std"].numpy()
         with torch.inference_mode():
-            expected = model(torch.from_numpy(normalized[None]))[0].numpy().reshape(-1)
+            expected = [
+                value[0].numpy().reshape(-1)
+                for value in model(torch.from_numpy(normalized[None]))
+            ]
         script = r"""
 const fs=require('fs'),core=require('./docs/prediction-worker.js');
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
@@ -151,7 +301,10 @@ const bytes=fs.readFileSync(input.weights);
 const floats=new Float32Array(bytes.buffer,bytes.byteOffset,bytes.byteLength/4);
 const tensors=new Map(manifest.tensors.map(item=>[item.name,floats.subarray(item.offset,item.offset+item.length)]));
 const model={manifest,tensors,mean:Float32Array.from(manifest.feature_mean),std:Float32Array.from(manifest.feature_std)};
-process.stdout.write(JSON.stringify(Array.from(core.forward(model,Float32Array.from(input.features)))));
+const result=core.forwardDistribution(model,Float32Array.from(input.features));
+process.stdout.write(JSON.stringify([
+  Array.from(result.logits),Array.from(result.means),Array.from(result.logScales),
+]));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -160,8 +313,14 @@ process.stdout.write(JSON.stringify(Array.from(core.forward(model,Float32Array.f
                 "features": features.tolist(),
             }), capture_output=True, check=True,
         )
-        actual = np.asarray(json.loads(result.stdout), dtype=np.float32)
-        np.testing.assert_allclose(actual, expected, rtol=2e-4, atol=2e-5)
+        actual = [
+            np.asarray(value, dtype=np.float32)
+            for value in json.loads(result.stdout)
+        ]
+        for browser, pytorch in zip(actual, expected):
+            np.testing.assert_allclose(
+                browser, pytorch, rtol=2e-4, atol=2e-5
+            )
 
 
 if __name__ == "__main__":

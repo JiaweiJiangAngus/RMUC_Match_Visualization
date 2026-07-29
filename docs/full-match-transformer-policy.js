@@ -28,8 +28,8 @@
         alive ? Number(robot.position[0]) : null,
         alive ? Number(robot.position[1]) : null,
         Number(robot.yaw || 0),
-        weapon === "17mm" ? Number(robot.ammo || 0) : 0,
-        weapon === "42mm" ? Number(robot.ammo || 0) : 0,
+        weapon === "17mm" ? Number(robot.shots || 0) : 0,
+        weapon === "42mm" ? Number(robot.shots || 0) : 0,
         Number(state.teamState[robot.side].coins || 0),
         Boolean(robot.weak),
       ]);
@@ -82,20 +82,56 @@
         { "红": state.schools.red, "蓝": state.schools.blue }, model.manifest,
       );
       if (!features) return null;
-      const residuals = predictionCore.forward(model, features);
-      let canonicalX = Number(features[model.targetX]) + Number(residuals[horizonIndex * 2]);
-      let canonicalY = Number(features[model.targetY]) + Number(residuals[horizonIndex * 2 + 1]);
-      canonicalX = Math.max(0.003, Math.min(0.997, canonicalX));
-      canonicalY = Math.max(0.006, Math.min(0.994, canonicalY));
-      let x = canonicalX * FIELD_WIDTH;
-      let y = canonicalY * FIELD_HEIGHT;
-      if (robot.side === "blue") {
-        x = FIELD_WIDTH - x;
-        y = FIELD_HEIGHT - y;
+      const distribution = predictionCore.forwardDistribution?.(model, features);
+      let components = null;
+      let primaryResidual = null;
+      if (distribution) {
+        const start = horizonIndex * distribution.mixtureCount;
+        const logits = distribution.logits.subarray(
+          start, start + distribution.mixtureCount,
+        );
+        const weights = predictionCore.softmax(logits);
+        components = Array.from({ length: distribution.mixtureCount }, (_, component) => {
+          const offset = (start + component) * 2;
+          let canonicalX = Number(features[model.targetX]) + Number(distribution.means[offset]);
+          let canonicalY = Number(features[model.targetY]) + Number(distribution.means[offset + 1]);
+          canonicalX = Math.max(0.003, Math.min(0.997, canonicalX));
+          canonicalY = Math.max(0.006, Math.min(0.994, canonicalY));
+          let x = canonicalX * FIELD_WIDTH;
+          let y = canonicalY * FIELD_HEIGHT;
+          if (robot.side === "blue") {
+            x = FIELD_WIDTH - x;
+            y = FIELD_HEIGHT - y;
+          }
+          return {
+            target: [x, y],
+            weight: Number(weights[component]),
+            scale: [
+              Math.exp(Number(distribution.logScales[offset])) * FIELD_WIDTH,
+              Math.exp(Number(distribution.logScales[offset + 1])) * FIELD_HEIGHT,
+            ],
+          };
+        }).sort((left, right) => right.weight - left.weight);
+        primaryResidual = components[0]?.target || null;
       }
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      if (!primaryResidual) {
+        const residuals = predictionCore.forward(model, features);
+        let canonicalX = Number(features[model.targetX]) + Number(residuals[horizonIndex * 2]);
+        let canonicalY = Number(features[model.targetY]) + Number(residuals[horizonIndex * 2 + 1]);
+        canonicalX = Math.max(0.003, Math.min(0.997, canonicalX));
+        canonicalY = Math.max(0.006, Math.min(0.994, canonicalY));
+        let x = canonicalX * FIELD_WIDTH;
+        let y = canonicalY * FIELD_HEIGHT;
+        if (robot.side === "blue") {
+          x = FIELD_WIDTH - x;
+          y = FIELD_HEIGHT - y;
+        }
+        primaryResidual = [x, y];
+      }
+      if (!primaryResidual.every(Number.isFinite)) return null;
       return {
-        target: [x, y],
+        target: primaryResidual,
+        components,
         horizon,
         modelKind: model.manifest.model_kind,
       };

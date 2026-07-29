@@ -8,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "docs" / "data" / "models" / "match_simulation.json"
 FULL_MODEL_PATH = ROOT / "docs" / "data" / "models" / "full_simulation.json"
+HERO_RANKER_REPORT_PATH = (
+    ROOT / "ml" / "artifacts" / "hero_firing_ranker.multisplit.json"
+)
 
 
 class SimulatorPageLayoutTests(unittest.TestCase):
@@ -77,7 +80,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(13, self.model["schema_version"])
+        self.assertEqual(15, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -92,12 +95,56 @@ class FullSimulationDataTests(unittest.TestCase):
         self.assertEqual(set(self.model["teams"]), set(target["teams"]))
         self.assertEqual(["英雄", "步兵3", "步兵4", "哨兵", "空中"], target["roles"])
         self.assertEqual(["robot", "outpost", "base"], target["targets"])
+        self.assertEqual(2, target["schema_version"])
+        self.assertTrue({
+            "self_hp_ratio", "own_ground_alive_ratio", "enemy_ground_alive_ratio",
+            "own_ground_hp_ratio", "enemy_ground_hp_ratio", "ground_hp_advantage",
+            "own_low_hp_ratio", "enemy_low_hp_ratio", "remaining_ratio",
+        }.issubset(target["feature_names"]))
         self.assertEqual(44, target["input_layout"]["team_one_hot"])
         self.assertEqual(220, target["input_layout"]["team_role_one_hot"])
         self.assertGreater(target["parameter_count"], 10000)
         self.assertGreater(target["metrics"]["test"]["weighted_accuracy"], 0.75)
         for kind in ("robot", "outpost", "base"):
             self.assertGreater(target["metrics"]["test"]["per_target"][kind]["samples"], 0)
+
+    def test_hero_firing_ranker_uses_real_choices_and_beats_held_out_heatmap(self):
+        ranker = self.model["hero_firing_ranker"]
+        self.assertEqual("contextual_hero_firing_anchor_ranker", ranker["model_kind"])
+        self.assertEqual(set(self.model["teams"]), set(ranker["teams"]))
+        self.assertEqual(4, ranker["candidate_count"])
+        self.assertEqual([3, 5, 10], ranker["lookback_seconds"])
+        self.assertIn("candidate_train_heatmap_prior", ranker["feature_names"])
+        self.assertIn("self_hp_ratio", ranker["feature_names"])
+        self.assertIn("enemy_ground_hp_ratio", ranker["feature_names"])
+        self.assertFalse(any(
+            token in name for name in ranker["feature_names"]
+            for token in ("style", "archetype", "long_range", "close_pressure")
+        ))
+        self.assertIn("无近战/远程伪标签", ranker["source"])
+        self.assertGreater(ranker["parameter_count"], 10000)
+        self.assertTrue(all(ranker["acceptance"].values()))
+        test = ranker["metrics"]["test"]
+        self.assertGreater(test["top1_accuracy"], test["training_heatmap_top1_baseline"] + 0.03)
+        self.assertGreater(test["top1_accuracy"], test["random_top1_baseline"] * 2)
+        self.assertTrue(all(
+            samples > 0
+            for samples in ranker["split_samples"]["train"]["team_groups"].values()
+        ))
+
+    def test_hero_ranker_multisplit_report_is_honest_and_covers_every_team(self):
+        report = json.loads(HERO_RANKER_REPORT_PATH.read_text(encoding="utf-8"))
+        self.assertEqual("series_group_resampling", report["evaluation_kind"])
+        self.assertEqual(4, len(report["runs"]))
+        self.assertIn("不是四折互斥交叉验证", report["caution"])
+        self.assertTrue(report["coverage"]["all_teams_held_out_at_least_once"])
+        self.assertEqual(44, report["coverage"]["union_test_teams"])
+        summary = report["weighted_summary"]
+        self.assertGreater(
+            summary["top1_accuracy"],
+            summary["training_heatmap_top1_baseline"] + 0.04,
+        )
+        self.assertGreater(summary["pairwise_accuracy"], 0.7)
 
     def test_all_44_teams_have_distinct_data_driven_behavior_profiles(self):
         coverage = self.model["team_behavior_coverage"]
@@ -245,6 +292,14 @@ class FullSimulationDataTests(unittest.TestCase):
             self.assertGreaterEqual(team["radar_counters_per_game"], 0)
             self.assertTrue(team["dart_base_modes"])
             self.assertTrue(all(item["damage"] in {200, 300, 625, 1000} for item in team["dart_base_modes"]))
+            evidence = hero["hero_archetype_evidence"]
+            for field in (
+                "long_structure_fire_share", "close_structure_fire_share",
+                "remote_enemy_fire_share", "anchor_hold_share",
+            ):
+                self.assertGreaterEqual(evidence[field], 0)
+                self.assertLessEqual(evidence[field], 1)
+            self.assertGreater(evidence["median_nearest_enemy_robot_distance_m"], 0)
         for school in ("东北大学", "上海交通大学", "中国石油大学（华东）"):
             self.assertEqual("melee", self.model["teams"][school]["roles"]["英雄"]["hero_archetype_default"])
         tongji = self.model["teams"]["同济大学"]
@@ -254,6 +309,16 @@ class FullSimulationDataTests(unittest.TestCase):
         self.assertEqual(300, tongji["roles"]["英雄"]["damage_per_hit_by_target"]["base"]["mode_damage"])
         self.assertTrue(tongji["accuracy_models"]["42mm"]["per_shot_random"])
         self.assertAlmostEqual(61 / 436, tongji["accuracy_models"]["42mm"]["mean_probability"], places=3)
+        data_driven_long_range = [
+            school for school, team in self.model["teams"].items()
+            if school != "同济大学"
+            and team["roles"]["英雄"]["engagement_profile"]["style"] == "long_range"
+            and team["roles"]["英雄"]["hero_archetype_evidence"]["engagement_style_label"] is None
+        ]
+        self.assertGreaterEqual(len(data_driven_long_range), 12)
+        self.assertIn("五邑大学", data_driven_long_range)
+        self.assertIn("武汉工程大学", data_driven_long_range)
+        self.assertIn("西北工业大学", data_driven_long_range)
 
     def test_service_zones_separate_ammo_and_healing(self):
         for side in ("red", "blue"):
@@ -813,6 +878,48 @@ function probeContextualTargetPolicy() {
   const delta=['robot','outpost','base'].reduce((sum,key)=>sum+Math.abs(opening[key]-endgame[key]),0);
   return {opening,endgame,openingSource,endgameSource,delta};
 }
+function probeStateConditionedHeatmap() {
+  const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',20260728,router);
+  const robot=state.robots.find(item=>item.key==='red:英雄');
+  state.second=180;
+  robot.position=[10,7.5];
+  robot.ammo=robot.profile.magazine;
+  robot.targetPolicyPrior={robot:1,outpost:0,base:0};
+  const enemies=state.robots.filter(item=>item.side==='blue'&&item.role!=='空中');
+  enemies.forEach(item=>{item.position=[20,7.5];item.hp=item.maxHp;});
+  const attack=[15,7.5];
+  const safe=[5,7.5];
+  robot.hp=robot.maxHp;
+  robot.recentDamage=[];
+  const healthy={
+    attack:engine.tacticalCandidateScore(state,robot,attack,0.5,null),
+    safe:engine.tacticalCandidateScore(state,robot,safe,0.5,null),
+  };
+  robot.hp=robot.maxHp*.25;
+  robot.recentDamage=[[178,robot.maxHp*.3]];
+  const damaged={
+    attack:engine.tacticalCandidateScore(state,robot,attack,0.5,null),
+    safe:engine.tacticalCandidateScore(state,robot,safe,0.5,null),
+  };
+  robot.hp=robot.maxHp;
+  robot.recentDamage=[];
+  const phase=Math.min(6,Math.floor(state.second/60));
+  const points=robot.profile.goals_by_minute[phase];
+  const transitions=robot.profile.transitions_by_minute[phase];
+  const rulesTarget=engine.canonicalPoint([Number(points[0][0]),Number(points[0][1])],robot.side);
+  const selected=engine.stateConditionedHeatmapGoal(state,robot,[14,7.5],rulesTarget,false,false);
+  const support=[
+    ...points.map(point=>[Number(point[0]),Number(point[1])]),
+    ...transitions.map(edge=>[Number(edge[2]),Number(edge[3])]),
+    engine.canonicalPoint(rulesTarget,robot.side),
+  ];
+  const supportedDistance=Math.min(...support.map(point=>router.distance(point,selected.canonical)));
+  return {
+    healthy,damaged,supportedDistance,sources:selected.sources,
+    featureCount:engine.targetSelectionFeatures(state,robot).length,
+    declaredFeatureCount:model.target_selection_model.feature_names.length,
+  };
+}
 function probeLearnedFlyRamp() {
   const state=engine.createMatch(model,nav,'东北大学','中国石油大学（华东）',31,router);
   state.robots.forEach(robot=>{if(robot.key!=='red:步兵3')robot.hp=0;});
@@ -904,7 +1011,7 @@ function probeWallSeeds() {
 const first=run();
 const repeat=run();
 const zones={base:probeZone('base'),outpost:probeZone('outpost'),supply:probeZone('supply')};
-console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,serviceGeometry:probeServiceGeometry(),v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),enemyHalfServiceReturn:probeEnemyHalfServiceReturn(),baseRules:probeBaseRules(),baseDamageTiming:probeBaseDamageTiming(),contextualTargetPolicy:probeContextualTargetPolicy(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
+console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:first.signature===repeat.signature,zones,serviceGeometry:probeServiceGeometry(),v210:probeV210(),uavRules:probeUavRules(),technologyCore:probeTechnologyCore(),hardRules:probeHardRules(),serviceExit:probeServiceExit(),enemyHalfServiceReturn:probeEnemyHalfServiceReturn(),baseRules:probeBaseRules(),baseDamageTiming:probeBaseDamageTiming(),contextualTargetPolicy:probeContextualTargetPolicy(),stateConditionedHeatmap:probeStateConditionedHeatmap(),dartRules:probeDartRules(),learnedFlyRamp:probeLearnedFlyRamp(),wallLayers:probeWallLayers(),wallSeeds:probeWallSeeds()}));
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, text=True,
@@ -924,6 +1031,7 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
         cls.base_rules = payload["baseRules"]
         cls.base_damage_timing = payload["baseDamageTiming"]
         cls.contextual_target_policy = payload["contextualTargetPolicy"]
+        cls.state_conditioned_heatmap = payload["stateConditionedHeatmap"]
         cls.dart_rules = payload["dartRules"]
         cls.learned_fly_ramp = payload["learnedFlyRamp"]
         cls.wall_layers = payload["wallLayers"]
@@ -984,6 +1092,14 @@ console.log(JSON.stringify({first:{...first,signature:undefined},deterministic:f
             self.assertAlmostEqual(1, sum(prior.values()), places=6)
         self.assertEqual(0, probe["endgame"]["outpost"])
         self.assertGreater(probe["delta"], 0.05)
+
+    def test_transformer_is_reranked_on_state_conditioned_empirical_heat_support(self):
+        probe = self.state_conditioned_heatmap
+        self.assertEqual(probe["declaredFeatureCount"], probe["featureCount"])
+        self.assertGreater(probe["healthy"]["attack"], probe["healthy"]["safe"])
+        self.assertGreater(probe["damaged"]["safe"], probe["damaged"]["attack"])
+        self.assertLess(probe["supportedDistance"], 0.25)
+        self.assertTrue(probe["sources"])
 
     def test_full_simulator_uses_exact_v210_dart_damage(self):
         for damage in (200, 300, 625, 1000):

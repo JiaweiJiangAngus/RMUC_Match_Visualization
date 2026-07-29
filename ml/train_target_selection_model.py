@@ -39,6 +39,7 @@ DEFAULT_DB = ROOT.parent / "RMUC2026区域赛数据" / "rmuc_2026_region_dataset
 DEFAULT_DATA_DIR = ROOT / "docs" / "data" / "games"
 DEFAULT_OUTPUT = ROOT / "ml" / "artifacts" / "target_selection_model.json"
 ROLES = ("英雄", "步兵3", "步兵4", "哨兵", "空中")
+GROUND_ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵")
 TARGETS = ("robot", "outpost", "base")
 STRUCTURE_POSITIONS = {
     "红": {"base": (2.66, 7.5), "outpost": (11.0, 3.25)},
@@ -53,7 +54,13 @@ FEATURE_NAMES = (
     "own_outpost_hp_ratio",
     "enemy_base_hp_ratio",
     "enemy_outpost_hp_ratio",
+    "own_ground_alive_ratio",
     "enemy_ground_alive_ratio",
+    "own_ground_hp_ratio",
+    "enemy_ground_hp_ratio",
+    "ground_hp_advantage",
+    "own_low_hp_ratio",
+    "enemy_low_hp_ratio",
     "distance_enemy_base_ratio",
     "distance_enemy_outpost_ratio",
     "nearest_enemy_robot_distance_ratio",
@@ -73,11 +80,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--seed", type=int, default=20260725)
     parser.add_argument("--split-seed", type=int, default=7803)
-    parser.add_argument("--epochs", type=int, default=24)
-    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--epochs", type=int, default=32)
+    parser.add_argument("--patience", type=int, default=6)
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=8e-4)
-    parser.add_argument("--hidden-size", type=int, default=40)
+    parser.add_argument("--hidden-size", type=int, default=48)
     return parser.parse_args()
 
 
@@ -93,6 +100,24 @@ def hp_ratio(row: list | None) -> float:
 
 def frame_index(rows: list[list]) -> dict[tuple[str, str], list]:
     return {(row[ROW["side"]], row[ROW["type"]]): row for row in rows}
+
+
+def ground_summary(
+    frame: dict[tuple[str, str], list],
+    side: str,
+) -> tuple[list[list], float, float, float]:
+    rows = [frame.get((side, role)) for role in GROUND_ROLES]
+    present = [row for row in rows if row]
+    alive = [row for row in present if float(row[ROW["hp"]] or 0) > 0]
+    total_hp = sum(max(0.0, float(row[ROW["hp"]] or 0)) for row in present)
+    total_max_hp = sum(max(1.0, float(row[ROW["max_hp"]] or 1)) for row in present)
+    low_hp = sum(1 for row in alive if hp_ratio(row) <= 0.4)
+    return (
+        alive,
+        len(alive) / len(GROUND_ROLES),
+        min(1.25, total_hp / max(1.0, total_max_hp)),
+        low_hp / len(GROUND_ROLES),
+    )
 
 
 def distance_ratio(start: tuple[float, float], end: tuple[float, float]) -> float:
@@ -119,13 +144,11 @@ def contextual_features(
     previous = frames.get(max(0, second - 5), {}).get((side, role))
     current_hp = hp_ratio(self_row)
     previous_hp = hp_ratio(previous) if previous else current_hp
-    enemy_rows = [
-        frame.get((enemy, target_role))
-        for target_role in ("英雄", "工程", "步兵3", "步兵4", "哨兵")
-    ]
+    _, own_alive_ratio, own_ground_hp, own_low_hp = ground_summary(frame, side)
+    enemy_alive, enemy_alive_ratio, enemy_ground_hp, enemy_low_hp = ground_summary(frame, enemy)
     alive_rows = [
-        row for row in enemy_rows
-        if row and float(row[ROW["hp"]] or 0) > 0 and row[ROW["x"]] is not None and row[ROW["y"]] is not None
+        row for row in enemy_alive
+        if row[ROW["x"]] is not None and row[ROW["y"]] is not None
     ]
     position = (float(self_row[ROW["x"]]), float(self_row[ROW["y"]]))
     nearest_enemy = min(
@@ -146,7 +169,13 @@ def contextual_features(
         hp_ratio(own_outpost),
         hp_ratio(enemy_base),
         hp_ratio(enemy_outpost),
-        len(alive_rows) / 5,
+        own_alive_ratio,
+        enemy_alive_ratio,
+        own_ground_hp,
+        enemy_ground_hp,
+        max(-1.0, min(1.0, own_ground_hp - enemy_ground_hp)),
+        own_low_hp,
+        enemy_low_hp,
         distance_ratio(position, enemy_base_position),
         distance_ratio(position, enemy_outpost_position),
         nearest_enemy,
@@ -399,9 +428,9 @@ def main() -> None:
         for school in ordered_teams
     }
     output = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model_kind": "contextual_target_mlp",
-        "source": "区域赛同局同秒同口径发弹角色归因；按系列赛隔离训练/验证/测试",
+        "source": "区域赛同局同秒同口径发弹角色归因；含双方地面机器人存活、总血量与低血量态势；按系列赛隔离训练/验证/测试",
         "feature_names": list(FEATURE_NAMES),
         "feature_mean": np.round(mean, 7).tolist(),
         "feature_std": np.round(std, 7).tolist(),

@@ -21,7 +21,7 @@ const STRUCTURE_TYPES = ["基地", "前哨站"];
 const FIELD_WIDTH = 28;
 const FIELD_HEIGHT = 15;
 const R = {id:0,type:1,side:2,hp:3,max:4,x:5,y:6,yaw:7,a17:8,a42:9,coins:10,vulnerable:11};
-const MODEL_URL = "./data/models/trajectory_transformer.json?v=4";
+const MODEL_URL = "./data/models/trajectory_transformer.json?v=6";
 const NAVIGATION_URL = "./data/models/terrain_navigation.json?v=27";
 
 let modelPromise = null;
@@ -67,7 +67,7 @@ async function loadModel() {
       targetVx3: manifest.feature_names.indexOf("target.vx_3_norm_per_s"),
       targetVy3: manifest.feature_names.indexOf("target.vy_3_norm_per_s"),
     };
-    emit({type:"status", status:"ready", text:"Temporal Transformer 预测已开启"});
+    emit({type:"status", status:"ready", text:"多峰轨迹 Transformer 预测已开启"});
     return model;
   })();
   return modelPromise;
@@ -250,7 +250,7 @@ function transformerLayer(tokens,model,index) {
   });
 }
 
-function forwardTransformer(model,normalized) {
+function encodeTransformer(model,normalized) {
   const t=name=>model.tensors.get(name),m=model.manifest,d=m.d_model,count=m.history_token_count,width=m.history_token_width;
   const tokens=[];
   for(let index=0;index<count;index++){
@@ -264,13 +264,81 @@ function forwardTransformer(model,normalized) {
   for(let token=0;token<tokens.length;token++)for(let i=0;i<d;i++)tokens[token][i]+=position[token*d+i];
   let encoded=tokens;
   for(let layer=0;layer<m.num_layers;layer++)encoded=transformerLayer(encoded,model,layer);
-  const target=layerNorm(encoded.at(-1),t("norm.weight"),t("norm.bias"),m.layer_norm_epsilon);
+  return layerNorm(encoded.at(-1),t("norm.weight"),t("norm.bias"),m.layer_norm_epsilon);
+}
+
+function forwardTransformer(model,normalized) {
+  const t=name=>model.tensors.get(name),m=model.manifest,d=m.d_model;
+  const target=encodeTransformer(model,normalized);
   return linear(target,t("head.weight"),t("head.bias"),m.horizons.length*2,d);
 }
 
+function softmax(values) {
+  const output=new Float32Array(values.length);
+  let maximum=-Infinity;
+  for(const value of values)maximum=Math.max(maximum,value);
+  let total=0;
+  for(let index=0;index<values.length;index++){
+    output[index]=Math.exp(values[index]-maximum);
+    total+=output[index];
+  }
+  for(let index=0;index<output.length;index++)output[index]/=Math.max(1e-12,total);
+  return output;
+}
+
+function forwardMixtureTransformer(model,normalized) {
+  const t=name=>model.tensors.get(name),m=model.manifest,d=m.d_model;
+  const horizonCount=m.horizons.length,mixtureCount=m.mixture_count;
+  const target=encodeTransformer(model,normalized);
+  const logits=linear(
+    target,t("logit_head.weight"),t("logit_head.bias"),
+    horizonCount*mixtureCount,d,
+  );
+  const means=linear(
+    target,t("mean_head.weight"),t("mean_head.bias"),
+    horizonCount*mixtureCount*2,d,
+  );
+  const rawLogScales=linear(
+    target,t("log_scale_head.weight"),t("log_scale_head.bias"),
+    horizonCount*mixtureCount*2,d,
+  );
+  const logScales=new Float32Array(rawLogScales.length);
+  for(let index=0;index<rawLogScales.length;index++){
+    logScales[index]=clamp(rawLogScales[index],m.min_log_scale,m.max_log_scale);
+  }
+  return {logits,means,logScales,horizonCount,mixtureCount};
+}
+
+function normalizedFeatures(model,features) {
+  const normalized=new Float32Array(model.manifest.input_dim);
+  for(let i=0;i<normalized.length;i++){
+    normalized[i]=(features[i]-model.mean[i])/model.std[i];
+  }
+  return normalized;
+}
+
+function forwardDistribution(model,features) {
+  if(model.manifest.model_kind!=="temporal_battlefield_mixture_transformer")return null;
+  return forwardMixtureTransformer(model,normalizedFeatures(model,features));
+}
+
 function forward(model,features) {
-  const m=model.manifest,normalized=new Float32Array(m.input_dim);
-  for(let i=0;i<m.input_dim;i++)normalized[i]=(features[i]-model.mean[i])/model.std[i];
+  const m=model.manifest,normalized=normalizedFeatures(model,features);
+  if(m.model_kind==="temporal_battlefield_mixture_transformer"){
+    const distribution=forwardMixtureTransformer(model,normalized);
+    const residuals=new Float32Array(distribution.horizonCount*2);
+    for(let horizon=0;horizon<distribution.horizonCount;horizon++){
+      const start=horizon*distribution.mixtureCount;
+      let top=0;
+      for(let component=1;component<distribution.mixtureCount;component++){
+        if(distribution.logits[start+component]>distribution.logits[start+top])top=component;
+      }
+      const meanOffset=(start+top)*2;
+      residuals[horizon*2]=distribution.means[meanOffset];
+      residuals[horizon*2+1]=distribution.means[meanOffset+1];
+    }
+    return residuals;
+  }
   return m.model_kind==="temporal_battlefield_transformer"
     ? forwardTransformer(model,normalized) : forwardMlp(model,normalized);
 }
@@ -298,7 +366,8 @@ function destinationZone(x,y,perspectiveSide) {
 }
 function confidence(model,horizon,moving) {
   const group=moving?"moving":"all";
-  const metric=model.manifest.reliability[String(horizon)]?.[group]?.zone_accuracy;
+  const reliability=model.manifest.reliability[String(horizon)]||{};
+  const metric=(reliability[group]||reliability.all)?.zone_accuracy;
   return Number.isFinite(metric)?metric:0;
 }
 
@@ -632,7 +701,8 @@ async function predict(message) {
 }
 
 const predictionCore = {
-  loadModel, buildFeatures, forward, linear, gelu, layerNorm,
+  loadModel, buildFeatures, forward, forwardDistribution,
+  linear, gelu, layerNorm, softmax,
   terrainRoute, routeLength, regionAt,
 };
 

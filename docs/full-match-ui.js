@@ -72,7 +72,7 @@
       const heroSelect = side === "red" ? elements.redHeroMode : elements.blueHeroMode;
       const archetype = model.teams[teamSelect.value]?.roles?.["英雄"]?.hero_archetype_default || "ranged";
       const auto = heroSelect.querySelector('option[value="auto"]');
-      if (auto) auto.textContent = `英雄：自动（${HERO_ARCHETYPE_LABEL[archetype]}）`;
+      if (auto) auto.textContent = `英雄整机：自动（${HERO_ARCHETYPE_LABEL[archetype]}血量表）`;
     }
 
     function publishMatchup() {
@@ -396,7 +396,7 @@
         const roles = profile.outpost.primary_roles.length ? profile.outpost.primary_roles.join("/") : "无固定兵种";
         const baseMedian = profile.base?.first_any_damage_second?.median;
         const baseTiming = baseMedian == null ? "基地首伤样本不足" : `基地首伤中位 ${formatNumber(baseMedian)}s`;
-        return `${HERO_ARCHETYPE_LABEL[hero.archetype] || hero.archetype}·${ENGAGEMENT_LABEL[hero.engagement_style] || hero.engagement_style} ${Number(hero.preferred_range_m).toFixed(1)}m·命中 ${(hero.accuracy_42mm * 100).toFixed(1)}%·前哨 ${roles}·空中份额 ${(profile.outpost.uav_attributed_share * 100).toFixed(1)}%·${baseTiming}`;
+        return `${HERO_ARCHETYPE_LABEL[hero.archetype] || hero.archetype}·${ENGAGEMENT_LABEL[hero.engagement_style] || hero.engagement_style} ${Number(hero.preferred_range_m).toFixed(1)}m·远距发弹 ${Math.round(Number(hero.long_structure_fire_share || 0) * 100)}%·最近敌车中位 ${Number(hero.median_nearest_enemy_robot_distance_m || 0).toFixed(1)}m·命中 ${(hero.accuracy_42mm * 100).toFixed(1)}%·前哨 ${roles}·空中份额 ${(profile.outpost.uav_attributed_share * 100).toFixed(1)}%·${baseTiming}`;
       };
       elements.stats.innerHTML = `
         <div class="full-stat-score"><div><strong>${escapeHtml(sideCode("red"))}</strong><span>红方</span></div><b>${formatNumber(frame.structures.red.base)} : ${formatNumber(frame.structures.blue.base)}</b><div class="blue"><strong>${escapeHtml(sideCode("blue"))}</strong><span>蓝方</span></div></div>
@@ -466,7 +466,7 @@
           <div><span>复活状态</span><b>${robot.role === "空中" ? "不适用" : robot.respawnIn ? `${robot.respawnIn}s` : robot.weak ? "虚弱" : robot.invulnerable ? "无敌" : "正常"}</b></div>
           <div><span>所在补给区域</span><b>${robot.role === "空中" ? "不适用" : escapeHtml(robot.serviceZone || "无")}</b></div>
           <div><span>复活决策</span><b>${robot.role === "空中" ? "不适用" : robot.respawnMode === "reading" ? `读条 ${robot.respawnProgress}/${robot.respawnRequired}` : `买活 ${robot.buybacks} 次`}</b></div>
-          <div><span>当前选点控制器</span><b>${robot.role === "空中" ? "无人机状态机" : robot.policySource === "transformer" ? "Temporal Transformer" : "规则/任务约束"}</b></div>
+          <div><span>当前选点控制器</span><b>${robot.role === "空中" ? "无人机状态机" : robot.policySource === "state_heatmap_transformer" ? robot.role === "英雄" ? "真实发弹阵位排序 + 多峰轨迹 Transformer" : "局势条件热图 + 多峰轨迹 Transformer" : "规则/任务约束"}</b></div>
           <div><span>无人机反制</span><b>${robot.role === "空中" ? `${robot.radarCounterCount}/5 · 剩 ${robot.radarCounteredIn}s` : "—"}</b></div>
           ${weaponModel}
           ${targetModel}
@@ -543,9 +543,12 @@
       selectedKey = "red:英雄";
       elements.slider.max = "0";
       elements.seed.textContent = `seed ${seed}`;
+      const rankerText = message.state.policy?.heroFiringRankerActive
+        ? `英雄真实发弹阵位排序 ${formatNumber(message.state.policy.heroFiringRankerParameters)} 参数`
+        : "英雄阵位排序不可用";
       const policyText = message.state.policy?.active
-        ? `Transformer ${formatNumber(message.state.policy.parameterCount)} 参数已接管战术选点`
-        : "Transformer 不可用 · 统计策略回退";
+        ? `局势条件热图已启用 · 多峰轨迹 Transformer ${formatNumber(message.state.policy.parameterCount)} 参数 · ${rankerText}`
+        : `${rankerText} · 多峰轨迹 Transformer 不可用`;
       elements.status.textContent = `${policyText} · 1/${expectedSimulationFrames} 帧`;
       elements.status.className = "ready";
       elements.create.disabled = false;
@@ -563,9 +566,9 @@
       elements.slider.max = String(simulation.frames.length - 1);
       if (simulationComplete) {
         const policy = simulation.state.policy || {};
-        elements.status.textContent = `${simulation.frames.length} 帧 · Transformer 选点 ${formatNumber(policy.decisions || 0)} 次 · 规则约束 ${formatNumber(policy.constrained || 0)} 次 · 后台 ${Math.round(Number(message.latencyMs) || 0)}ms · 已生成`;
+        elements.status.textContent = `${simulation.frames.length} 帧 · 状态热图选点 ${formatNumber(policy.decisions || 0)} 次 · 规则约束 ${formatNumber(policy.constrained || 0)} 次 · 后台 ${Math.round(Number(message.latencyMs) || 0)}ms · 已生成`;
       } else {
-        elements.status.textContent = `Transformer 实时推演 · ${simulation.frames.length}/${expectedSimulationFrames} 帧 · 已选点 ${formatNumber(simulation.state.policy?.decisions || 0)} 次`;
+        elements.status.textContent = `局势条件热图实时推演 · ${simulation.frames.length}/${expectedSimulationFrames} 帧 · 已选点 ${formatNumber(simulation.state.policy?.decisions || 0)} 次`;
       }
       elements.status.className = "ready";
     }
@@ -580,7 +583,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=18");
+      const worker = new Worker("./full-match-worker.js?v=20");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -716,7 +719,7 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=15").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=18").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
         fetch("./data/models/terrain_navigation.json?v=27").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;

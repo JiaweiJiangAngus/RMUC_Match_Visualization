@@ -310,36 +310,64 @@
     });
   }
 
-  function targetSelectionFeatures(state, robot) {
+  function groundBattleSummary(state, side) {
+    const robots = state.robots.filter((target) => target.side === side && target.role !== "空中");
+    const alive = robots.filter((target) => target.hp > 0);
+    const totalHp = robots.reduce((sum, target) => sum + Math.max(0, Number(target.hp || 0)), 0);
+    const totalMaxHp = robots.reduce((sum, target) => sum + Math.max(1, Number(target.maxHp || 1)), 0);
+    return {
+      alive,
+      aliveRatio: alive.length / 5,
+      hpRatio: clamp(totalHp / Math.max(1, totalMaxHp), 0, 1.25),
+      lowHpRatio: alive.filter((target) => target.hp / Math.max(1, target.maxHp) <= 0.4).length / 5,
+    };
+  }
+
+  function targetSelectionFeatureMap(state, robot) {
     const enemySide = otherSide(robot.side);
     const ownStructures = state.structures[robot.side];
     const enemyStructures = state.structures[enemySide];
-    const enemyGround = state.robots.filter((target) => (
-      target.side === enemySide && target.role !== "空中" && target.hp > 0
-    ));
-    const nearestEnemy = enemyGround.length
-      ? Math.min(...enemyGround.map((target) => state.router.distance(robot.position, target.position)))
+    const ownGround = groundBattleSummary(state, robot.side);
+    const enemyGround = groundBattleSummary(state, enemySide);
+    const nearestEnemy = enemyGround.alive.length
+      ? Math.min(...enemyGround.alive.map((target) => state.router.distance(robot.position, target.position)))
       : Math.hypot(28, 15);
     const recentDamage = (robot.recentDamage || [])
       .filter((item) => state.second - item[0] <= 5)
       .reduce((sum, item) => sum + Number(item[1] || 0), 0);
     const fieldDiagonal = Math.hypot(28, 15);
-    return [
-      clamp(state.second / 420, 0, 1),
-      clamp(1 - state.second / 420, 0, 1),
-      clamp(robot.hp / Math.max(1, robot.maxHp), 0, 1.25),
-      clamp(recentDamage / Math.max(1, robot.maxHp), 0, 1),
-      clamp(ownStructures.base.hp / Math.max(1, ownStructures.base.maxHp), 0, 1.25),
-      clamp(ownStructures.outpost.hp / Math.max(1, ownStructures.outpost.maxHp), 0, 1.25),
-      clamp(enemyStructures.base.hp / Math.max(1, enemyStructures.base.maxHp), 0, 1.25),
-      clamp(enemyStructures.outpost.hp / Math.max(1, enemyStructures.outpost.maxHp), 0, 1.25),
-      enemyGround.length / 5,
-      clamp(state.router.distance(robot.position, enemyStructures.base.position) / fieldDiagonal, 0, 1),
-      clamp(state.router.distance(robot.position, enemyStructures.outpost.position) / fieldDiagonal, 0, 1),
-      clamp(nearestEnemy / fieldDiagonal, 0, 1),
-      clamp(Number(state.teamState[robot.side].coins || 0) / 2000, 0, 1),
-      robot.weak ? 1 : 0,
-    ];
+    return {
+      elapsed_ratio: clamp(state.second / 420, 0, 1),
+      remaining_ratio: clamp(1 - state.second / 420, 0, 1),
+      self_hp_ratio: clamp(robot.hp / Math.max(1, robot.maxHp), 0, 1.25),
+      self_hp_loss_5s: clamp(recentDamage / Math.max(1, robot.maxHp), 0, 1),
+      own_base_hp_ratio: clamp(ownStructures.base.hp / Math.max(1, ownStructures.base.maxHp), 0, 1.25),
+      own_outpost_hp_ratio: clamp(ownStructures.outpost.hp / Math.max(1, ownStructures.outpost.maxHp), 0, 1.25),
+      enemy_base_hp_ratio: clamp(enemyStructures.base.hp / Math.max(1, enemyStructures.base.maxHp), 0, 1.25),
+      enemy_outpost_hp_ratio: clamp(enemyStructures.outpost.hp / Math.max(1, enemyStructures.outpost.maxHp), 0, 1.25),
+      own_ground_alive_ratio: ownGround.aliveRatio,
+      enemy_ground_alive_ratio: enemyGround.aliveRatio,
+      own_ground_hp_ratio: ownGround.hpRatio,
+      enemy_ground_hp_ratio: enemyGround.hpRatio,
+      ground_hp_advantage: clamp(ownGround.hpRatio - enemyGround.hpRatio, -1, 1),
+      own_low_hp_ratio: ownGround.lowHpRatio,
+      enemy_low_hp_ratio: enemyGround.lowHpRatio,
+      distance_enemy_base_ratio: clamp(
+        state.router.distance(robot.position, enemyStructures.base.position) / fieldDiagonal, 0, 1,
+      ),
+      distance_enemy_outpost_ratio: clamp(
+        state.router.distance(robot.position, enemyStructures.outpost.position) / fieldDiagonal, 0, 1,
+      ),
+      nearest_enemy_robot_distance_ratio: clamp(nearestEnemy / fieldDiagonal, 0, 1),
+      team_coins_ratio: clamp(Number(state.teamState[robot.side].coins || 0) / 2000, 0, 1),
+      self_vulnerable: robot.weak ? 1 : 0,
+    };
+  }
+
+  function targetSelectionFeatures(state, robot) {
+    const values = targetSelectionFeatureMap(state, robot);
+    const names = state.model.target_selection_model?.feature_names || Object.keys(values);
+    return names.map((name) => Number(values[name] || 0));
   }
 
   function contextualTargetPrior(state, robot) {
@@ -405,6 +433,114 @@
     return result;
   }
 
+  function heroFiringRankerFeatureMap(state, robot, canonical, heatmapPrior) {
+    const enemySide = otherSide(robot.side);
+    const ownStructures = state.structures[robot.side];
+    const enemyStructures = state.structures[enemySide];
+    const context = targetSelectionFeatureMap(state, robot);
+    const world = canonicalPoint(canonical, robot.side);
+    const enemyGround = state.robots.filter((target) => (
+      target.side === enemySide && target.role !== "空中" && target.hp > 0
+    ));
+    const nearestEnemy = enemyGround.length
+      ? Math.min(...enemyGround.map((target) => state.router.distance(world, target.position)))
+      : Math.hypot(28, 15);
+    const diagonal = Math.hypot(28, 15);
+    return {
+      elapsed_ratio: context.elapsed_ratio,
+      remaining_ratio: context.remaining_ratio,
+      self_hp_ratio: context.self_hp_ratio,
+      self_hp_loss_5s: context.self_hp_loss_5s,
+      own_base_hp_ratio: context.own_base_hp_ratio,
+      own_outpost_hp_ratio: context.own_outpost_hp_ratio,
+      enemy_base_hp_ratio: context.enemy_base_hp_ratio,
+      enemy_outpost_hp_ratio: context.enemy_outpost_hp_ratio,
+      own_ground_alive_ratio: context.own_ground_alive_ratio,
+      enemy_ground_alive_ratio: context.enemy_ground_alive_ratio,
+      own_ground_hp_ratio: context.own_ground_hp_ratio,
+      enemy_ground_hp_ratio: context.enemy_ground_hp_ratio,
+      ground_hp_advantage: context.ground_hp_advantage,
+      candidate_x_ratio: clamp(Number(canonical[0]) / 28, 0, 1),
+      candidate_y_ratio: clamp(Number(canonical[1]) / 15, 0, 1),
+      candidate_own_base_distance_ratio: clamp(
+        state.router.distance(world, ownStructures.base.position) / diagonal, 0, 1,
+      ),
+      candidate_own_outpost_distance_ratio: clamp(
+        state.router.distance(world, ownStructures.outpost.position) / diagonal, 0, 1,
+      ),
+      candidate_enemy_base_distance_ratio: clamp(
+        state.router.distance(world, enemyStructures.base.position) / diagonal, 0, 1,
+      ),
+      candidate_enemy_outpost_distance_ratio: clamp(
+        state.router.distance(world, enemyStructures.outpost.position) / diagonal, 0, 1,
+      ),
+      candidate_nearest_enemy_distance_ratio: clamp(nearestEnemy / diagonal, 0, 1),
+      candidate_train_heatmap_prior: clamp(Number(heatmapPrior || 0), 0, 1),
+      team_coins_ratio: context.team_coins_ratio,
+      self_vulnerable: context.self_vulnerable,
+    };
+  }
+
+  function contextualHeroFiringScore(state, robot, canonical, heatmapPrior) {
+    const model = state.model.hero_firing_ranker;
+    if (robot.role !== "英雄" || !model?.layers?.length) return null;
+    const teamIndex = model.teams?.indexOf(robot.school);
+    const opponentSchool = state.schools[otherSide(robot.side)];
+    const opponentIndex = model.opponents?.indexOf(opponentSchool);
+    if (teamIndex < 0 || opponentIndex < 0) return null;
+    const featureMap = heroFiringRankerFeatureMap(
+      state, robot, canonical, heatmapPrior,
+    );
+    const numeric = model.feature_names.map((name, index) => (
+      (Number(featureMap[name] || 0) - Number(model.feature_mean[index] || 0))
+      / Math.max(1e-4, Number(model.feature_std[index] || 1))
+    ));
+    let values = [
+      ...numeric,
+      ...model.teams.map((_, index) => index === teamIndex ? 1 : 0),
+      ...model.opponents.map((_, index) => index === opponentIndex ? 1 : 0),
+    ];
+    model.layers.slice(0, -1).forEach((layer) => {
+      values = layer.weight.map((weights, row) => Math.max(
+        0,
+        weights.reduce(
+          (sum, weight, index) => sum + Number(weight) * Number(values[index] || 0),
+          Number(layer.bias[row] || 0),
+        ),
+      ));
+    });
+    const head = model.layers.at(-1);
+    const residual = head.weight[0].reduce(
+      (sum, weight, index) => sum + Number(weight) * Number(values[index] || 0),
+      Number(head.bias[0] || 0),
+    );
+    const epsilon = Number(model.base_score?.epsilon || 0.02);
+    return Math.log(clamp(Number(heatmapPrior || 0), 0, 1) + epsilon) + residual;
+  }
+
+  function rankedHeroObservedPoint(state, robot, points) {
+    if (robot.role !== "英雄" || !state.model.hero_firing_ranker?.layers?.length || !points.length) {
+      return weightedPoint(points, state.random);
+    }
+    const maxWeight = Math.max(1, ...points.map((point) => Number(point[2] || 1)));
+    const scored = points.map((point) => {
+      const density = clamp(Number(point[2] || 1) / maxWeight, 0, 1);
+      return [
+        Number(point[0]),
+        Number(point[1]),
+        contextualHeroFiringScore(
+          state, robot, [Number(point[0]), Number(point[1])], density,
+        ),
+      ];
+    }).filter((point) => Number.isFinite(point[2]));
+    if (!scored.length) return weightedPoint(points, state.random);
+    const peak = Math.max(...scored.map((point) => point[2]));
+    const weighted = scored.map((point) => [
+      point[0], point[1], Math.exp(clamp(point[2] - peak, -8, 0) * 1.35),
+    ]);
+    return weightedPoint(weighted, state.random);
+  }
+
   function outpostAssaultActive(state, robot) {
     const campaign = state.teamState[robot.side];
     return Boolean(robot.outpostAssaultCommitted)
@@ -418,7 +554,12 @@
   function objectiveApproachPoint(state, robot, objective, points, forceServiceExit) {
     const objectivePoint = canonicalPoint(objective.position, robot.side);
     const range = Math.max(1.5, Number(robot.profile.range_m || 0));
-    const preferredRange = Number(robot.profile.engagement_profile?.preferred_range_m || range * 0.7);
+    // The empirical near/far profile is descriptive only.  When the firing
+    // ranker exists, it alone decides which observed hero anchor is preferred;
+    // this fallback distance is used only when no legal observed anchor exists.
+    const preferredRange = robot.role === "英雄" && state.model.hero_firing_ranker?.layers?.length
+      ? range * 0.7
+      : Number(robot.profile.engagement_profile?.preferred_range_m || range * 0.7);
     const attackDistance = clamp(preferredRange, 1.5, range * 0.95);
     const legalObserved = points.filter((point) => {
       const candidate = [Number(point[0]), Number(point[1])];
@@ -427,23 +568,37 @@
         && (!forceServiceExit || !insideAnyServiceZone(state.model, "red", candidate, 1.25))
         && lineOfSightFrom(state, worldCandidate, objective.position, robot.role);
     });
-    const preferredObserved = robot.profile.engagement_profile?.style === "long_range"
-      ? legalObserved.filter((point) => state.router.distance([Number(point[0]), Number(point[1])], objectivePoint) >= attackDistance * 0.72)
-      : legalObserved;
-    if (preferredObserved.length) return weightedPoint(preferredObserved, state.random);
-    if (legalObserved.length) return weightedPoint(legalObserved, state.random);
+    if (legalObserved.length) return rankedHeroObservedPoint(state, robot, legalObserved);
     return [
       clamp(objectivePoint[0] - attackDistance, 0.1, 27.9), objectivePoint[1],
     ];
   }
 
   function purposefulTacticalHold(state, robot) {
-    if (state.second - Number(robot.lastFiredAt ?? -999) <= 8) return true;
-    // Tongji-style long-range heroes deliberately keep their firing anchor
-    // until hit.  Their stationary state is tactical, not model collapse.
-    return robot.role === "英雄"
-      && robot.profile.engagement_profile?.style === "long_range"
-      && state.second - Number(robot.lastDamageAt ?? -999) > 10;
+    if (robot.role !== "英雄" || state.second - Number(robot.lastDamageAt ?? -999) <= 10) return false;
+    const phase = Math.min(6, Math.floor(state.second / 60));
+    const points = robot.profile.goals_by_minute?.[phase] || [];
+    if (!state.model.hero_firing_ranker?.layers?.length || !points.length) {
+      return false;
+    }
+    const current = canonicalPoint(robot.position, robot.side);
+    const maxWeight = Math.max(1, ...points.map((point) => Number(point[2] || 1)));
+    const nearest = points.reduce((best, point) => {
+      const distance = state.router.distance(current, [Number(point[0]), Number(point[1])]);
+      return !best || distance < best.distance ? { point, distance } : best;
+    }, null);
+    if (!nearest || nearest.distance > 0.85) return false;
+    const currentDensity = clamp(Number(nearest.point[2] || 1) / maxWeight, 0, 1);
+    const currentScore = contextualHeroFiringScore(state, robot, current, currentDensity);
+    const alternatives = points.slice(0, 24).map((point) => contextualHeroFiringScore(
+      state,
+      robot,
+      [Number(point[0]), Number(point[1])],
+      clamp(Number(point[2] || 1) / maxWeight, 0, 1),
+    )).filter(Number.isFinite);
+    return Number.isFinite(currentScore)
+      && alternatives.length
+      && currentScore >= Math.max(...alternatives) - 0.22;
   }
 
   function shouldEscapeTacticalIdle(state, robot) {
@@ -535,6 +690,260 @@
     target[0] = clamp(target[0] + (state.random() - 0.5) * 0.4, 0.1, 27.9);
     target[1] = clamp(target[1] + (state.random() - 0.5) * 0.4, 0.1, 14.9);
     return target;
+  }
+
+  function transformerDistributionFit(
+    state, robot, canonical, learnedCanonical, learnedComponents,
+  ) {
+    if (Array.isArray(learnedComponents) && learnedComponents.length) {
+      const valid = learnedComponents.map((component) => ({
+        center: canonicalPoint(component.target, robot.side),
+        scale: [
+          Math.max(0.08, Number(component.scale?.[0] || 0)),
+          Math.max(0.08, Number(component.scale?.[1] || 0)),
+        ],
+        weight: Math.max(1e-9, Number(component.weight || 0)),
+      })).filter((component) => (
+        component.center.every(Number.isFinite)
+        && component.scale.every(Number.isFinite)
+      ));
+      if (!valid.length) return 0;
+      const logDensity = (point) => {
+        const terms = valid.map((component) => {
+          const dx = (point[0] - component.center[0]) / component.scale[0];
+          const dy = (point[1] - component.center[1]) / component.scale[1];
+          return Math.log(component.weight)
+            - Math.log(2 * Math.PI * component.scale[0] * component.scale[1])
+            - 0.5 * (dx * dx + dy * dy);
+        });
+        const maximum = Math.max(...terms);
+        return maximum + Math.log(
+          terms.reduce((sum, value) => sum + Math.exp(value - maximum), 0),
+        );
+      };
+      const peak = Math.max(...valid.map((component) => logDensity(component.center)));
+      return Math.exp(clamp(logDensity(canonical) - peak, -12, 0));
+    }
+    return learnedCanonical
+      ? Math.exp(-(state.router.distance(canonical, learnedCanonical) ** 2) / (2 * 3.2 ** 2))
+      : 0;
+  }
+
+  function tacticalCandidateScore(
+    state, robot, canonical, density = 0, learnedCanonical = null, learnedComponents = null,
+  ) {
+    const world = canonicalPoint(canonical, robot.side);
+    const enemySide = otherSide(robot.side);
+    const ownStructures = state.structures[robot.side];
+    const enemyStructures = state.structures[enemySide];
+    const features = targetSelectionFeatureMap(state, robot);
+    const prior = normalizedTargetPrior(robot.targetPolicyPrior || { robot: 1, outpost: 0, base: 0 });
+    const range = Math.max(1.5, Number(robot.profile.range_m || 0));
+    const preferredRange = clamp(
+      robot.role === "英雄" && state.model.hero_firing_ranker?.layers?.length
+        ? range * 0.72
+        : Number(robot.profile.engagement_profile?.preferred_range_m || range * 0.72),
+      1.2,
+      range,
+    );
+    const enemyGround = state.robots.filter((target) => (
+      target.side === enemySide && target.role !== "空中" && target.hp > 0
+    ));
+    let nearestEnemy = null;
+    let nearestEnemyDistance = Math.hypot(28, 15);
+    enemyGround.forEach((target) => {
+      const distance = state.router.distance(world, target.position);
+      if (distance < nearestEnemyDistance) {
+        nearestEnemy = target;
+        nearestEnemyDistance = distance;
+      }
+    });
+    const ammoScale = Math.max(1, Number(robot.profile.magazine || (robot.profile.weapon === "42mm" ? 6 : 50)));
+    const ammoRatio = clamp(Number(robot.ammo || 0) / ammoScale, 0, 1);
+    const latePressure = 1 - features.remaining_ratio;
+    const aggression = clamp(
+      0.12
+      + features.self_hp_ratio * 0.44
+      + features.ground_hp_advantage * 0.24
+      + features.enemy_low_hp_ratio * 0.28
+      + latePressure * 0.16
+      + ammoRatio * 0.14
+      - features.self_hp_loss_5s * 0.72
+      - features.own_low_hp_ratio * 0.16,
+      0, 1,
+    );
+    const attackWindow = nearestEnemy
+      ? Math.exp(-Math.abs(nearestEnemyDistance - preferredRange) / Math.max(1.2, preferredRange * 0.58))
+        * (lineOfSightFrom(state, world, nearestEnemy.position, robot.role) ? 1 : 0.3)
+      : 0.12;
+    const safeWindow = clamp(nearestEnemyDistance / Math.max(2, range * 1.65), 0, 1);
+    const robotUtility = aggression * attackWindow + (1 - aggression) * safeWindow;
+
+    const objectiveType = enemyStructures.outpost.hp > 0 ? "outpost" : "base";
+    const objective = enemyStructures[objectiveType];
+    const objectiveDistance = state.router.distance(world, objective.position);
+    const structureWindow = Math.exp(
+      -Math.abs(objectiveDistance - preferredRange) / Math.max(1.5, preferredRange * 0.65),
+    ) * (lineOfSightFrom(state, world, objective.position, robot.role) ? 1 : 0.24);
+
+    const ownBaseRatio = features.own_base_hp_ratio;
+    const ownOutpostRatio = ownStructures.outpost.hp > 0 ? features.own_outpost_hp_ratio : 1;
+    const defended = ownOutpostRatio < ownBaseRatio ? ownStructures.outpost : ownStructures.base;
+    const defensePressure = clamp(
+      (1 - ownBaseRatio) * 0.85
+      + (1 - ownOutpostRatio) * 0.42
+      + (1 - features.own_ground_hp_ratio) * 0.35
+      + features.self_hp_loss_5s * 0.45,
+      0, 1,
+    );
+    const defenseWindow = Math.exp(-state.router.distance(world, defended.position) / 6.5);
+    const transformerFit = transformerDistributionFit(
+      state, robot, canonical, learnedCanonical, learnedComponents,
+    );
+    const current = canonicalPoint(robot.position, robot.side);
+    const moveDistance = state.router.distance(current, canonical);
+    const desiredMove = clamp(1.4 + aggression * 2.8 + latePressure * 0.8, 1.2, 5);
+    const movementFit = Math.exp(-Math.abs(moveDistance - desiredMove) / 4.2);
+
+    return 0.28
+      + clamp(Number(density || 0), 0, 1) * 0.58
+      + transformerFit * 0.78
+      + prior.robot * robotUtility * 1.08
+      + Number(prior[objectiveType] || 0) * structureWindow * 1.34
+      + defensePressure * defenseWindow * 0.94
+      + movementFit * 0.24;
+  }
+
+  function stateConditionedHeatmapGoal(
+    state, robot, learnedTarget, rulesTarget, forceServiceExit = false, requireMove = false,
+    learnedComponents = null,
+  ) {
+    if (purposefulTacticalHold(state, robot)) {
+      return {
+        target: [...robot.position],
+        canonical: canonicalPoint(robot.position, robot.side),
+        score: Infinity,
+        sources: ["learned_firing_hold"],
+        candidates: [],
+      };
+    }
+    const phase = Math.min(6, Math.floor(state.second / 60));
+    const current = canonicalPoint(robot.position, robot.side);
+    const learnedCanonical = canonicalPoint(learnedTarget, robot.side);
+    const rulesCanonical = canonicalPoint(rulesTarget, robot.side);
+    const points = robot.profile.goals_by_minute?.[phase]
+      || robot.profile.goals_by_minute?.at(-1)
+      || [];
+    const transitions = robot.profile.transitions_by_minute?.[phase] || [];
+    const maxWeight = Math.max(1, ...points.map((point) => Number(point[2] || 1)));
+    const candidates = new Map();
+    const addCandidate = (point, weight, source) => {
+      const canonical = [Number(point[0]), Number(point[1])];
+      if (!canonical.every(Number.isFinite)
+        || canonical[0] < 0.1 || canonical[0] > 27.9
+        || canonical[1] < 0.1 || canonical[1] > 14.9
+        || (forceServiceExit && insideAnyServiceZone(state.model, "red", canonical, 1.25))
+        || (requireMove && state.router.distance(current, canonical) < 0.9)) return;
+      const key = `${canonical[0].toFixed(2)}:${canonical[1].toFixed(2)}`;
+      const existing = candidates.get(key);
+      if (existing) {
+        existing.weight += Math.max(0.1, Number(weight || 1));
+        existing.sources.add(source);
+      } else {
+        candidates.set(key, {
+          canonical,
+          weight: Math.max(0.1, Number(weight || 1)),
+          sources: new Set([source]),
+        });
+      }
+    };
+    points.forEach((point) => addCandidate(point, Number(point[2] || 1), "heatmap"));
+    transitions.forEach((edge) => {
+      const sourceDistance = state.router.distance(current, [Number(edge[0]), Number(edge[1])]);
+      if (sourceDistance <= 4.5) {
+        addCandidate(
+          [Number(edge[2]), Number(edge[3])],
+          Number(edge[4] || 1) / (0.5 + sourceDistance),
+          "transition",
+        );
+      }
+    });
+    if (learnedComponents?.length) {
+      const currentFit = transformerDistributionFit(
+        state, robot, current, learnedCanonical, learnedComponents,
+      );
+      addCandidate(
+        current,
+        maxWeight * Math.max(0.08, currentFit * 1.2),
+        "transformer_hold",
+      );
+    } else if (purposefulTacticalHold(state, robot)) {
+      addCandidate(current, maxWeight * 1.2, "learned_firing_hold");
+    }
+    addCandidate(rulesCanonical, maxWeight * 1.35, "state_rule");
+    if (!candidates.size) return null;
+
+    let scored = [...candidates.values()].map((candidate) => {
+      const density = clamp(Math.log1p(candidate.weight) / Math.log1p(maxWeight * 2.35), 0, 1);
+      const sourceBonus = candidate.sources.has("state_rule") ? 0.18
+        : candidate.sources.has("learned_firing_hold") ? 0.14
+          : candidate.sources.has("transition") ? 0.08 : 0;
+      return {
+        ...candidate,
+        // The accepted mixture Transformer directly learned the exact future
+        // coordinate distribution.  The older firing-anchor ranker is kept
+        // only as a legacy-model fallback, never stacked on top of it.
+        firingRankerScore: learnedComponents?.length ? null
+          : contextualHeroFiringScore(
+            state,
+            robot,
+            candidate.canonical,
+            clamp(candidate.weight / maxWeight, 0, 1),
+          ),
+        score: tacticalCandidateScore(
+          state, robot, candidate.canonical, density, learnedCanonical, learnedComponents,
+        ) + sourceBonus,
+      };
+    });
+    const learnedScores = scored.map((candidate) => candidate.firingRankerScore)
+      .filter(Number.isFinite);
+    if (learnedScores.length) {
+      const firingPeak = Math.max(...learnedScores);
+      scored.forEach((candidate) => {
+        if (Number.isFinite(candidate.firingRankerScore)) {
+          // Held-out ranking gains are real but modest, so the learned residual
+          // complements rather than erases empirical density and live rules.
+          candidate.score += Math.exp(clamp(candidate.firingRankerScore - firingPeak, -8, 0)) * 0.68;
+        }
+      });
+    }
+    scored = scored.sort((left, right) => right.score - left.score).slice(0, 8);
+    const peak = scored[0].score;
+    const weighted = scored.map((candidate) => [
+      candidate,
+      Math.exp((candidate.score - peak) * 2.25),
+    ]);
+    const selected = weightedItem(weighted, 1, state.random)?.[0] || scored[0];
+    // Four centred uniforms give a small bell-shaped measurement/trajectory
+    // spread while keeping the destination attached to an observed heat area.
+    const jitter = () => (
+      state.random() + state.random() + state.random() + state.random() - 2
+    ) * 0.075;
+    const canonical = [
+      clamp(selected.canonical[0] + jitter(), 0.1, 27.9),
+      clamp(selected.canonical[1] + jitter(), 0.1, 14.9),
+    ];
+    return {
+      target: canonicalPoint(canonical, robot.side),
+      canonical,
+      score: selected.score,
+      sources: [...selected.sources],
+      candidates: scored.map((candidate) => ({
+        canonical: candidate.canonical,
+        score: candidate.score,
+        sources: [...candidate.sources],
+      })),
+    };
   }
 
   function makeRobot(model, school, side, role, heroArchetype) {
@@ -891,6 +1300,9 @@
         modelKind: matchOptions?.transformerPolicy?.metadata?.modelKind || "statistical_fallback",
         parameterCount: Number(matchOptions?.transformerPolicy?.metadata?.parameterCount || 0),
         horizon: Number(matchOptions?.transformerPolicy?.metadata?.horizon || 0),
+        heroFiringRankerActive: Boolean(model.hero_firing_ranker?.layers?.length),
+        heroFiringRankerKind: model.hero_firing_ranker?.model_kind || null,
+        heroFiringRankerParameters: Number(model.hero_firing_ranker?.parameter_count || 0),
         decisions: 0,
         fallbacks: 0,
         constrained: 0,
@@ -1157,23 +1569,31 @@
       robot.serviceTarget = null;
       robot.mode = "tactic";
       const forceServiceExit = Boolean(robot.serviceExitPending);
-      const escapeIdle = shouldEscapeTacticalIdle(state, robot);
-      const routeWasBlocked = state.second - Number(robot.routeBlockedAt ?? -999) <= 3;
-      const canonical = escapeIdle
-        ? escapeCanonicalGoal(state, robot, forceServiceExit)
-        : tacticalCanonicalGoal(state, robot);
-      const rulesTarget = canonicalPoint(canonical, robot.side);
       let learned = null;
       const policy = state.options.transformerPolicy;
-      // Confirmed structure missions and service exits remain constraints.
-      // Ordinary tactical positioning is selected by the trained Transformer.
-      if (typeof policy === "function" && !robot.tacticalIntent) {
+      if (typeof policy === "function") {
         try {
           learned = policy(state, robot);
         } catch (_error) {
           learned = null;
         }
       }
+      const routeWasBlocked = state.second - Number(robot.routeBlockedAt ?? -999) <= 3;
+      const mixtureDirected = Array.isArray(learned?.components)
+        && learned.components.length > 0;
+      // In mixture mode, a stationary firing anchor is a learned probability
+      // mode rather than an automatic idle failure.  Only a genuinely blocked
+      // route forces an escape; legacy policies keep the old idle guard.
+      const escapeIdle = routeWasBlocked
+        || (!mixtureDirected && shouldEscapeTacticalIdle(state, robot));
+      const canonical = escapeIdle
+        ? escapeCanonicalGoal(state, robot, forceServiceExit)
+        : tacticalCanonicalGoal(state, robot);
+      const rulesTarget = canonicalPoint(canonical, robot.side);
+      // Confirmed structure missions and service exits remain constraints.
+      // The Transformer is a soft trajectory likelihood: the final destination
+      // must remain on an observed team/role heat area or transition endpoint.
+      if (robot.tacticalIntent) learned = null;
       const learnedTarget = learned?.target;
       const learnedDistance = Array.isArray(learnedTarget) && learnedTarget.length === 2
         ? state.router.distance(robot.position, learnedTarget)
@@ -1190,12 +1610,18 @@
         // inactive robot cannot repeatedly accept a near-zero displacement.
         && (!escapeIdle || (!routeWasBlocked && learnedDistance >= 0.75));
       if (learnedValid) {
-        target = [
-          clamp(Number(learnedTarget[0]), 0.1, 27.9),
-          clamp(Number(learnedTarget[1]), 0.1, 14.9),
-        ];
-        robot.policySource = "transformer";
-        state.policy.decisions += 1;
+        const conditioned = stateConditionedHeatmapGoal(
+          state, robot, learnedTarget, rulesTarget, forceServiceExit, escapeIdle,
+          learned?.components,
+        );
+        if (conditioned) {
+          target = conditioned.target;
+          robot.policySource = "state_heatmap_transformer";
+          state.policy.decisions += 1;
+        } else {
+          target = rulesTarget;
+          state.policy.fallbacks += 1;
+        }
       } else {
         target = rulesTarget;
         if (state.policy.active && state.second >= 5) {
@@ -1204,13 +1630,15 @@
         }
       }
       robot.status = robot.role === "工程"
-        ? robot.policySource === "transformer"
-          ? `Transformer 工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
+        ? robot.policySource === "state_heatmap_transformer"
+          ? `状态热图工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
           : `工程运营 · 科技核心 Lv.${state.teamState[robot.side].technologyCore.level}`
         : escapeIdle ? "脱离静止收敛 · 重新转点"
           : robot.tacticalIntent === "outpost" ? "前哨压制转点"
           : robot.tacticalIntent === "base" ? "基地压制转点"
-            : robot.policySource === "transformer" ? `Transformer ${Number(learned?.horizon || 10)}s 战术选点` : "战术转点";
+            : robot.policySource === "state_heatmap_transformer"
+              ? `局势条件热图 · Transformer ${Number(learned?.horizon || 10)}s 倾向`
+              : "战术转点";
     }
     const assembly = robot.mode === "technology_core" ? state.model.assembly_zones?.[robot.side] : null;
     const planned = assembly
@@ -2087,6 +2515,9 @@
     ROLE_ORDER, hashSeed, mulberry32, canonicalPoint, robotLevel, roleMaxHp,
     insideZone, sampleServicePoint, serviceZoneAt, planServiceRoute, reviveReadRequired, immediateReviveCost,
     createMatch, stepMatch, chooseGoal, tacticalCanonicalGoal, targetCandidates, teamTargetPrior,
+    targetSelectionFeatures, heroFiringRankerFeatureMap,
+    contextualHeroFiringScore, rankedHeroObservedPoint,
+    tacticalCandidateScore, stateConditionedHeatmapGoal,
     moveRobots, resupplyRobots, killRobot, respawnRobots,
     canShelterInAssembly, serviceRequiredForDecision,
     applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,

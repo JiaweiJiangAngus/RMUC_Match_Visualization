@@ -1,0 +1,379 @@
+{
+  "checkpoint": "/home/jwj/Desktop/RMUC2026数据可视化/ml/artifacts/trajectory_mixture_transformer.pt",
+  "policy": "frozen post-training audit; no retraining or threshold labels",
+  "final_blind_test_games": 79,
+  "samples": {
+    "all": 60249,
+    "hero": 10241,
+    "hero_recently_damaged": 684,
+    "eligible_teams": 53
+  },
+  "hero_correct_identity_nll": -4.68209,
+  "hero_wrong_identity_nll": -4.576303,
+  "hero_correct_identity_improvement": 0.105787,
+  "damaged_hero_correct_nll": -3.560343,
+  "damaged_hero_no_damage_feature_nll": -3.535675,
+  "damaged_hero_damage_feature_improvement": 0.024668,
+  "hero_mean_imputed_hp_nll": -4.651596,
+  "hero_live_hp_improvement": 0.030494,
+  "hero_mean_imputed_time_nll": -4.677317,
+  "hero_match_time_improvement": 0.004773,
+  "positive_team_fraction": 0.830189,
+  "teams": {
+    "上海交通大学": {
+      "hero_samples": 171,
+      "correct_team_nll": -3.734351,
+      "wrong_team_nll": -3.464218,
+      "correct_identity_improvement": 0.270133
+    },
+    "东北大学": {
+      "hero_samples": 273,
+      "correct_team_nll": -3.812161,
+      "wrong_team_nll": -3.393862,
+      "correct_identity_improvement": 0.418299
+    },
+    "东北大学秦皇岛分校": {
+      "hero_samples": 111,
+      "correct_team_nll": -3.746876,
+      "wrong_team_nll": -3.745522,
+      "correct_identity_improvement": 0.001355
+    },
+    "东南大学": {
+      "hero_samples": 204,
+      "correct_team_nll": -4.499567,
+      "wrong_team_nll": -4.469558,
+      "correct_identity_improvement": 0.030009
+    },
+    "东莞理工学院": {
+      "hero_samples": 106,
+      "correct_team_nll": -6.69349,
+      "wrong_team_nll": -6.591502,
+      "correct_identity_improvement": 0.101988
+    },
+    "中南大学": {
+      "hero_samples": 228,
+      "correct_team_nll": -4.460014,
+      "wrong_team_nll": -4.408219,
+      "correct_identity_improvement": 0.051795
+    },
+    "中国石油大学（华东）": {
+      "hero_samples": 118,
+      "correct_team_nll": -2.597342,
+      "wrong_team_nll": -2.240358,
+      "correct_identity_improvement": 0.356983
+    },
+    "中国科学技术大学": {
+      "hero_samples": 156,
+      "correct_team_nll": -4.630562,
+      "wrong_team_nll": -4.435159,
+      "correct_identity_improvement": 0.195403
+    },
+    "五邑大学": {
+      "hero_samples": 132,
+      "correct_team_nll": -6.0861,
+      "wrong_team_nll": -6.013487,
+      "correct_identity_improvement": 0.072613
+    },
+    "内蒙古科技大学": {
+      "hero_samples": 93,
+      "correct_team_nll": -4.441252,
+      "wrong_team_nll": -4.284208,
+      "correct_identity_improvement": 0.157044
+    },
+    "北京理工大学": {
+      "hero_samples": 203,
+      "correct_team_nll": -4.10393,
+      "wrong_team_nll": -3.713986,
+      "correct_identity_improvement": 0.389944
+    },
+    "北方工业大学": {
+      "hero_samples": 122,
+      "correct_team_nll": -5.023046,
+      "wrong_team_nll": -4.543931,
+      "correct_identity_improvement": 0.479114
+    },
+    "华东理工大学": {
+      "hero_samples": 295,
+      "correct_team_nll": -3.582935,
+      "wrong_team_nll": -3.257648,
+      "correct_identity_improvement": 0.325287
+    },
+    "华北理工大学": {
+      "hero_samples": 267,
+      "correct_team_nll": -4.033773,
+      "wrong_team_nll": -4.013019,
+      "correct_identity_improvement": 0.020754
+    },
+    "华南农业大学": {
+      "hero_samples": 334,
+      "correct_team_nll": -5.582573,
+      "wrong_team_nll": -5.530597,
+      "correct_identity_improvement": 0.051976
+    },
+    "华南师范大学": {
+      "hero_samples": 296,
+      "correct_team_nll": -4.214478,
+      "wrong_team_nll": -4.212372,
+      "correct_identity_improvement": 0.002106
+    },
+    "南京理工大学": {
+      "hero_samples": 115,
+      "correct_team_nll": -2.636641,
+      "wrong_team_nll": -2.853513,
+      "correct_identity_improvement": -0.216872
+    },
+    "南京理工大学江阴校区": {
+      "hero_samples": 151,
+      "correct_team_nll": -3.355097,
+      "wrong_team_nll": -3.047743,
+      "correct_identity_improvement": 0.307353
+    },
+    "南京航空航天大学金城学院": {
+      "hero_samples": 120,
+      "correct_team_nll": -2.594229,
+      "wrong_team_nll": -2.035292,
+      "correct_identity_improvement": 0.558937
+    },
+    "南方科技大学": {
+      "hero_samples": 214,
+      "correct_team_nll": -4.392196,
+      "wrong_team_nll": -4.21003,
+      "correct_identity_improvement": 0.182166
+    },
+    "合肥工业大学（宣城校区）": {
+      "hero_samples": 139,
+      "correct_team_nll": -4.845523,
+      "wrong_team_nll": -4.714112,
+      "correct_identity_improvement": 0.131411
+    },
+    "吉林大学": {
+      "hero_samples": 147,
+      "correct_team_nll": -5.790267,
+      "wrong_team_nll": -5.534883,
+      "correct_identity_improvement": 0.255383
+    },
+    "同济大学": {
+      "hero_samples": 156,
+      "correct_team_nll": -6.666216,
+      "wrong_team_nll": -6.669078,
+      "correct_identity_improvement": -0.002862
+    },
+    "哈尔滨工业大学": {
+      "hero_samples": 141,
+      "correct_team_nll": -2.982027,
+      "wrong_team_nll": -2.745293,
+      "correct_identity_improvement": 0.236734
+    },
+    "哈尔滨工业大学（威海）": {
+      "hero_samples": 377,
+      "correct_team_nll": -5.798808,
+      "wrong_team_nll": -5.782155,
+      "correct_identity_improvement": 0.016653
+    },
+    "复旦大学": {
+      "hero_samples": 159,
+      "correct_team_nll": -5.390121,
+      "wrong_team_nll": -5.219881,
+      "correct_identity_improvement": 0.17024
+    },
+    "大连理工大学": {
+      "hero_samples": 279,
+      "correct_team_nll": -4.96617,
+      "wrong_team_nll": -4.919203,
+      "correct_identity_improvement": 0.046967
+    },
+    "天津大学": {
+      "hero_samples": 272,
+      "correct_team_nll": -5.482439,
+      "wrong_team_nll": -5.444324,
+      "correct_identity_improvement": 0.038116
+    },
+    "太原工业学院": {
+      "hero_samples": 270,
+      "correct_team_nll": -5.079002,
+      "wrong_team_nll": -5.169443,
+      "correct_identity_improvement": -0.090441
+    },
+    "太原科技大学": {
+      "hero_samples": 143,
+      "correct_team_nll": -5.022669,
+      "wrong_team_nll": -5.028211,
+      "correct_identity_improvement": -0.005542
+    },
+    "山东理工大学": {
+      "hero_samples": 100,
+      "correct_team_nll": -4.307741,
+      "wrong_team_nll": -4.259317,
+      "correct_identity_improvement": 0.048424
+    },
+    "山东科技大学": {
+      "hero_samples": 149,
+      "correct_team_nll": -5.071235,
+      "wrong_team_nll": -5.060994,
+      "correct_identity_improvement": 0.010241
+    },
+    "常州大学": {
+      "hero_samples": 122,
+      "correct_team_nll": -4.522184,
+      "wrong_team_nll": -4.308432,
+      "correct_identity_improvement": 0.213753
+    },
+    "广东工业大学": {
+      "hero_samples": 429,
+      "correct_team_nll": -5.567374,
+      "wrong_team_nll": -5.612275,
+      "correct_identity_improvement": -0.044901
+    },
+    "应急管理大学": {
+      "hero_samples": 126,
+      "correct_team_nll": -5.740704,
+      "wrong_team_nll": -5.632578,
+      "correct_identity_improvement": 0.108126
+    },
+    "成都信息工程大学": {
+      "hero_samples": 70,
+      "correct_team_nll": -5.391215,
+      "wrong_team_nll": -5.427344,
+      "correct_identity_improvement": -0.036129
+    },
+    "成都大学": {
+      "hero_samples": 124,
+      "correct_team_nll": -4.621871,
+      "wrong_team_nll": -4.411616,
+      "correct_identity_improvement": 0.210255
+    },
+    "杭州电子科技大学": {
+      "hero_samples": 148,
+      "correct_team_nll": -5.52485,
+      "wrong_team_nll": -5.506419,
+      "correct_identity_improvement": 0.018431
+    },
+    "桂林理工大学": {
+      "hero_samples": 147,
+      "correct_team_nll": -3.830682,
+      "wrong_team_nll": -3.907403,
+      "correct_identity_improvement": -0.076722
+    },
+    "武汉工程大学": {
+      "hero_samples": 122,
+      "correct_team_nll": -4.862826,
+      "wrong_team_nll": -4.747632,
+      "correct_identity_improvement": 0.115195
+    },
+    "江南大学霞客湾校区": {
+      "hero_samples": 217,
+      "correct_team_nll": -3.882831,
+      "wrong_team_nll": -3.857875,
+      "correct_identity_improvement": 0.024955
+    },
+    "江苏大学": {
+      "hero_samples": 145,
+      "correct_team_nll": -5.408577,
+      "wrong_team_nll": -5.354074,
+      "correct_identity_improvement": 0.054502
+    },
+    "沈阳理工大学": {
+      "hero_samples": 87,
+      "correct_team_nll": -5.32192,
+      "wrong_team_nll": -4.801025,
+      "correct_identity_improvement": 0.520895
+    },
+    "河北科技大学": {
+      "hero_samples": 263,
+      "correct_team_nll": -4.319459,
+      "wrong_team_nll": -4.190772,
+      "correct_identity_improvement": 0.128688
+    },
+    "浙江大学": {
+      "hero_samples": 80,
+      "correct_team_nll": -4.184817,
+      "wrong_team_nll": -4.075394,
+      "correct_identity_improvement": 0.109423
+    },
+    "深圳技术大学": {
+      "hero_samples": 153,
+      "correct_team_nll": -3.833081,
+      "wrong_team_nll": -3.670274,
+      "correct_identity_improvement": 0.162806
+    },
+    "福建师范大学": {
+      "hero_samples": 122,
+      "correct_team_nll": -6.151467,
+      "wrong_team_nll": -6.150504,
+      "correct_identity_improvement": 0.000963
+    },
+    "西交利物浦大学": {
+      "hero_samples": 160,
+      "correct_team_nll": -4.619586,
+      "wrong_team_nll": -4.434305,
+      "correct_identity_improvement": 0.185282
+    },
+    "西南交通大学": {
+      "hero_samples": 216,
+      "correct_team_nll": -3.354547,
+      "wrong_team_nll": -3.285487,
+      "correct_identity_improvement": 0.06906
+    },
+    "西安交通大学": {
+      "hero_samples": 144,
+      "correct_team_nll": -3.251187,
+      "wrong_team_nll": -3.077302,
+      "correct_identity_improvement": 0.173885
+    },
+    "西安电子科技大学": {
+      "hero_samples": 154,
+      "correct_team_nll": -5.837564,
+      "wrong_team_nll": -5.742325,
+      "correct_identity_improvement": 0.095239
+    },
+    "辽宁石油化工大学": {
+      "hero_samples": 240,
+      "correct_team_nll": -5.781199,
+      "wrong_team_nll": -5.95994,
+      "correct_identity_improvement": -0.178741
+    },
+    "长安大学": {
+      "hero_samples": 160,
+      "correct_team_nll": -5.789478,
+      "wrong_team_nll": -5.837139,
+      "correct_identity_improvement": -0.047661
+    },
+    "青岛大学": {
+      "hero_samples": 85,
+      "correct_team_nll": -4.640011,
+      "wrong_team_nll": -4.573646,
+      "correct_identity_improvement": 0.066365
+    },
+    "首都师范大学": {
+      "hero_samples": 141,
+      "correct_team_nll": -6.54849,
+      "wrong_team_nll": -6.629843,
+      "correct_identity_improvement": -0.081354
+    },
+    "香港大学": {
+      "hero_samples": 127,
+      "correct_team_nll": -4.124407,
+      "wrong_team_nll": -3.743276,
+      "correct_identity_improvement": 0.381131
+    },
+    "香港科技大学": {
+      "hero_samples": 280,
+      "correct_team_nll": -3.567505,
+      "wrong_team_nll": -3.465956,
+      "correct_identity_improvement": 0.101549
+    },
+    "齐鲁工业大学": {
+      "hero_samples": 138,
+      "correct_team_nll": -4.056581,
+      "wrong_team_nll": -4.017042,
+      "correct_identity_improvement": 0.039539
+    }
+  },
+  "acceptance": {
+    "correct_school_identity_improves_hero_nll": true,
+    "correct_school_identity_improves_majority_of_test_teams": true,
+    "recent_damage_features_improve_damaged_hero_nll": true,
+    "live_hp_state_improves_hero_nll": true,
+    "match_time_improves_hero_nll": true
+  }
+}

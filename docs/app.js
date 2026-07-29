@@ -385,7 +385,7 @@ function ensurePredictionWorker() {
     setPredictionStatus("浏览器不支持后台预测","error");
     return false;
   }
-  const worker=new Worker("./prediction-worker.js?v=31");
+  const worker=new Worker("./prediction-worker.js?v=32");
   worker.onmessage=event=>{
     const message=event.data||{};
     if (message.type==="status") {

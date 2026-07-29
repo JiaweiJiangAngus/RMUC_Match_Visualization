@@ -32,6 +32,7 @@ DEFAULT_OUTPUT = ROOT / "docs" / "data" / "models" / "full_simulation.json"
 DEFAULT_GAMES_DIR = ROOT / "docs" / "data" / "games"
 DEFAULT_BEHAVIOR_LABELS = ROOT / "analysis" / "manual_team_behavior_labels.csv"
 DEFAULT_TARGET_MODEL = ROOT / "ml" / "artifacts" / "target_selection_model.json"
+DEFAULT_HERO_RANKER = ROOT / "ml" / "artifacts" / "hero_firing_ranker.json"
 ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵", "空中")
 GROUND_ROLES = ROLES[:-1]
 PHASES = 7
@@ -77,6 +78,7 @@ def args() -> argparse.Namespace:
     parser.add_argument("--games-dir", type=Path, default=DEFAULT_GAMES_DIR)
     parser.add_argument("--behavior-labels", type=Path, default=DEFAULT_BEHAVIOR_LABELS)
     parser.add_argument("--target-model", type=Path, default=DEFAULT_TARGET_MODEL)
+    parser.add_argument("--hero-ranker", type=Path, default=DEFAULT_HERO_RANKER)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -633,17 +635,22 @@ def infer_hero_archetype_priors(
     """
     allowed = set(schools)
     structure_distances: dict[str, list[float]] = defaultdict(list)
+    enemy_robot_distances: dict[str, list[float]] = defaultdict(list)
     forward_positions: dict[str, list[float]] = defaultdict(list)
-    for row in db.execute(
+    firing_tracks: dict[tuple[str, int, int], list[tuple[int, float, float]]] = defaultdict(list)
+    firing_rows = list(db.execute(
         """
         SELECT DISTINCT e.学校名,e.阵营,e.game_id,CAST(e.时刻秒 AS INT) second,t.x,t.y
+               ,e.robot_id
         FROM events e JOIN timeseries t
           ON t.game_id=e.game_id AND t.robot_id=e.robot_id
          AND CAST(t.时刻秒 AS INT)=CAST(e.时刻秒 AS INT) AND t.学校名=e.学校名
         WHERE e.事件类型='发弹' AND e.机器人类型='英雄' AND e.类别='42mm'
           AND t.x BETWEEN 0.05 AND 27.95 AND t.y BETWEEN 0.05 AND 14.95
         """
-    ):
+    ))
+    firing_by_game: dict[int, list[sqlite3.Row]] = defaultdict(list)
+    for row in firing_rows:
         school = row["学校名"]
         if school not in allowed:
             continue
@@ -657,30 +664,101 @@ def infer_hero_archetype_priors(
             ((x - enemy_base[0]) ** 2 + (y - enemy_base[1]) ** 2) ** 0.5,
         ))
         forward_positions[school].append(forward)
+        firing_tracks[(school, int(row["game_id"]), int(row["robot_id"]))].append((
+            int(row["second"]), x, y,
+        ))
+        firing_by_game[int(row["game_id"])].append(row)
+
+    # Structure distance alone can mistake a rear-half robot duel for a
+    # deliberate structure lob.  Add the nearest live enemy-ground distance at
+    # every 42 mm firing second.  Query one indexed game at a time so rebuilding
+    # does not retain the entire regional timeseries in memory.
+    for game_id, game_firing in firing_by_game.items():
+        relevant_seconds = {int(row["second"]) for row in game_firing}
+        ground_by_second: dict[int, list[tuple[str, float, float]]] = defaultdict(list)
+        for row in db.execute(
+            """
+            SELECT CAST(时刻秒 AS INT) second,学校名,x,y
+            FROM timeseries
+            WHERE game_id=? AND 机器人类型 IN ('英雄','工程','步兵3','步兵4','哨兵')
+              AND 当前血量>0 AND x BETWEEN 0.05 AND 27.95 AND y BETWEEN 0.05 AND 14.95
+            """,
+            (game_id,),
+        ):
+            second = int(row["second"])
+            if second in relevant_seconds:
+                ground_by_second[second].append((
+                    row["学校名"], float(row["x"]), float(row["y"]),
+                ))
+        for firing in game_firing:
+            school = firing["学校名"]
+            x, y = float(firing["x"]), float(firing["y"])
+            distances = [
+                ((x - enemy_x) ** 2 + (y - enemy_y) ** 2) ** 0.5
+                for enemy_school, enemy_x, enemy_y in ground_by_second[int(firing["second"])]
+                if enemy_school != school
+            ]
+            if distances:
+                enemy_robot_distances[school].append(min(distances))
+
+    anchor_steps: dict[str, list[float]] = defaultdict(list)
+    for (school, _game_id, _robot_id), track in firing_tracks.items():
+        ordered = sorted(set(track))
+        for previous, current in zip(ordered, ordered[1:]):
+            if 0 < current[0] - previous[0] <= 5:
+                anchor_steps[school].append(
+                    ((current[1] - previous[1]) ** 2 + (current[2] - previous[2]) ** 2) ** 0.5
+                )
 
     result = {}
     for school in schools:
         distances = structure_distances.get(school, [])
+        enemy_distances = enemy_robot_distances.get(school, [])
         positions = forward_positions.get(school, [])
+        steps = anchor_steps.get(school, [])
         median_distance = median(distances) if distances else 8.0
+        median_enemy_distance = median(enemy_distances) if enemy_distances else median_distance
         median_forward = median(positions) if positions else 10.0
-        archetype = "melee" if median_distance <= 6.0 or median_forward >= 14.0 else "ranged"
+        long_structure_share = sum(value >= 8.0 for value in distances) / max(1, len(distances))
+        close_structure_share = sum(value <= 5.5 for value in distances) / max(1, len(distances))
+        remote_enemy_share = sum(value >= 6.0 for value in enemy_distances) / max(1, len(enemy_distances))
+        anchor_hold_share = sum(value <= 0.75 for value in steps) / max(1, len(steps))
+        long_evidence = (
+            median_distance >= 8.0 and long_structure_share >= 0.5
+        ) or (
+            median_enemy_distance >= 8.0
+            and remote_enemy_share >= 0.75
+            and long_structure_share >= 0.4
+        )
+        close_evidence = median_distance <= 5.5 and close_structure_share >= 0.5
+        inferred_style = "long_range" if long_evidence else "close_pressure" if close_evidence else "flexible"
+        archetype = "ranged" if inferred_style == "long_range" else (
+            "melee" if inferred_style == "close_pressure"
+            else "melee" if median_distance <= 6.0 or median_forward >= 14.0 else "ranged"
+        )
         archetype_label = behavior_labels.get((school, "英雄", "hero_archetype_default"))
         if archetype_label and archetype_label["value"] in HERO_ARCHETYPES:
             archetype = archetype_label["value"]
-        inferred_style = "long_range" if median_distance >= 8.0 else "close_pressure" if median_distance <= 5.5 else "flexible"
         style_label = behavior_labels.get((school, "英雄", "engagement_style"))
         engagement_style = style_label["value"] if style_label else inferred_style
+        preferred_range = (
+            median_distance * 0.72 + median_enemy_distance * 0.28
+        ) * 0.88
         result[school] = {
             "archetype": archetype,
-            "source": archetype_label["source"] if archetype_label else "区域赛英雄42mm发弹位置的近结构距离与前压深度画像推断；非国赛实选标签",
+            "source": archetype_label["source"] if archetype_label else "区域赛英雄42mm发弹位置的敌方结构距离、最近敌车距离、远距占比与前压深度画像推断；非国赛实选标签",
             "manual_label": archetype_label,
             "firing_seconds": len(distances),
             "median_enemy_structure_distance_m": rounded(median_distance),
+            "long_structure_fire_share": rounded(long_structure_share, 4),
+            "close_structure_fire_share": rounded(close_structure_share, 4),
+            "median_nearest_enemy_robot_distance_m": rounded(median_enemy_distance),
+            "remote_enemy_fire_share": rounded(remote_enemy_share, 4),
+            "anchor_hold_share": rounded(anchor_hold_share, 4),
             "median_canonical_forward_x_m": rounded(median_forward),
             "engagement_style": engagement_style,
             "engagement_style_label": style_label,
-            "preferred_range_m": rounded(clamp(median_distance * 0.92, 3.0, 11.4)),
+            "preferred_range_m": rounded(clamp(preferred_range, 3.0, 11.4)),
         }
     return result
 
@@ -885,6 +963,20 @@ def main() -> None:
         raise ValueError("target-selection artifact is not a contextual_target_mlp")
     if set(target_selection_model.get("teams", ())) != set(schools):
         raise ValueError("target-selection artifact does not cover the same 44 schools")
+    if not options.hero_ranker.exists():
+        raise FileNotFoundError(
+            f"missing hero firing ranker: {options.hero_ranker}; "
+            "run python3 ml/train_hero_firing_ranker.py first"
+        )
+    hero_firing_ranker = json.loads(options.hero_ranker.read_text(encoding="utf-8"))
+    if hero_firing_ranker.get("model_kind") != "contextual_hero_firing_anchor_ranker":
+        raise ValueError("hero firing artifact is not a contextual_hero_firing_anchor_ranker")
+    if not hero_firing_ranker.get("acceptance") or not all(
+        hero_firing_ranker["acceptance"].values()
+    ):
+        raise ValueError("hero firing ranker did not pass every held-out acceptance gate")
+    if set(hero_firing_ranker.get("teams", ())) != set(schools):
+        raise ValueError("hero firing ranker does not cover the same 44 schools")
     entries = {entry.school: entry for entry in TEAMS}
     placeholders = ",".join("?" for _ in schools)
     macro = json.loads(options.macro.read_text(encoding="utf-8"))
@@ -1135,7 +1227,7 @@ def main() -> None:
                         "style": hero_archetype_priors[school]["engagement_style"],
                         "preferred_range_m": hero_archetype_priors[school]["preferred_range_m"],
                         "source": hero_archetype_priors[school]["engagement_style_label"]
-                        or "英雄42mm发弹位置与敌方结构距离",
+                        or "英雄42mm发弹位置与敌方结构/最近敌车距离、远距占比",
                     },
                     "damage_per_hit_by_target": damage_by_target,
                     "level_by_minute": level_by_minute,
@@ -1152,6 +1244,10 @@ def main() -> None:
                 "archetype": hero_profile["hero_archetype_default"],
                 "engagement_style": hero_profile["engagement_profile"]["style"],
                 "preferred_range_m": hero_profile["engagement_profile"]["preferred_range_m"],
+                "long_structure_fire_share": hero_archetype_priors[school]["long_structure_fire_share"],
+                "remote_enemy_fire_share": hero_archetype_priors[school]["remote_enemy_fire_share"],
+                "anchor_hold_share": hero_archetype_priors[school]["anchor_hold_share"],
+                "median_nearest_enemy_robot_distance_m": hero_archetype_priors[school]["median_nearest_enemy_robot_distance_m"],
                 "accuracy_42mm": accuracy_models["42mm"]["mean_probability"],
                 "shots_42mm": accuracy_models["42mm"]["shots"],
                 "base_damage_per_hit": hero_profile["damage_per_hit_by_target"]["base"]["mode_damage"],
@@ -1215,7 +1311,7 @@ def main() -> None:
     db.close()
 
     payload = {
-        "schema_version": 13,
+        "schema_version": 15,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -1237,6 +1333,7 @@ def main() -> None:
                 "outpost_role_attribution_and_commitment",
                 "team_base_damage_timing_by_source",
                 "contextual_target_choice_by_team_role_and_live_state",
+                "contextual_hero_firing_anchor_ranking",
                 "ground_and_uav_movement",
                 "terrain_capability_and_motion_in_navigation_model",
             ],
@@ -1276,6 +1373,7 @@ def main() -> None:
             },
         },
         "target_selection_model": target_selection_model,
+        "hero_firing_ranker": hero_firing_ranker,
         "structures": {
             "red": {"base": [2.66, 7.5], "outpost": [11.0, 3.25], "fortress": [6.65, 7.5]},
             "blue": {"base": [25.34, 7.5], "outpost": [17.0, 11.75], "fortress": [21.35, 7.5]},
@@ -1380,6 +1478,7 @@ def main() -> None:
             "structure-hit attacker roles are attributed from same-game, same-second, same-calibre shot events; simultaneous shooters share damage in proportion to shots",
             "ground goals are per-game-balanced 0.5 m position modes with stationary service dwell down-weighted; five-second transitions preserve local tactical continuity",
             "attack target kind is inferred from same-second firing attribution and learned from team, role, time, live HP, recent HP loss, structures, alive opponents, distance, coins and vulnerability; target identity still requires legal range and line of sight",
+            "hero firing anchors use a neural candidate ranker trained on the next observed 42 mm position against same-team same-phase observed alternatives; its heatmap prior is built from training series only, and no inferred near/long-range class is used as a training label",
             "base damage timing is learned per team in 15-second windows and separated into direct-fire and dart sources; it weights legal attacks but never applies scripted damage",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
             "fly-ramp alignment/stop/acceleration comes from official event windows; complete B3/R3 trajectories learn ascent/descent angles separately per school-role, with documented direction-specific global fallbacks",
