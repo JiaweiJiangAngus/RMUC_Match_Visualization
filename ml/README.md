@@ -110,6 +110,20 @@ python3 ml/train_trajectory.py \
 
 Transformer 的 5 秒移动目标 4 m × 3 m 战术格命中率为 51.96%。同济大学有 4 局训练、4 局验证、2 局独立测试；独立测试中的受击条件指标由 `test_tongji_hero_leaves_anchor_more_after_damage_on_held_out_games` 回归测试保护。完整指标见 `artifacts/trajectory_transformer.metrics.json`。
 
+## 远程英雄部署 Transformer
+
+`train_hero_deployment_transformer.py` 是独立的真实多头时序 Transformer，不用“远程英雄通常静止”之类伪标签。区域赛导出没有部署开关，因此状态监督只取能唯一判定的基地 42mm 事件：完整排除大能量机关激活后最长 60 秒污染窗和所有飞镖事件后，单发 300 是部署正例，单发 200 是机动负例。退出头只在已由精确 300 事件确认的部署片段上训练，标签是随后 2–10 秒内底盘是否离开确认点至少 0.45m；输入同时含最近四帧位置、1/3 秒速度、1 秒掉血与发弹、双方基地/前哨/地面总血量、最近敌车、金币、时间、队伍和对手身份。
+
+```bash
+python3 ml/train_hero_deployment_transformer.py
+python3 ml/build_full_simulation_data.py
+python3 -m unittest ml.test_hero_deployment_transformer
+```
+
+当前按系列赛隔离的盲测集中，部署状态有 1,195 条样本，ROC AUC 为 `1.0000`；退出头有 1,177 条已确认部署样本，其中 20 条退出、1,157 条保持，ROC AUC 为 `0.7319`。类别极不平衡，所以发布门禁检查排序 AUC 和正负样本覆盖，不用“全预测保持”得到的 98% 假准确率冒充效果。浏览器 JavaScript 前向与 PyTorch 导出探针的两个概率误差均小于 `1e-6`。
+
+运行时只允许远程整机在真实部署区进入部署；部署期间路线和目标点锁在当前位置，底盘禁止移动。退出被触发后继续锁死整整 2 秒，再恢复机动。普通 42mm 始终为 200，部署命中基地才为 300；飞镖 200/300/625/1000 继续走独立结算。受击通过掉血时序进入退出头，不在引擎里按学校名特判；像同济这类真实片段几乎都为保持的队伍，不再被旧的“缺弹立即回补”规则强制反复离开吊射点。
+
 ## 英雄真实发弹阵位排序
 
 `train_hero_firing_ranker.py` 不训练“近战/远程”推断标签。每个训练组把英雄下一次实际发射 42mm 时的位置作为唯一正例，另外三个候选也必须是比赛中真实出现过的发弹阵位：优先取同队同阶段阵位，不足时才取同队相邻阶段或同阶段其他队阵位。输入包含比赛时间、英雄当前血量与近 5 秒受击、双方基地/前哨血量、双方地面存活与总血量、金币、易伤状态、候选坐标及其到双方建筑和最近敌车的距离；明确排除“当前位置到候选的距离”、英雄整机类型和推断的近远程风格，防止模型靠“下一发通常离当前位置最近”或伪标签取得虚高分数。
@@ -201,13 +215,14 @@ python3 ml/build_full_simulation_data.py
 - **可学习过程**：`ml/train_terrain_motion_profiles.py` 从裁判“飞坡”事件前后的 1 Hz 轨迹学习每校×兵种的直线助跑距离、对位概率、停顿概率/时长和三段加速曲线；助跑距离取终点为飞坡事件时刻的最后一个轨迹位移段并限制在 1.0–2.8 m。同时检测完整从一侧穿到另一侧的 B3/R3 轨迹，将上台阶和下台阶分开学习入射偏角、横向偏移和直行概率。单个方向的样本少于 5 次时才回退到该方向的全局分布。
 - **路径形状约束**：B1/R1 只能沿飞坡通道中心线通过，正飞坡和有反飞坡证据的兵种都按“助跑点→坡口中心→出口中心”生成共线航点；确认能直接跃上中央高地的兵种也必须沿所选边界的法线完成“直线助跑→坡唇→落点”。这些几何参数导出到 `terrain_navigation.json` 的 `routing.terrain_route_profiles`，快速宏观预测和完整沙盘共用同一个 `terrain-router.js`。
 - **补给撤退**：补弹不再按直线距离选择基地/前哨/补给区，而是比较实际可达路线长度；补给区使用整块矩形，基地区在椭圆范围内避开中心随机取点，前哨只允许沿红蓝对攻轴朝对方基地一侧的半椭圆，不朝中央高地。直达失败时先撤到己方半场中继点再规划第二段。若当前位置与己方区域在已确认能力图中确实不连通，模型不会再假装“正在回补给”却原地等待，而会就地转点 3 秒后重试。对应策略参数也在 `routing.terrain_route_profiles.service_return`。
-- **火力概率**：逐队发弹数与对手受击事件生成 `accuracy_models`；每局先在该队区间内抽样基础命中率，每一发再做伯努利随机判定。英雄对机器人/前哨/基地的 42mm 主模态分开统计，防御减伤后的小于 200 数值不会反向学成原始弹丸伤害。
+- **火力概率**：逐队发弹数与对手受击事件生成 `accuracy_models`；每局先在该队区间内抽样基础命中率，每一发再做伯努利随机判定。普通英雄 42mm 固定为 200；基地 300 必须由部署状态或大能量机关等独立状态产生，不能把混合事件的 300 主模态反向写成普通弹丸伤害。
 - **基地伤害时序**：`base_damage_timing` 对 44 队分别统计直射、飞镖和全来源的 15 秒产伤窗。运行时只用直射强度调节合法射程/视线内的基地选目标权重，用飞镖强度调节规则允许的飞镖窗口；不会按统计值直接扣血。
 - **实时目标分类**：`train_target_selection_model.py` 用同局同秒同口径的发弹角色占比归因受击目标，并训练“地面/前哨/基地”三分类器。它显式读取双方地面总血量、存活数、低血量车比例、本车血量/近期受击和剩余时间。界面逐车显示当前三个概率；前哨已毁时仍由硬约束把前哨概率归零。
 - **英雄真实发弹阵位排序**：`train_hero_firing_ranker.py` 以实际下一发 42mm 所在位置对三个真实备选阵位做四选一监督；只用训练系列赛生成热图先验，验证/测试按系列赛隔离。当前点到候选点的距离、整机类型和近远程画像全部排除，网页前向结果由 `test_hero_firing_ranker.py` 与导出权重逐项核对。
+- **远程英雄部署**：`train_hero_deployment_transformer.py` 用排除大能量机关污染窗后的基地 42mm 200/300 精确标签训练机动/部署状态，再从已确认部署片段的真实后续位移训练保持/退出。部署不可移动、退出延迟 2 秒和普通/部署伤害 200/300 是物理规则，不让概率模型近似。
 - **混合战术选点**：Transformer 不再压成单坐标直接接管机器人。引擎先收集当前分钟的该校×兵种热区、当前附近的真实 5 秒转移终点和规则候选，再按八分量概率密度、局势特征、目标分类概率、射程与视线共同重排。这样保留宏观热区形状，也不会把两个有效战术点平均成空地；受击量和队伍身份都来自模型输入，不在 JS 中写学校名特判。
 
-`manual_terrain_capabilities.csv` 的 `ability` 可填 `central_highland_step`、`road_step`、`fly_ramp`、`rough_road`、`road_tunnel`、`highland_tunnel`、`slope_43`、`trapezoid_highland_step` 或 `central_highland_400mm_jump`，`label` 只能是 `confirmed` / `rejected`。`manual_team_behavior_labels.csv` 当前支持 `outpost_assault_role`、`hero_archetype_default`、`engagement_style` 和 `robot/outpost/base_damage_per_hit`。每次改 CSV 后都必须重新运行下面的构建链。
+`manual_terrain_capabilities.csv` 的 `ability` 可填 `central_highland_step`、`road_step`、`fly_ramp`、`rough_road`、`road_tunnel`、`highland_tunnel`、`slope_43`、`trapezoid_highland_step` 或 `central_highland_400mm_jump`，`label` 只能是 `confirmed` / `rejected`。`manual_team_behavior_labels.csv` 当前支持 `outpost_assault_role`、`hero_archetype_default`、`engagement_style` 和 `deployed_base_damage_per_hit`。每次改 CSV 后都必须重新运行下面的构建链。
 
 完整重训顺序：
 
@@ -217,8 +232,9 @@ python3 ml/train_terrain_motion_profiles.py
 python3 ml/export_browser_navigation.py
 python3 ml/train_target_selection_model.py
 python3 ml/train_hero_firing_ranker.py
+python3 ml/train_hero_deployment_transformer.py
 python3 ml/build_full_simulation_data.py
-python3 -m unittest analysis.test_team_terrain_capabilities ml.test_browser_navigation ml.test_hero_firing_ranker ml.test_match_simulator
+python3 -m unittest analysis.test_team_terrain_capabilities ml.test_browser_navigation ml.test_hero_firing_ranker ml.test_hero_deployment_transformer ml.test_match_simulator
 ```
 
 想加新的跨地形属性时，先在 `terrain_crossing_points.py` 定义几何门，再在 `team_terrain_capabilities.py` 定义正负样本口径；如果它还包含“直线助跑→对位→停顿→加速→落地”时序或“入射角→横向漂移”轨迹特征，再给 `train_terrain_motion_profiles.py` 增加事件窗口，最后由 `export_browser_navigation.py` 导出到浏览器模型。中心线、边界法线等不能被概率违反的条件放进 `terrain_route_profiles`；从轨迹能估计的距离、概率和速度放进每校×兵种的 `terrain_motion_profiles`。

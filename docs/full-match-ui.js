@@ -6,6 +6,11 @@
   const DEFAULT_BLUE = "中国石油大学（华东）";
   const ROLE_LABEL = { 英雄: "1", 工程: "2", 步兵3: "3", 步兵4: "4", 哨兵: "AI", 空中: "6" };
   const HERO_ARCHETYPE_LABEL = { melee: "近战优先", ranged: "远程优先" };
+  const HERO_DEPLOYMENT_LABEL = {
+    mobile: "机动",
+    deployed: "远程部署",
+    undeploying: "退出延迟",
+  };
   const ENGAGEMENT_LABEL = { long_range: "远程吊射", close_pressure: "近身压制", flexible: "灵活站位" };
   const UAV_FLIGHT_LABEL = { parked: "停机坪", airborne: "空中巡航", returning: "正在返航" };
   const COLORS = { red: "#ff526c", blue: "#48a0ff", gold: "#f3bd4d", green: "#38d39f" };
@@ -351,6 +356,13 @@
         context.globalAlpha = robot.hp > 0 ? 1 : 0.58;
         context.fill(); context.globalAlpha = 1;
         context.strokeStyle = "#f7fbfd"; context.lineWidth = 1.1 * size.scale; context.stroke();
+        if (robot.deploymentState === "deployed") {
+          context.beginPath();
+          context.arc(x, y, radius + 4 * size.scale, 0, Math.PI * 2);
+          context.strokeStyle = COLORS.gold;
+          context.lineWidth = 2 * size.scale;
+          context.stroke();
+        }
         context.fillStyle = "#fff"; context.font = `900 ${Math.max(8, 9 * size.scale)}px sans-serif`;
         context.textAlign = "center"; context.textBaseline = "middle";
         context.fillText(ROLE_LABEL[robot.role], x, y);
@@ -375,7 +387,7 @@
       target.innerHTML = `<div class="full-roster-head"><div><b>${escapeHtml(sideCode(side))}</b><small>核心 Lv.${team.technologyCoreLevel} · +${formatNumber(team.technologyCoreIncomePer10)}/10s</small></div><span>金币 ${formatNumber(team.coins)}</span></div><div class="full-roster-list">${robots.map((robot) => `
         <div class="full-robot-row ${robot.hp <= 0 ? "dead" : ""} ${robot.key === selectedKey ? "selected" : ""}" data-full-robot="${robot.key}">
           <span class="full-role-token">${ROLE_LABEL[robot.role]}</span>
-          <div class="full-robot-info"><b>${robot.role}${robot.heroArchetype ? ` · ${HERO_ARCHETYPE_LABEL[robot.heroArchetype]}` : robot.role === "工程" ? ` · 核心 Lv.${robot.technologyCoreLevel}` : ""}</b><span>${escapeHtml(robot.status)}</span></div>
+          <div class="full-robot-info"><b>${robot.role}${robot.heroArchetype ? ` · ${HERO_ARCHETYPE_LABEL[robot.heroArchetype]} · ${HERO_DEPLOYMENT_LABEL[robot.deploymentState] || "机动"}` : robot.role === "工程" ? ` · 核心 Lv.${robot.technologyCoreLevel}` : ""}</b><span>${escapeHtml(robot.status)}</span></div>
           <span class="full-robot-hp">${robot.role === "空中" ? escapeHtml(UAV_FLIGHT_LABEL[robot.uavFlightState] || "空中") : `${formatNumber(robot.hp)}/${formatNumber(robot.maxHp)}`}<br>${robot.role === "空中" ? `支援 ${formatNumber(robot.uavSupportSeconds)}s · 弹 ${formatNumber(robot.ammo)}` : robot.respawnIn ? `复活 ${robot.respawnIn}s` : robot.role === "工程" ? `+${formatNumber(robot.technologyCoreIncomePer10)}/10s` : `弹 ${formatNumber(robot.ammo)}`}</span>
         </div>`).join("")}</div>`;
       target.querySelectorAll("[data-full-robot]").forEach((row) => row.addEventListener("click", () => {
@@ -448,7 +460,11 @@
           <div><span>地形速度倍率</span><b>${Math.round((robot.terrainSpeedMultiplier ?? 1) * 100)}%</b></div>` : "";
       const weaponModel = robot.sampledWeaponAccuracy ? `
           <div><span>本局基础命中率</span><b>${(robot.sampledWeaponAccuracy * 100).toFixed(1)}% · 每发随机</b></div>
-          ${robot.role === "英雄" ? `<div><span>42mm 单发模型</span><b>机器人 ${formatNumber(robot.damagePerHitByTarget?.robot?.mode_damage || 200)} / 前哨 ${formatNumber(robot.damagePerHitByTarget?.outpost?.mode_damage || 200)} / 基地 ${formatNumber(robot.damagePerHitByTarget?.base?.mode_damage || 200)}</b></div>` : ""}` : "";
+          ${robot.role === "英雄" ? `<div><span>42mm 单发模型</span><b>普通固定 ${formatNumber(robot.damagePerHitByTarget?.base?.mode_damage || 200)} / 部署命中基地 ${formatNumber(robot.damagePerHitByTarget?.base?.deployed_mode_damage || 300)}</b></div>` : ""}` : "";
+      const deploymentDetails = robot.role === "英雄" ? `
+          <div><span>远程部署状态</span><b>${escapeHtml(HERO_DEPLOYMENT_LABEL[robot.deploymentState] || "机动")}${robot.deploymentExitRemaining ? ` · 剩 ${formatNumber(robot.deploymentExitRemaining)}s` : ""}</b></div>
+          <div><span>部署 / 退出概率</span><b>${(Number(robot.deploymentProbability || 0) * 100).toFixed(1)}% / ${(Number(robot.deploymentExitProbability || 0) * 100).toFixed(1)}%</b></div>
+          <div><span>底盘约束</span><b>${["deployed", "undeploying"].includes(robot.deploymentState) ? "锁死 · 禁止移动" : "可移动"}</b></div>` : "";
       const targetPrior = robot.targetPolicyPrior || {};
       const targetModel = robot.role !== "工程" && robot.role !== "空中" ? `
           <div><span>实时目标模型</span><b>地面 ${Math.round(Number(targetPrior.robot || 0) * 100)}% · 前哨 ${Math.round(Number(targetPrior.outpost || 0) * 100)}% · 基地 ${Math.round(Number(targetPrior.base || 0) * 100)}%</b></div>
@@ -469,6 +485,7 @@
           <div><span>当前选点控制器</span><b>${robot.role === "空中" ? "无人机状态机" : robot.policySource === "state_heatmap_transformer" ? robot.role === "英雄" ? "真实发弹阵位排序 + 多峰轨迹 Transformer" : "局势条件热图 + 多峰轨迹 Transformer" : "规则/任务约束"}</b></div>
           <div><span>无人机反制</span><b>${robot.role === "空中" ? `${robot.radarCounterCount}/5 · 剩 ${robot.radarCounteredIn}s` : "—"}</b></div>
           ${weaponModel}
+          ${deploymentDetails}
           ${targetModel}
           ${coreDetails}
           ${uavDetails}
@@ -583,7 +600,7 @@
     function ensureSimulationWorker() {
       if (simulationWorker) return simulationWorker;
       if (!("Worker" in window)) return null;
-      const worker = new Worker("./full-match-worker.js?v=20");
+      const worker = new Worker("./full-match-worker.js?v=21");
       worker.onmessage = (event) => {
         const message = event.data || {};
         if (message.type === "ready") return;
@@ -719,7 +736,7 @@
       simulationDataLoading = true;
       elements.status.textContent = "正在后台载入沙盘参数…";
       Promise.all([
-        fetch("./data/models/full_simulation.json?v=18").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
+        fetch("./data/models/full_simulation.json?v=19").then((response) => { if (!response.ok) throw new Error(`逐车参数 HTTP ${response.status}`); return response.json(); }),
         fetch("./data/models/terrain_navigation.json?v=27").then((response) => { if (!response.ok) throw new Error(`地形图 HTTP ${response.status}`); return response.json(); }),
       ]).then(([modelData, navigationData]) => {
         model = modelData;

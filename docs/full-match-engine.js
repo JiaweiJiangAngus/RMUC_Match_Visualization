@@ -70,11 +70,130 @@
     return clamp(mean * multiplier, 0.018, 0.9);
   }
 
+  function dense(values, layer) {
+    return layer.weight.map((row, outputIndex) => (
+      row.reduce(
+        (sum, weight, inputIndex) => sum + Number(weight) * Number(values[inputIndex] || 0),
+        Number(layer.bias?.[outputIndex] || 0),
+      )
+    ));
+  }
+
+  function softmax(values) {
+    const peak = Math.max(...values);
+    const exponentials = values.map((value) => Math.exp(value - peak));
+    const total = exponentials.reduce((sum, value) => sum + value, 0) || 1;
+    return exponentials.map((value) => value / total);
+  }
+
+  function layerNorm(values, layer) {
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = values.reduce(
+      (sum, value) => sum + (value - mean) ** 2,
+      0,
+    ) / values.length;
+    const denominator = Math.sqrt(variance + Number(layer.eps || 1e-5));
+    return values.map((value, index) => (
+      (value - mean) / denominator * Number(layer.weight[index])
+      + Number(layer.bias[index])
+    ));
+  }
+
+  function heroDeploymentTransformerForward(
+    model,
+    standardizedSequence,
+    teamIndex,
+    opponentIndex,
+  ) {
+    if (!model?.layers || !standardizedSequence?.length) {
+      return { deployedProbability: 0, exitProbability: 0 };
+    }
+    const layers = model.layers;
+    const modelDim = Number(model.input_layout.model_dim);
+    const heads = Number(model.input_layout.heads);
+    const headDim = modelDim / heads;
+    let encoded = standardizedSequence.map((token, tokenIndex) => {
+      const projected = dense(token, layers.input_projection);
+      return projected.map((value, index) => (
+        value
+        + Number(layers.team_embedding[teamIndex]?.[index] || 0)
+        + Number(layers.opponent_embedding[opponentIndex]?.[index] || 0)
+        + Number(layers.position_embedding[tokenIndex]?.[index] || 0)
+      ));
+    });
+    const qkv = encoded.map((token) => dense(token, {
+      weight: layers.self_attention.in_proj_weight,
+      bias: layers.self_attention.in_proj_bias,
+    }));
+    const attended = encoded.map((_token, queryIndex) => {
+      const concatenated = [];
+      for (let head = 0; head < heads; head += 1) {
+        const offset = head * headDim;
+        const query = qkv[queryIndex].slice(offset, offset + headDim);
+        const scores = qkv.map((item) => {
+          const key = item.slice(modelDim + offset, modelDim + offset + headDim);
+          return query.reduce(
+            (sum, value, index) => sum + value * key[index],
+            0,
+          ) / Math.sqrt(headDim);
+        });
+        const weights = softmax(scores);
+        for (let dimension = 0; dimension < headDim; dimension += 1) {
+          concatenated.push(qkv.reduce(
+            (sum, item, keyIndex) => (
+              sum
+              + weights[keyIndex]
+              * item[2 * modelDim + offset + dimension]
+            ),
+            0,
+          ));
+        }
+      }
+      return dense(concatenated, {
+        weight: layers.self_attention.out_proj_weight,
+        bias: layers.self_attention.out_proj_bias,
+      });
+    });
+    encoded = encoded.map((token, index) => layerNorm(
+      token.map((value, dimension) => value + attended[index][dimension]),
+      layers.norm1,
+    ));
+    encoded = encoded.map((token) => {
+      const hidden = dense(token, {
+        weight: layers.feedforward.linear1_weight,
+        bias: layers.feedforward.linear1_bias,
+      }).map((value) => Math.max(0, value));
+      const residual = dense(hidden, {
+        weight: layers.feedforward.linear2_weight,
+        bias: layers.feedforward.linear2_bias,
+      });
+      return layerNorm(
+        token.map((value, dimension) => value + residual[dimension]),
+        layers.norm2,
+      );
+    });
+    const last = encoded.at(-1);
+    const stateProbability = softmax(dense(last, layers.state_head))[1];
+    const exitProbability = softmax(dense(last, layers.exit_head))[1];
+    return {
+      deployedProbability: stateProbability,
+      exitProbability,
+    };
+  }
+
   function damagePerHit(state, robot, target, weapon) {
     const fallback = Number(state.model.rules.damage[weapon] || 0);
     if (robot.role !== "英雄" || weapon !== "42mm") return fallback;
     const targetType = target.kind || "robot";
-    return Number(robot.profile.damage_per_hit_by_target?.[targetType]?.mode_damage || fallback);
+    const profile = robot.profile.damage_per_hit_by_target?.[targetType];
+    if (targetType === "base" && robot.deploymentState === "deployed") {
+      return Number(
+        profile?.deployed_mode_damage
+        || state.model.rules.hero_deployment?.deployed_base_42mm_damage
+        || 300,
+      );
+    }
+    return Number(profile?.mode_damage || fallback);
   }
 
   function event(state, side, type, text, data) {
@@ -321,6 +440,262 @@
       hpRatio: clamp(totalHp / Math.max(1, totalMaxHp), 0, 1.25),
       lowHpRatio: alive.filter((target) => target.hp / Math.max(1, target.maxHp) <= 0.4).length / 5,
     };
+  }
+
+  function insideHeroDeploymentZone(state, robot) {
+    const bounds = state.model.rules.hero_deployment
+      ?.canonical_deployment_zone_m;
+    if (!bounds?.min || !bounds?.max) return false;
+    const point = canonicalPoint(robot.position, robot.side);
+    return (
+      point[0] >= Number(bounds.min[0])
+      && point[0] <= Number(bounds.max[0])
+      && point[1] >= Number(bounds.min[1])
+      && point[1] <= Number(bounds.max[1])
+    );
+  }
+
+  function heroDeploymentObservation(state, robot) {
+    const enemySide = otherSide(robot.side);
+    const ownStructures = state.structures[robot.side];
+    const enemyStructures = state.structures[enemySide];
+    const ownGround = groundBattleSummary(state, robot.side);
+    const enemyGround = groundBattleSummary(state, enemySide);
+    const enemyRobots = enemyGround.alive;
+    const nearestEnemy = enemyRobots.length
+      ? Math.min(...enemyRobots.map(
+        (target) => state.router.distance(robot.position, target.position),
+      ))
+      : Math.hypot(28, 15);
+    return {
+      second: state.second,
+      position: canonicalPoint(robot.position, robot.side),
+      hpRatio: clamp(robot.hp / Math.max(1, robot.maxHp), 0, 1.5),
+      shots42: Number(robot.shots || 0),
+      ownBaseHpRatio: clamp(
+        ownStructures.base.hp / Math.max(1, ownStructures.base.maxHp),
+        0,
+        1.5,
+      ),
+      ownOutpostHpRatio: clamp(
+        ownStructures.outpost.hp / Math.max(1, ownStructures.outpost.maxHp),
+        0,
+        1.5,
+      ),
+      enemyBaseHpRatio: clamp(
+        enemyStructures.base.hp / Math.max(1, enemyStructures.base.maxHp),
+        0,
+        1.5,
+      ),
+      enemyOutpostHpRatio: clamp(
+        enemyStructures.outpost.hp / Math.max(1, enemyStructures.outpost.maxHp),
+        0,
+        1.5,
+      ),
+      ownGroundHpRatio: ownGround.hpRatio,
+      enemyGroundHpRatio: enemyGround.hpRatio,
+      nearestEnemyDistanceRatio: clamp(
+        nearestEnemy / Math.hypot(28, 15),
+        0,
+        1,
+      ),
+      teamCoinsRatio: clamp(
+        Number(state.teamState[robot.side].coins || 0) / 2000,
+        0,
+        1,
+      ),
+      vulnerable: robot.weak ? 1 : 0,
+    };
+  }
+
+  function recordHeroDeploymentObservations(state) {
+    state.robots
+      .filter((robot) => robot.role === "英雄")
+      .forEach((robot) => {
+        if (robot.deploymentHistory.at(-1)?.second === state.second) return;
+        robot.deploymentHistory.push(heroDeploymentObservation(state, robot));
+        robot.deploymentHistory = robot.deploymentHistory.filter(
+          (item) => state.second - item.second <= 12,
+        );
+      });
+  }
+
+  function heroDeploymentFeatureVector(robot, observation) {
+    const find = (second) => robot.deploymentHistory.find(
+      (item) => item.second === second,
+    );
+    const previous = find(observation.second - 1) || observation;
+    const previous3 = find(observation.second - 3) || previous;
+    const speed1 = Math.hypot(
+      observation.position[0] - previous.position[0],
+      observation.position[1] - previous.position[1],
+    );
+    const speed3 = Math.hypot(
+      observation.position[0] - previous3.position[0],
+      observation.position[1] - previous3.position[1],
+    ) / 3;
+    return [
+      clamp(observation.second / 420, 0, 1),
+      clamp(1 - observation.second / 420, 0, 1),
+      observation.position[0] / 28,
+      observation.position[1] / 15,
+      observation.hpRatio,
+      clamp(previous.hpRatio - observation.hpRatio, 0, 1),
+      clamp(speed1 / 3, 0, 1.5),
+      clamp(speed3 / 3, 0, 1.5),
+      clamp((observation.shots42 - previous.shots42) / 2, 0, 1),
+      observation.ownBaseHpRatio,
+      observation.ownOutpostHpRatio,
+      observation.enemyBaseHpRatio,
+      observation.enemyOutpostHpRatio,
+      observation.ownGroundHpRatio,
+      observation.enemyGroundHpRatio,
+      observation.nearestEnemyDistanceRatio,
+      observation.teamCoinsRatio,
+      observation.vulnerable,
+    ];
+  }
+
+  function heroDeploymentInference(state, robot) {
+    const model = state.model.hero_deployment_model;
+    if (
+      !model?.layers
+      || robot.heroArchetype !== "ranged"
+      || state.second < 8
+    ) return null;
+    const observations = (model.sequence_offsets_seconds || [5, 3, 1, 0])
+      .map((offset) => robot.deploymentHistory.find(
+        (item) => item.second === state.second - Number(offset),
+      ));
+    if (observations.some((item) => !item)) return null;
+    const mean = model.feature_mean;
+    const std = model.feature_std;
+    const standardized = observations.map((observation) => (
+      heroDeploymentFeatureVector(robot, observation).map(
+        (value, index) => (
+          (value - Number(mean[index])) / Math.max(1e-6, Number(std[index]))
+        ),
+      )
+    ));
+    const teamIndex = Math.max(0, model.teams.indexOf(robot.school));
+    const opponentSchool = state.schools[otherSide(robot.side)];
+    const opponentIndex = Math.max(
+      0,
+      model.opponents.indexOf(opponentSchool) >= 0
+        ? model.opponents.indexOf(opponentSchool)
+        : model.opponents.indexOf("__OTHER__"),
+    );
+    return heroDeploymentTransformerForward(
+      model,
+      standardized,
+      teamIndex,
+      opponentIndex,
+    );
+  }
+
+  function beginHeroUndeploy(state, robot, reason) {
+    if (robot.deploymentState !== "deployed") return;
+    const delay = Number(
+      state.model.rules.hero_deployment?.exit_delay_seconds || 2,
+    );
+    robot.deploymentState = "undeploying";
+    robot.deploymentExitUntil = state.second + delay;
+    robot.status = `退出部署延迟 ${delay}s · 禁止移动`;
+    event(
+      state,
+      robot.side,
+      "hero_deployment_exit",
+      `${robot.role}开始退出远程部署，${delay} 秒后恢复移动`,
+      { reason },
+    );
+  }
+
+  function updateHeroDeploymentStates(state) {
+    recordHeroDeploymentObservations(state);
+    state.robots
+      .filter((robot) => robot.role === "英雄")
+      .forEach((robot) => {
+        if (robot.hp <= 0 || robot.heroArchetype !== "ranged") {
+          robot.deploymentState = "mobile";
+          robot.deploymentExitUntil = 0;
+          return;
+        }
+        if (robot.deploymentState === "undeploying") {
+          if (state.second < robot.deploymentExitUntil) {
+            robot.status = `退出部署延迟 ${robot.deploymentExitUntil - state.second}s · 禁止移动`;
+            return;
+          }
+          robot.deploymentState = "mobile";
+          robot.deploymentExitUntil = 0;
+          robot.nextDecisionAt = state.second;
+          robot.status = "部署退出完成 · 恢复移动";
+          event(
+            state,
+            robot.side,
+            "hero_deployment_mobile",
+            `${robot.role}完成退出部署，恢复移动`,
+          );
+          return;
+        }
+        const prediction = heroDeploymentInference(state, robot);
+        if (!prediction) return;
+        robot.deploymentProbability = prediction.deployedProbability;
+        robot.deploymentExitProbability = prediction.exitProbability;
+        const thresholds = state.model.hero_deployment_model.thresholds || {};
+        if (robot.deploymentState === "deployed") {
+          const needsServiceNow = serviceRequiredForDecision(state, robot);
+          const hitAfterDeployment = (
+            robot.deploymentEnteredAt != null
+            && robot.lastDamageAt >= robot.deploymentEnteredAt
+          );
+          const hitThisSecond = robot.lastDamageAt === state.second - 1;
+          const learnedHitExit = (
+            hitThisSecond
+            && state.random() < prediction.exitProbability
+          );
+          if (
+            prediction.deployedProbability < Number(thresholds.hold ?? 0.5)
+            || prediction.exitProbability >= Number(thresholds.exit ?? 0.7)
+            || learnedHitExit
+            || (needsServiceNow && hitAfterDeployment && hitThisSecond)
+          ) {
+            beginHeroUndeploy(
+              state,
+              robot,
+              needsServiceNow && hitThisSecond
+                ? "hit_then_service_required"
+                : learnedHitExit
+                  ? "learned_hit_exit"
+                  : "transformer_exit",
+            );
+          } else {
+            robot.status = "远程部署 · 底盘断电";
+          }
+          return;
+        }
+        if (
+          insideHeroDeploymentZone(state, robot)
+          && !serviceRequiredForDecision(state, robot)
+          && prediction.deployedProbability >= Number(thresholds.enter ?? 0.65)
+        ) {
+          robot.deploymentState = "deployed";
+          robot.deploymentEnteredAt = state.second;
+          robot.route = [[...robot.position]];
+          robot.goal = [...robot.position];
+          robot.status = "远程部署 · 底盘断电";
+          event(
+            state,
+            robot.side,
+            "hero_deployment_enter",
+            `${robot.role}进入远程部署，底盘禁止移动`,
+            {
+              probability: Number(
+                prediction.deployedProbability.toFixed(4),
+              ),
+            },
+          );
+        }
+      });
   }
 
   function targetSelectionFeatureMap(state, robot) {
@@ -963,6 +1338,12 @@
       profile,
       level: robotLevel(profile, 0),
       heroArchetype: archetype,
+      deploymentState: role === "英雄" ? "mobile" : null,
+      deploymentProbability: 0,
+      deploymentExitProbability: 0,
+      deploymentExitUntil: 0,
+      deploymentEnteredAt: null,
+      deploymentHistory: [],
       position: spawn,
       yaw: side === "red" ? 0 : 180,
       hp: maxHp,
@@ -1303,6 +1684,15 @@
         heroFiringRankerActive: Boolean(model.hero_firing_ranker?.layers?.length),
         heroFiringRankerKind: model.hero_firing_ranker?.model_kind || null,
         heroFiringRankerParameters: Number(model.hero_firing_ranker?.parameter_count || 0),
+        heroDeploymentTransformerActive: Boolean(
+          model.hero_deployment_model?.layers,
+        ),
+        heroDeploymentTransformerKind: (
+          model.hero_deployment_model?.model_kind || null
+        ),
+        heroDeploymentTransformerParameters: Number(
+          model.hero_deployment_model?.parameter_count || 0
+        ),
         decisions: 0,
         fallbacks: 0,
         constrained: 0,
@@ -1392,6 +1782,7 @@
       const committedCount = armedRobots.filter((robot) => robot.outpostAssaultCommitted).length;
       state.teamState[side].outpostAssaultCount = committedCount;
     });
+    recordHeroDeploymentObservations(state);
     if (typeof state.options.transformerPolicy?.record === "function") {
       state.options.transformerPolicy.record(state);
     }
@@ -1812,6 +2203,16 @@
       }
       updateRobotLevel(state, robot);
       if (robot.hp <= 0) return;
+      if (
+        robot.role === "英雄"
+        && ["deployed", "undeploying"].includes(robot.deploymentState)
+      ) {
+        robot.route = [[...robot.position]];
+        robot.goal = [...robot.position];
+        robot.terrainSpeedMultiplier = 0;
+        robot.terrainAction = null;
+        return;
+      }
       robot.movementClockBeforeStep = Number(robot.lastMovedAt ?? 0);
       const requiresService = serviceRequiredForDecision(state, robot);
       const serviceChanged = requiresService && !["heal", "ammo"].includes(robot.mode);
@@ -1972,7 +2373,15 @@
 
   function targetCandidates(state, robot) {
     const enemy = otherSide(robot.side);
-    const range = Number(robot.profile.range_m || 0);
+    const deployed = (
+      robot.role === "英雄"
+      && robot.deploymentState === "deployed"
+    );
+    const range = deployed
+      ? Number(
+        state.model.rules.hero_deployment?.deployed_base_range_m || 27.5,
+      )
+      : Number(robot.profile.range_m || 0);
     const candidates = state.robots
       .filter((target) => target.side === enemy && target.role !== "空中" && target.hp > 0
         && state.second >= target.invulnerableUntil && !target.assemblyProtected)
@@ -1984,7 +2393,12 @@
       if (structure.kind === "outpost"
         && state.second < Number(state.teamState[robot.side].outpostFirstHitObjectiveSecond || 0)) return;
       const distance = state.router.distance(robot.position, structure.position);
-      if (structure.hp > 0 && distance <= range && lineOfSight(state, robot, structure.position)) {
+      const remoteBaseArc = deployed && structure.kind === "base";
+      if (
+        structure.hp > 0
+        && distance <= range
+        && (remoteBaseArc || lineOfSight(state, robot, structure.position))
+      ) {
         candidates.push({ entity: structure, distance, type: structure.kind });
       }
     });
@@ -1999,6 +2413,10 @@
     ));
     groups.outpost.sort((left, right) => left.distance - right.distance);
     groups.base.sort((left, right) => left.distance - right.distance);
+
+    if (deployed && groups.base.length) {
+      return [...groups.base, ...groups.robot, ...groups.outpost];
+    }
 
     // A hero already beside the base must actually take the available top/front
     // armour shot instead of randomly ignoring the structure for a distant robot.
@@ -2042,7 +2460,13 @@
       if (!shots) return;
       const teamProfile = state.model.teams[robot.school];
       const baseAccuracy = Number(state.teamState[robot.side].weaponAccuracy?.[weapon] ?? teamProfile.accuracy[weapon] ?? 0.1);
-      const distanceFactor = 1.12 - 0.47 * target.distance / Math.max(1, Number(robot.profile.range_m));
+      const effectiveRange = robot.role === "英雄"
+        && robot.deploymentState === "deployed"
+        ? Number(
+          state.model.rules.hero_deployment?.deployed_base_range_m || 27.5,
+        )
+        : Number(robot.profile.range_m);
+      const distanceFactor = 1.12 - 0.47 * target.distance / Math.max(1, effectiveRange);
       const outpostDeadline = Math.max(20, Number(state.teamState[robot.side].outpostObjectiveSecond || 150));
       const structureAccuracy = target.type === "robot" ? 1
         : target.type === "outpost" ? 1.35 + 0.75 * clamp((state.second + 20) / outpostDeadline, 0, 1)
@@ -2092,6 +2516,14 @@
       const groundOrStructure = hit.target.kind || (hit.target.role && hit.target.role !== "空中");
       if (groundOrStructure) {
         damage *= 1 - Number(state.teamState[hit.target.side]?.technologyCore?.defenseRatio || 0);
+      }
+      if (
+        hit.target.role === "英雄"
+        && hit.target.deploymentState === "deployed"
+      ) {
+        damage *= 1 - Number(
+          state.model.rules.hero_deployment?.deployed_defense_ratio || 0.25,
+        );
       }
       const actual = Math.min(hit.target.hp, damage);
       hit.target.hp = Math.max(0, hit.target.hp - actual);
@@ -2173,6 +2605,13 @@
     robot.respawnProgress = 0;
     robot.respawnRequired = reviveReadRequired(state, robot);
     robot.respawnAt = state.second + robot.respawnRequired;
+    if (robot.role === "英雄") {
+      robot.deploymentState = "mobile";
+      robot.deploymentExitUntil = 0;
+      robot.deploymentEnteredAt = null;
+      robot.deploymentProbability = 0;
+      robot.deploymentExitProbability = 0;
+    }
     robot.status = `战亡读条 0/${robot.respawnRequired}`;
     robot.targetKey = null;
     if (attacker) {
@@ -2394,6 +2833,7 @@
         state.policy.fallbacks += 1;
       }
     }
+    updateHeroDeploymentStates(state);
     moveRobots(state);
     separateRobots(state);
     // The UI interpolates between per-second snapshots.  Although each route
@@ -2461,6 +2901,12 @@
           x: robot.position[0], y: robot.position[1], yaw: robot.yaw,
           hp: robot.hp, maxHp: robot.maxHp, ammo: robot.ammo, heat: robot.heat,
           level: robot.level, heroArchetype: robot.heroArchetype,
+          deploymentState: robot.deploymentState,
+          deploymentProbability: robot.deploymentProbability,
+          deploymentExitProbability: robot.deploymentExitProbability,
+          deploymentExitRemaining: robot.deploymentState === "undeploying"
+            ? Math.max(0, robot.deploymentExitUntil - state.second)
+            : 0,
           sampledWeaponAccuracy: Number(state.teamState[robot.side].weaponAccuracy?.[robot.profile.weapon] || 0),
           damagePerHitByTarget: robot.role === "英雄" ? robot.profile.damage_per_hit_by_target : null,
           shots: robot.shots, hits: robot.hits, kills: robot.kills, deaths: robot.deaths,
@@ -2516,13 +2962,17 @@
     insideZone, sampleServicePoint, serviceZoneAt, planServiceRoute, reviveReadRequired, immediateReviveCost,
     createMatch, stepMatch, chooseGoal, tacticalCanonicalGoal, targetCandidates, teamTargetPrior,
     targetSelectionFeatures, heroFiringRankerFeatureMap,
+    heroDeploymentTransformerForward, heroDeploymentFeatureVector,
+    heroDeploymentInference, insideHeroDeploymentZone,
+    updateHeroDeploymentStates,
     contextualHeroFiringScore, rankedHeroObservedPoint,
     tacticalCandidateScore, stateConditionedHeatmapGoal,
     moveRobots, resupplyRobots, killRobot, respawnRobots,
     canShelterInAssembly, serviceRequiredForDecision,
     applyRadarCounter, radarCounterUavs, updateUavSupport, updateTechnologyCores,
     updateAssemblyProtection, lineOfSight, snapshot, runMatch,
-    openBaseArmor, resolveFortresses, dartStrike, applyDamage,
+    openBaseArmor, resolveFortresses, dartStrike, damagePerHit,
+    fireWeapons, applyDamage,
     crossesStaticWall, crossesForbiddenTerrainGate, enforceFrameWallClearance,
   };
 });

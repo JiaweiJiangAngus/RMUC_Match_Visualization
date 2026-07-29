@@ -80,7 +80,7 @@ class FullSimulationDataTests(unittest.TestCase):
 
     def test_every_team_has_six_robot_profiles(self):
         self.assertEqual(44, len(self.model["teams"]))
-        self.assertEqual(15, self.model["schema_version"])
+        self.assertEqual(16, self.model["schema_version"])
         expected = {"英雄", "工程", "步兵3", "步兵4", "哨兵", "空中"}
         for team in self.model["teams"].values():
             self.assertEqual(expected, set(team["roles"]))
@@ -306,7 +306,8 @@ class FullSimulationDataTests(unittest.TestCase):
         self.assertEqual("ranged", tongji["roles"]["英雄"]["hero_archetype_default"])
         self.assertEqual("long_range", tongji["roles"]["英雄"]["engagement_profile"]["style"])
         self.assertGreater(tongji["roles"]["英雄"]["engagement_profile"]["preferred_range_m"], 10)
-        self.assertEqual(300, tongji["roles"]["英雄"]["damage_per_hit_by_target"]["base"]["mode_damage"])
+        self.assertEqual(200, tongji["roles"]["英雄"]["damage_per_hit_by_target"]["base"]["mode_damage"])
+        self.assertEqual(300, tongji["roles"]["英雄"]["damage_per_hit_by_target"]["base"]["deployed_mode_damage"])
         self.assertTrue(tongji["accuracy_models"]["42mm"]["per_shot_random"])
         self.assertAlmostEqual(61 / 436, tongji["accuracy_models"]["42mm"]["mean_probability"], places=3)
         data_driven_long_range = [

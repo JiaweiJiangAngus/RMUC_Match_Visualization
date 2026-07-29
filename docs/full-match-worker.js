@@ -7,7 +7,7 @@ importScripts(
   "./terrain-router.js?v=8",
   "./prediction-worker.js?v=32",
   "./full-match-transformer-policy.js?v=2",
-  "./full-match-engine.js?v=24",
+  "./full-match-engine.js?v=25",
 );
 delete self.RMUC_EMBEDDED_PREDICTION;
 

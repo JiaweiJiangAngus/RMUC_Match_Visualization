@@ -33,6 +33,9 @@ DEFAULT_GAMES_DIR = ROOT / "docs" / "data" / "games"
 DEFAULT_BEHAVIOR_LABELS = ROOT / "analysis" / "manual_team_behavior_labels.csv"
 DEFAULT_TARGET_MODEL = ROOT / "ml" / "artifacts" / "target_selection_model.json"
 DEFAULT_HERO_RANKER = ROOT / "ml" / "artifacts" / "hero_firing_ranker.json"
+DEFAULT_HERO_DEPLOYMENT = (
+    ROOT / "ml" / "artifacts" / "hero_deployment_transformer.json"
+)
 ROLES = ("英雄", "工程", "步兵3", "步兵4", "哨兵", "空中")
 GROUND_ROLES = ROLES[:-1]
 PHASES = 7
@@ -79,6 +82,11 @@ def args() -> argparse.Namespace:
     parser.add_argument("--behavior-labels", type=Path, default=DEFAULT_BEHAVIOR_LABELS)
     parser.add_argument("--target-model", type=Path, default=DEFAULT_TARGET_MODEL)
     parser.add_argument("--hero-ranker", type=Path, default=DEFAULT_HERO_RANKER)
+    parser.add_argument(
+        "--hero-deployment",
+        type=Path,
+        default=DEFAULT_HERO_DEPLOYMENT,
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -977,6 +985,28 @@ def main() -> None:
         raise ValueError("hero firing ranker did not pass every held-out acceptance gate")
     if set(hero_firing_ranker.get("teams", ())) != set(schools):
         raise ValueError("hero firing ranker does not cover the same 44 schools")
+    if not options.hero_deployment.exists():
+        raise FileNotFoundError(
+            f"missing hero deployment Transformer: {options.hero_deployment}; "
+            "run python3 ml/train_hero_deployment_transformer.py first"
+        )
+    hero_deployment_model = json.loads(
+        options.hero_deployment.read_text(encoding="utf-8")
+    )
+    if hero_deployment_model.get("model_kind") != "hero_deployment_transformer":
+        raise ValueError(
+            "hero deployment artifact is not a hero_deployment_transformer"
+        )
+    if not hero_deployment_model.get("acceptance") or not all(
+        hero_deployment_model["acceptance"].values()
+    ):
+        raise ValueError(
+            "hero deployment Transformer did not pass every held-out gate"
+        )
+    if set(hero_deployment_model.get("teams", ())) != set(schools):
+        raise ValueError(
+            "hero deployment Transformer does not cover the same 44 schools"
+        )
     entries = {entry.school: entry for entry in TEAMS}
     placeholders = ",".join("?" for _ in schools)
     macro = json.loads(options.macro.read_text(encoding="utf-8"))
@@ -1204,21 +1234,31 @@ def main() -> None:
                 damage_by_target = {}
                 for target in ("robot", "outpost", "base"):
                     distribution = damage_values[(school, "42mm", target)]
-                    # Values below 200 are already reduced by defense/remaining
-                    # HP and must not be learned again as raw projectile damage.
-                    raw_modes = Counter({damage: count for damage, count in distribution.items() if damage in {200, 300}})
-                    mode_damage = raw_modes.most_common(1)[0][0] if raw_modes else 200
-                    manual_damage = behavior_labels.get((school, role, f"{target}_damage_per_hit"))
-                    if manual_damage:
-                        mode_damage = float(manual_damage["value"])
+                    # Ordinary 42 mm is a physical 200-damage invariant.  A
+                    # 300 row can be deployment or large-energy-mechanism
+                    # damage and must never be folded into ordinary damage.
+                    mode_damage = 200
+                    deployment_label = behavior_labels.get(
+                        (
+                            school,
+                            role,
+                            f"deployed_{target}_damage_per_hit",
+                        )
+                    )
                     damage_by_target[target] = {
                         "mode_damage": rounded(mode_damage),
+                        "deployed_mode_damage": (
+                            300 if target == "base" else rounded(mode_damage)
+                        ),
                         "distribution": [
                             {"damage": damage, "weight": count}
                             for damage, count in distribution.most_common(12)
                         ],
-                        "manual_label": manual_damage,
-                        "source": "区域赛对手受击原始合法值 200/300 主模态；排除残血与防御减伤值",
+                        "deployment_label": deployment_label,
+                        "source": (
+                            "普通42mm固定200；基地300仅由部署模式或"
+                            "大能量机关等独立状态结算，不回灌普通伤害"
+                        ),
                     }
                 role_payload[role].update({
                     "hero_archetype_default": hero_archetype_priors[school]["archetype"],
@@ -1311,7 +1351,7 @@ def main() -> None:
     db.close()
 
     payload = {
-        "schema_version": 15,
+        "schema_version": 16,
         "kind": "agent_based_rmuc_2026_simulation_parameters",
         "ruleset": {
             "competition": "RoboMaster 2026 机甲大师超级对抗赛",
@@ -1334,6 +1374,7 @@ def main() -> None:
                 "team_base_damage_timing_by_source",
                 "contextual_target_choice_by_team_role_and_live_state",
                 "contextual_hero_firing_anchor_ranking",
+                "transformer_hero_deployment_enter_hold_exit",
                 "ground_and_uav_movement",
                 "terrain_capability_and_motion_in_navigation_model",
             ],
@@ -1365,15 +1406,29 @@ def main() -> None:
                 "sampled_weapon_accuracy": {"type": "number", "range": [0.018, 0.9]},
                 "assembly_protected": {"type": "boolean"},
                 "assembly_invulnerable_seconds": {"type": "integer", "range": [0, 180]},
+                "hero_deployment_state": {
+                    "type": ["categorical", "null"],
+                    "values": ["mobile", "deployed", "undeploying"],
+                },
+                "hero_deployment_probability": {
+                    "type": "number",
+                    "range": [0, 1],
+                },
+                "hero_deployment_exit_probability": {
+                    "type": "number",
+                    "range": [0, 1],
+                },
             },
             "decision_labels": {
                 "respawn_choice": ["timed_in_place", "immediate_buyback"],
                 "uav_counter_choice": ["wait_45_seconds", "double_cost_buyout"],
                 "attack_target": ["robot", "outpost", "base"],
+                "hero_deployment_choice": ["enter", "hold", "exit"],
             },
         },
         "target_selection_model": target_selection_model,
         "hero_firing_ranker": hero_firing_ranker,
+        "hero_deployment_model": hero_deployment_model,
         "structures": {
             "red": {"base": [2.66, 7.5], "outpost": [11.0, 3.25], "fortress": [6.65, 7.5]},
             "blue": {"base": [25.34, 7.5], "outpost": [17.0, 11.75], "fortress": [21.35, 7.5]},
@@ -1422,6 +1477,7 @@ def main() -> None:
             "heat_per_shot": {"17mm": 10, "42mm": 100},
             "hero_archetypes": HERO_ARCHETYPES,
             "hero_default_archetype": "team_profile",
+            "hero_deployment": hero_deployment_model["runtime_rules"],
             "heal_ratio_per_second": 0.1,
             "late_heal_ratio_per_second": 0.25,
             "late_heal_start_second": 240,
@@ -1479,6 +1535,7 @@ def main() -> None:
             "ground goals are per-game-balanced 0.5 m position modes with stationary service dwell down-weighted; five-second transitions preserve local tactical continuity",
             "attack target kind is inferred from same-second firing attribution and learned from team, role, time, live HP, recent HP loss, structures, alive opponents, distance, coins and vulnerability; target identity still requires legal range and line of sight",
             "hero firing anchors use a neural candidate ranker trained on the next observed 42 mm position against same-team same-phase observed alternatives; its heatmap prior is built from training series only, and no inferred near/long-range class is used as a training label",
+            "hero deployment uses a real Transformer trained from clean 42 mm base-hit labels (300 deployed, 200 mobile) after excluding the full large-energy-mechanism window; a second head learns hold/exit from exact-300-confirmed deployment trajectories",
             "base damage timing is learned per team in 15-second windows and separated into direct-fire and dart sources; it weights legal attacks but never applies scripted damage",
             "UAV helipad and airborne samples are separated; airborne goals are game-normalized and connected by empirical five-second transitions rather than independent dwell-point sampling",
             "fly-ramp alignment/stop/acceleration comes from official event windows; complete B3/R3 trajectories learn ascent/descent angles separately per school-role, with documented direction-specific global fallbacks",
